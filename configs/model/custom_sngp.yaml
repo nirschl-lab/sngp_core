@@ -14,10 +14,10 @@ scheduler:
   patience: 10
 
 net:
-  _target_: src.models.baseline_models.BaselineModel
+  _target_: src.models.sngp_models.SNGPCustom
   in_dim: 384
   num_classes: 8 
-  hidden: [256, 128, 128, 32] 
+  hidden: [256, 512,] 
   p_drop: 0.1
 
 # compile model for faster training with pytorch 2.0

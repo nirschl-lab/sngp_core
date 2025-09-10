@@ -12,7 +12,7 @@ from functools import partial
 import torch
 from torch import nn
 
-from sngp_core.models.sngp.random_fourier_features import RandomFourierFeatures
+from src.models.sngp.random_fourier_features import RandomFourierFeatures
 
 
 _SUPPORTED_LIKELIHOOD = ("binary_logistic", "poisson", "gaussian")

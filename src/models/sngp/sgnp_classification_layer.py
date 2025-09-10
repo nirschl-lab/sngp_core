@@ -9,7 +9,7 @@ import inspect
 import torch
 from torch import nn
 
-from sngp_core.models.sngp.gaussian_process import RandomFeatureGaussianProcess
+from src.models.sngp.gaussian_process import RandomFeatureGaussianProcess
 
 
 class SNGP(nn.Module):
