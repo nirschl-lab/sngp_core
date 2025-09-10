@@ -1,3 +1,30 @@
+[project]
+name = "sngp-core"
+version = "0.1.0"
+dependencies = [
+    "albumentations>=2.0.8",
+    "click>=8.2.1",
+    "email-validator>=2.3.0",
+    "h5py>=3.14.0",
+    "hydra-colorlog>=1.2.0",
+    "hydra-core>=1.3.2",
+    "lightning>=2.5.5",
+    "loguru>=0.7.3",
+    "pandas>=2.3.2",
+    "pyarrow>=21.0.0",
+    "pydantic>=2.11.7",
+    "pytorch-lightning>=2.5.5",
+    "rapidfuzz>=3.14.1",
+    "rich>=14.1.0",
+    "rootutils>=1.0.7",
+    "scikit-learn>=1.7.2",
+    "tiffile>=2018.10.18",
+    "torch>=2.8.0",
+    "torchvision>=0.23.0",
+    "ujson>=5.11.0",
+    "wandb>=0.21.3",
+]
+
 [tool.pytest.ini_options]
 addopts = [
   "--color=yes",

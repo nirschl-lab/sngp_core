@@ -1,0 +1,114 @@
+label_metadata:
+    class_1: # rename to the class name, delete all null values
+        age: null
+        antibody_id: null
+        antibody_name: null
+        bto_id: null # recommended
+        bto_name: null
+        cellontology_id: null
+        cellontology_name: null
+        cellosaurus_id: null # recommended
+        cellosaurus_name: null
+        cmpo_id: null # recommended
+        cmpo_name: null
+        disease: null
+        efo_id: null # recommended
+        efo_name: null
+        ensembl_id: null
+        ensembl_name: null
+        ethnicity: null
+        gene: null
+        go_id: null # recommended
+        go_name: null
+        hpo_id: null # recommended
+        hpo_name: null
+        icdo_id: null
+        icdo_name: null
+        icd10_id: null
+        icd10_name: null
+        fma_id: null
+        fma_name: null
+        label_additional_info: null
+        label_description: null
+        label_name: null # required
+        label_subname: null
+        label_synonyms: null
+        loinc_id: null
+        loinc_name: null
+        mesh_id: null
+        mesh_name: null
+        medgen_id: null
+        medgen_name: null
+        multilabel: null
+        ncbitaxon_id: null # required here or in overall dataset metadata below
+        ncbitaxon_name: null
+        normal_or_abnormal: null
+        ncit_id: null # recommended
+        pato_id: null
+        pato_name: null
+        related_genes: null
+        snomedct_id: null
+        snomedct_name: null
+        specimen_id: null
+        synthetic: false
+        tissue: null
+        uberon_id: null
+        uberon_name: null
+        umlscui_id: null
+        umlscui_name: null
+        uniprot_id: null
+        uniprot_name: null
+bibtex: null # recommended
+classes_to_idx: # required
+    class_1: 0
+    class_2: 1
+pretty_classes_to_idx: # required
+    class_1: 0
+    class_2: 1
+copyright_year: null
+dataset_name: null # required
+dataset_slug: null # required
+pretty_dataset_name: null
+dataset_url: null
+description: null # required
+doi: null # recommended
+domain: null # required
+extension: json
+homepage: null
+image_mean_std: null
+image_size:
+    - 224
+    - 224
+    - 3
+institution: null # required (data source or institution)
+keywords:
+    - null
+label_task: null
+language: en # required
+license: null # required
+microns_per_pixel: null # ideally, this should be provided
+modality: null # required
+ncbitaxon_id:
+    - NCBITaxon_9606 # required here or in label metadata above, often human
+ncbitaxon_name:
+    - Homo sapiens # required here or in label metadata above, often human
+ncit_id:
+    - null # recommended
+ncit_name: null
+num_classes: null # recommended
+num_test: null
+num_total: null
+num_train: null
+num_validation: null
+pmid: null # recommended
+snomedct_id: null
+snomedct_name: null
+stain: null # recommended
+subdomain: null # required
+submodality: null # required
+supported_tasks: null # required
+synthetic: null
+uberon_id: null
+uberon_name: null
+version: 0.0.1
+version_comment: null

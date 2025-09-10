@@ -1,0 +1,11 @@
+# Data versioning using the semantic versioning format "major.minor.patch"
+# Major: Complete overhaul of the dataset including significant changes to all data and/or labels
+#        or addition of new data. Evaluation is incompatible with previous versions.
+# Minor: Partial changes to the dataset including image deduplication or correction of labels
+#        in a subset of data. However, no new data has been added. Evaluation is not compatible
+# Patch: Minor changes that do not affect the data itself (e.g., renaming files, updating docs etc.).
+#       Evaluation is compatible with previous versions and benchmarks.
+0.0.0: 'Initial version of the dataset closest to the original data format and organization.'
+0.0.1: 'Changes that do not affect the data itself (e.g., renaming files, updating docs etc.).'
+0.1.0: 'Minor changes including deduplication of images, correction of labels, and addition of new annotations.'
+1.0.0: 'Major breaking changes making the dataset incompatible with previous versions.'
