@@ -5,7 +5,7 @@
 defaults:
   - _self_
   - data: acevedo #mnist #acevedo
-  - model: acevedo_baseline #mnist #acevedo_baseline
+  - model: custom_sngp #mnist #acevedo_baseline
   - callbacks: default
   - logger: wandb # set logger here or use command line (e.g. `python train.py logger=tensorboard`)
   - trainer: default

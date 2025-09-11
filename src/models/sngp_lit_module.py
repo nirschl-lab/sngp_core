@@ -1,10 +1,15 @@
-from typing import Any, Dict, Tuple
+from typing import Any, Dict, Tuple, List
 
 import torch
 from lightning import LightningModule
 from torchmetrics import MaxMetric, MeanMetric
+import torch.nn.functional as F
 from torchmetrics.classification.accuracy import Accuracy
 from src.models.sngp_models import SNGPCustom
+from src.visualization.multi_class_ROC import plot_roc_curve
+from src.visualization.plot_prob_histograms import single_model_probablity_histogram
+import matplotlib.pyplot as plt
+import wandb
 import pdb
 
 class SNGPLitModule(LightningModule):
@@ -47,6 +52,7 @@ class SNGPLitModule(LightningModule):
         scheduler: torch.optim.lr_scheduler,
         compile: bool,
         num_classes: int = 8,
+        hist_bins = 10, #for histogram plotting
     ) -> None:
         """Initialize a `MNISTLitModule`.
 
@@ -61,6 +67,7 @@ class SNGPLitModule(LightningModule):
         self.save_hyperparameters(logger=False)
 
         self.net = net
+        self.num_classes = num_classes
 
         # loss function
         self.criterion = torch.nn.CrossEntropyLoss()
@@ -77,6 +84,12 @@ class SNGPLitModule(LightningModule):
 
         # for tracking best so far validation accuracy
         self.val_acc_best = MaxMetric()
+
+        self._test_probs: List[torch.Tensor] = []
+        self._test_targets: List[torch.Tensor] = []
+
+        #plotting
+        self.bins = hist_bins
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Perform a forward pass through the model `self.net`.
@@ -111,8 +124,9 @@ class SNGPLitModule(LightningModule):
         if len(logits) > 1: # for sngp output is logits, cov
             logits = logits[0]  
         loss = self.criterion(logits, y)
-        preds = torch.argmax(logits, dim=1)
-        return loss, preds, y
+        probs = torch.softmax(logits, dim=1)
+        preds = torch.argmax(probs, dim=1)
+        return loss, probs, preds, y
 
     def training_step(
         self, batch: Tuple[torch.Tensor, torch.Tensor], batch_idx: int
@@ -124,7 +138,7 @@ class SNGPLitModule(LightningModule):
         :param batch_idx: The index of the current batch.
         :return: A tensor of losses between model predictions and targets.
         """
-        loss, preds, targets = self.model_step(batch)
+        loss, probs, preds, targets = self.model_step(batch)
 
         # update and log metrics
         self.train_loss(loss)
@@ -146,7 +160,7 @@ class SNGPLitModule(LightningModule):
             labels.
         :param batch_idx: The index of the current batch.
         """
-        loss, preds, targets = self.model_step(batch)
+        loss, probs, preds, targets = self.model_step(batch)
 
         # update and log metrics
         self.val_loss(loss)
@@ -169,17 +183,30 @@ class SNGPLitModule(LightningModule):
             labels.
         :param batch_idx: The index of the current batch.
         """
-        loss, preds, targets = self.model_step(batch)
+        loss, probs, preds, targets = self.model_step(batch)
 
         # update and log metrics
+        self._test_probs.append(probs.detach().cpu())
+        self._test_targets.append(targets.detach().cpu())
+
         self.test_loss(loss)
         self.test_acc(preds, targets)
         self.log("test/loss", self.test_loss, on_step=False, on_epoch=True, prog_bar=True)
         self.log("test/acc", self.test_acc, on_step=False, on_epoch=True, prog_bar=True)
-
+        
     def on_test_epoch_end(self) -> None:
         """Lightning hook that is called when a test epoch ends."""
-        pass
+        probs = torch.cat(self._test_probs).numpy()
+        targets = torch.cat(self._test_targets).numpy()
+
+        fig = plot_roc_curve(probs, targets, num_classes=self.num_classes)
+        self.logger.experiment.log({"test/roc_curve": wandb.Image(fig)})
+        plt.close(fig)
+        
+        fig = single_model_probablity_histogram(probs, bins=self.bins)
+        self.logger.experiment.log({"test/logits_distribution": wandb.Image(fig)})
+        plt.close(fig)
+        
 
     def setup(self, stage: str) -> None:
         """Lightning hook that is called at the beginning of fit (train + validate), validate,

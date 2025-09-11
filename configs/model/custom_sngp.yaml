@@ -22,3 +22,6 @@ net:
 
 # compile model for faster training with pytorch 2.0
 compile: false
+
+#no of bins for drawing histogram at the end of training on testset
+hist_bins: 10

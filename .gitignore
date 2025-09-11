@@ -1,6 +1,10 @@
 #other files
 README.md-template
 
+#other folders
+wandb/
+artifacts/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
