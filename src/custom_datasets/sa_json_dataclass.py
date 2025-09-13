@@ -65,10 +65,10 @@ from src.processing.data_utils import unpack_list
 from src.processing.text.conversions import str2num
 
 
-# from argusdp.conf import DOMAINS as valid_domains
-# from argusdp.conf import MODALITIES as valid_modalities
-# from argusdp.conf import STAINS as valid_stains
-# from argusdp.conf import TASKS as valid_tasks
+# from sngp_core.conf import DOMAINS as valid_domains
+# from sngp_core.conf import MODALITIES as valid_modalities
+# from sngp_core.conf import STAINS as valid_stains
+# from sngp_core.conf import TASKS as valid_tasks
 def compute_tokens(string: str, model_name: str = "gpt-3.5-turbo") -> int:
     """Returns the number of tokens in a text string."""
     raise NotImplementedError

@@ -20,7 +20,7 @@ from src.custom_datasets.utils import create_samples_targets
 from src.fileio.text.readers import json_loader
 
 
-# from argusdp.processing.data_utils import find_image_json_pairs
+# from sngp_core.processing.data_utils import find_image_json_pairs
 
 
 class SADataset(BaseDataset):

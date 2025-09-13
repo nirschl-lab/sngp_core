@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""display.py in src/argusdp/processing/image."""
+"""display.py in src/sngp_core/processing/image."""
 import pprint
 from typing import Optional
 from typing import Tuple

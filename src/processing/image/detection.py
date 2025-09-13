@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""detection.py in src/argusdp/processing/image."""
+"""detection.py in src/sngp_core/processing/image."""
 
 from typing import Any
 from typing import List

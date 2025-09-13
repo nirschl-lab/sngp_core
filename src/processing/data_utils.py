@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""data_utils.py in src/argusdp/processing."""
+"""data_utils.py in src/sngp_core/processing."""
 import datetime
 import hashlib
 import os

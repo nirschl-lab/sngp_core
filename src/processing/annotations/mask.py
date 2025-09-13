@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""mask.py in src/argusdp/processing/annotations."""
+"""mask.py in src/sngp_core/processing/annotations."""
 import os
 import uuid
 from typing import Optional

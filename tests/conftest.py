@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """This file prepares config fixtures for other tests."""
 
 from pathlib import Path

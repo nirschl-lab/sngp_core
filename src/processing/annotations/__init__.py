@@ -1,3 +1,3 @@
 #!/usr/bin/env python3
-"""__init__.py in src/argusdp/processing/annotations."""
+"""__init__.py in src/sngp_core/processing/annotations."""
 # pragma: no cover

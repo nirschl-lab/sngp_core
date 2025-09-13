@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""readers.py in src/argusdp/fileio/hdf."""
+"""readers.py in src/sngp_core/fileio/hdf."""
 
 import ast
 import os

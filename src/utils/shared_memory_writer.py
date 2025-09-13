@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""shared_memory_writer.py in src/argusdp/models."""
+"""shared_memory_writer.py in src/sngp_core/models."""
 
 import os
 from multiprocessing.shared_memory import SharedMemory

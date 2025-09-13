@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""gaussian_process.py in src/argusdp/models/sngp.
+"""gaussian_process.py in src/sngp_core/models/sngp.
 
 Adapted from:
 https://github.com/Jmkernes/Spectral-Normalized-Gaussian-Process/blob/main/gaussian_process.py

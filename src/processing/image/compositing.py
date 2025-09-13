@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""compositing.py in src/argusdp/processing/image."""
+"""compositing.py in src/sngp_core/processing/image."""
 import re
 from typing import Optional
 

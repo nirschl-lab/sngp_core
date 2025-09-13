@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""dl_url.py in src/argusdp/fileio/download."""
+"""dl_url.py in src/sngp_core/fileio/download."""
 
 from typing import Optional
 

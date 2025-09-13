@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""pydantic_validators.py in src/argusdp/conf."""
+"""pydantic_validators.py in src/sngp_core/conf."""
 import ast
 import re
 import uuid
@@ -51,7 +51,7 @@ from src.processing.text.harmonize_text import validate_split
 from src.processing.text.harmonize_text import validate_split_list
 
 
-# from argusdp.processing.data_utils import _is_valid_timestamp
+# from sngp_core.processing.data_utils import _is_valid_timestamp
 
 modalities = list(valid_modalities.keys())
 submodalities = [elem for sublist in valid_modalities.values() for elem in sublist]

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""dl_utils.py in src/argusdp/fileio/download."""
+"""dl_utils.py in src/sngp_core/fileio/download."""
 # noqa: S311
 import random
 

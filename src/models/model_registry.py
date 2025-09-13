@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""model_registry.py in src/argusdp/models.
+"""model_registry.py in src/sngp_core/models.
 
 Adapted from:
 https://github.com/sanketx/AL-foundation-models/blob/main/ALFM/src/models/registry.py

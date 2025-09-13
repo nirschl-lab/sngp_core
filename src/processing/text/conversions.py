@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""conversions.py in src/argusdp/processing/text."""
+"""conversions.py in src/sngp_core/processing/text."""
 
 import re
 from typing import Union

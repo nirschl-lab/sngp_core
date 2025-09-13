@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""create_backup.py in src/argusdp/fileio/backup."""
+"""create_backup.py in src/sngp_core/fileio/backup."""
 import shutil
 from pathlib import Path
 from tempfile import TemporaryDirectory

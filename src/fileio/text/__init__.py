@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""__init__.py in src/argusdp/fileio/text."""
+"""__init__.py in src/sngp_core/fileio/text."""
 
 import re
 from pathlib import Path

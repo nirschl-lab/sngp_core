@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""async_dl_url.py in src/argusdp/fileio/download."""
+"""async_dl_url.py in src/sngp_core/fileio/download."""
 
 import asyncio
 from hashlib import md5

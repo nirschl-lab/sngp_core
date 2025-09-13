@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""sa_json.py in src/argusdp/processing/annotations."""
+"""sa_json.py in src/sngp_core/processing/annotations."""
 
 from pathlib import Path
 from typing import Union
