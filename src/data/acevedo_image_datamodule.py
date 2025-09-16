@@ -1,0 +1,236 @@
+from typing import Any, Dict, Optional, Tuple
+
+import torch
+from lightning import LightningDataModule
+from torch.utils.data import ConcatDataset, DataLoader, Dataset, random_split
+from datasets import load_dataset
+from torchvision.transforms import transforms
+import yaml
+from src.utils import RankedLogger
+import pdb
+
+# Custom Dataset wrapper
+class HFDataset(Dataset):
+    def __init__(self, hf_dataset, transform=None, type=None):
+        self.dataset = hf_dataset
+        self.transform = transform
+        self.type = type
+
+    def __len__(self):
+        return len(self.dataset)
+
+    def __getitem__(self, idx):
+        item = self.dataset[idx]
+        try:
+            image = item['image']  # PIL Image
+            label = item['label']
+        except TypeError as e:
+            pdb.set_trace()
+            raise
+        if self.transform:
+            image = self.transform(image)
+        return image, label
+    
+class AcevedoImageDataModule(LightningDataModule):
+    """`LightningDataModule` for the Acevedo Image dataset.
+
+    """
+
+    def __init__(
+        self,
+        data_dir: str,
+        num_classes: int = 8,
+        batch_size: int = 64,
+        num_workers: int = 0,
+        pin_memory: bool = False,
+    ) -> None:
+        """Initialize a `MNISTDataModule`.
+
+        :param data_dir: The data directory. Defaults to `"data/"`.
+        :param train_val_test_split: The train, validation and test split. Defaults to `(55_000, 5_000, 10_000)`.
+        :param batch_size: The batch size. Defaults to `64`.
+        :param num_workers: The number of workers. Defaults to `0`.
+        :param pin_memory: Whether to pin memory. Defaults to `False`.
+        """
+        super().__init__()
+
+        # this line allows to access init params with 'self.hparams' attribute
+        # also ensures init params will be stored in ckpt
+        self.save_hyperparameters(logger=False)
+        self.data_dir = data_dir
+        self.num_classes = num_classes
+
+        # data transformations
+        # Augmentations for training
+        self.train_transform = transforms.Compose([
+            transforms.RandomResizedCrop(224),
+            transforms.RandomHorizontalFlip(),
+            transforms.RandomVerticalFlip(),
+            transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+        ])
+        # Basic transforms for val/test
+        self.test_transform = transforms.Compose([
+            transforms.Resize(256),
+            transforms.CenterCrop(224),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+        ])
+
+        self.data_train: Optional[Dataset] = None
+        self.data_val: Optional[Dataset] = None
+        self.data_test: Optional[Dataset] = None
+
+        self.batch_size_per_device = batch_size
+
+        self.log_ = RankedLogger(__name__, rank_zero_only=True)
+
+    # @property
+    # def num_classes(self) -> int:
+    
+    #     return self.num_classes
+
+    def setup(self, stage: Optional[str] = None) -> None:
+        """Load data. Set variables: `self.data_train`, `self.data_val`, `self.data_test`.
+
+        This method is called by Lightning before `trainer.fit()`, `trainer.validate()`, `trainer.test()`, and
+        `trainer.predict()`, so be careful not to execute things like random split twice! Also, it is called after
+        `self.prepare_data()` and there is a barrier in between which ensures that all the processes proceed to
+        `self.setup()` once the data is prepared and available for use.
+
+        :param stage: The stage to setup. Either `"fit"`, `"validate"`, `"test"`, or `"predict"`. Defaults to ``None``.
+        """
+        # Divide batch size by the number of devices.
+        if self.trainer is not None:
+            if self.hparams.batch_size % self.trainer.world_size != 0:
+                raise RuntimeError(
+                    f"Batch size ({self.hparams.batch_size}) is not divisible by the number of devices ({self.trainer.world_size})."
+                )
+            self.batch_size_per_device = self.hparams.batch_size // self.trainer.world_size
+
+        # load and split datasets only if not loaded already
+        # if not self.data_train and not self.data_val and not self.data_test:
+        data_train_ = load_dataset(self.data_dir, split="train",)
+        self.data_train = HFDataset(data_train_, transform=self.train_transform, type='train')
+
+        data_val_ = load_dataset(self.data_dir, split="validation",)
+        self.data_val = HFDataset(data_val_, transform=self.test_transform, type='val')
+        
+        data_test_ = load_dataset(self.data_dir, split="test",)
+        self.data_test = HFDataset(data_test_, transform=self.test_transform, type='test')
+        
+        # pdb.set_trace()
+        # self.log_.info('*******setup step train')
+        
+        # self.log_.info('*******setup step val')
+        
+        # self.log_.info('*******setup step test')
+        
+
+
+    def train_dataloader(self) -> DataLoader[Any]:
+        """Create and return the train dataloader.
+
+        :return: The train dataloader.
+        """
+        # self.log_.info('------------------->< * * ><----------train loader called---')
+        return DataLoader(
+            dataset=self.data_train,
+            batch_size=self.batch_size_per_device,
+            num_workers=self.hparams.num_workers,
+            pin_memory=self.hparams.pin_memory,
+            shuffle=True,
+        )
+
+    def val_dataloader(self) -> DataLoader[Any]:
+        """Create and return the validation dataloader.
+
+        :return: The validation dataloader.
+        """
+        # self.log_.info('------------------->< * * ><----------val loader called---')
+        return DataLoader(
+            dataset=self.data_val,
+            batch_size=self.batch_size_per_device,
+            num_workers=self.hparams.num_workers,
+            pin_memory=self.hparams.pin_memory,
+            shuffle=False,
+        )
+
+    def test_dataloader(self) -> DataLoader[Any]:
+        """Create and return the test dataloader.
+
+        :return: The test dataloader.
+
+        """
+        # self.log_.info('------------------->< * * ><----------test loader called---')
+        return DataLoader(
+            dataset=self.data_test,
+            batch_size=self.batch_size_per_device,
+            num_workers=self.hparams.num_workers,
+            pin_memory=self.hparams.pin_memory,
+            shuffle=False,
+        )
+
+    def teardown(self, stage: Optional[str] = None) -> None:
+        """Lightning hook for cleaning up after `trainer.fit()`, `trainer.validate()`,
+        `trainer.test()`, and `trainer.predict()`.
+
+        :param stage: The stage being torn down. Either `"fit"`, `"validate"`, `"test"`, or `"predict"`.
+            Defaults to ``None``.
+        """
+        pass
+
+    def state_dict(self) -> Dict[Any, Any]:
+        """Called when saving a checkpoint. Implement to generate and save the datamodule state.
+
+        :return: A dictionary containing the datamodule state that you want to save.
+        """
+        return {}
+
+    def load_state_dict(self, state_dict: Dict[str, Any]) -> None:
+        """Called when loading a checkpoint. Implement to reload datamodule state given datamodule
+        `state_dict()`.
+
+        :param state_dict: The datamodule state returned by `self.state_dict()`.
+        """
+        pass
+
+
+if __name__ == "__main__":
+    import yaml
+    yaml_file_path = 'configs/paths/default.yaml'
+
+    try:
+        with open(yaml_file_path, 'r') as file:
+            # Load the YAML data using yaml.safe_load() for security
+            data = yaml.safe_load(file)
+        print("YAML data loaded successfully:")
+
+    except FileNotFoundError:
+        print(f"Error: The file '{yaml_file_path}' was not found.")
+
+    data_dir = data['data_cache_dir']
+    dm = AcevedoImageDataModule(
+        data_dir
+    )
+    dm.setup()
+    print("Train loader:")
+    for batch in dm.train_dataloader():
+        X, y = batch
+        print(f"X shape: {X.shape}, y shape: {y.shape}")
+        break
+    
+    print("Test loader:")
+    for batch in dm.test_dataloader():
+        X, y = batch
+        print(f"X shape: {X.shape}, y shape: {y.shape}")
+        break
+        
+    
+    print("Val loader:")
+    for batch in dm.val_dataloader():
+        X, y = batch
+        print(f"X shape: {X.shape}, y shape: {y.shape}")
+        break
+    

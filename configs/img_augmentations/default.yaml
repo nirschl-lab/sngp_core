@@ -1,0 +1,8 @@
+# conf/augmentation/default.yaml
+augmentations:
+  - _target_: torchvision.transforms.Resize
+    size: 256
+  - _target_: torchvision.transforms.RandomCrop
+    size: 224
+  - _target_: torchvision.transforms.RandomHorizontalFlip
+    p: 0.5

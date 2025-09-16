@@ -16,3 +16,13 @@ output_dir: ${hydra:runtime.output_dir}
 
 # path to working directory
 work_dir: ${hydra:runtime.cwd}
+
+# feature cache path
+feature_cache_dir: '/data1/shared/cache/feature_cache/'
+
+# datasets cache path
+# data_cache_dir: '/data1/jjnirschl/huggingface/datasets/kather_et_al_2016/all-fe66984be50ec44e/0.1.0/dc8b3e49b65d7eb6dd7b3b7908a520d82c8e43685f9e5896622dd81dec8daec6'
+data_cache_dir: '/data1/jjnirschl/huggingface/datasets/acevedo_et_al_2020/all-1f51a8afb579d3ad/0.1.0/6aef94a26d798a6587bf6687e67ddca30840000857f5e024cad9fb2a014076e8'
+
+#timm/hugging face model cache_path
+model_cache_dir: 'timm_cache_dir'

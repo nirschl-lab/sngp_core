@@ -4,6 +4,8 @@ README.md-template
 #other folders
 wandb/
 artifacts/
+timm_cache_dir/
+temp_data_cache/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

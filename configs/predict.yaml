@@ -2,15 +2,15 @@
 
 defaults:
   - _self_
-  - data: acevedo_image_classifier # choose datamodule with `test_dataloader()` for evaluation
-  - model: image_classifier_baseline
+  - data: image_classifier_baseline # choose datamodule with `test_dataloader()` for evaluation
+  - model: acevedo_baseline
   - logger: wandb
   - trainer: default
   - paths: default
   - extras: default
   - hydra: default
 
-task_name: "eval"
+task_name: "predict"
 
 tags: ["dev"]
 

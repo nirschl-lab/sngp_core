@@ -1,0 +1,7 @@
+_target_: src.data.acevedo_image_datamodule.AcevedoImageDataModule
+
+data_dir: ${paths.data_cache_dir}
+num_classes: 8
+batch_size: 64
+num_workers: 0
+pin_memory: False
