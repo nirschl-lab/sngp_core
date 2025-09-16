@@ -14,6 +14,28 @@ def _maybe_set_timm_cache_dir(cache_dir: Optional[str]):
             # Fall back silently if the API surface changes; user can still set TORCH_HOME
             print(f"[timm-cache] Could not set cache dir to '{cache_dir}': {e}")
 
+class TimmBasicClassifier(nn.Module):
+    def __init__(self, model_name, num_classes, pretrained=True, in_chans=3, cache_dir='timm_cache_dir'):
+        super().__init__()
+        
+        # self.model_name = model_name, 
+        # self.num_classes = num_classes
+        # self.pretrained = pretrained
+        # self.in_chans = in_chans
+        # self.cache_dir = cache_dir
+
+        self.backbone = timm.create_model(
+            model_name,
+            pretrained=pretrained,
+            num_classes=num_classes,
+            in_chans=in_chans,
+            cache_dir=cache_dir
+        )
+    
+    def forward(self, x):
+        return self.backbone(x)
+
+
 class TimmBackboneWithProbe(nn.Module):
     """
     Build a classifier-free timm backbone, optionally freeze it, normalize

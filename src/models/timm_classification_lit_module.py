@@ -160,7 +160,7 @@ class TimmClassificationLitModule(LightningModule):
             labels.
         :param batch_idx: The index of the current batch.
         """
-        self.log_.info('------------------->< * * ><----------test step---')
+        # self.log_.info('------------------->< * * ><----------test step---')
         # print('-------------------test step-------------')
         loss, probs, preds, targets = self.model_step(batch)
 
@@ -175,7 +175,7 @@ class TimmClassificationLitModule(LightningModule):
         
     def on_test_epoch_end(self) -> None:
         """Lightning hook that is called when a test epoch ends."""
-        self.log_.info('------------------->< * * ><---test epoch end----------')
+        # self.log_.info('------------------->< * * ><---test epoch end----------')
         probs = torch.cat(self._test_probs).numpy()
         targets = torch.cat(self._test_targets).numpy()
 
