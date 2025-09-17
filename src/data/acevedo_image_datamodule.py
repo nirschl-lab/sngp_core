@@ -8,6 +8,7 @@ from torchvision.transforms import transforms
 import yaml
 from src.utils import RankedLogger
 import pdb
+import hydra
 
 # Custom Dataset wrapper
 class HFDataset(Dataset):
@@ -43,40 +44,43 @@ class AcevedoImageDataModule(LightningDataModule):
         batch_size: int = 64,
         num_workers: int = 0,
         pin_memory: bool = False,
+        train_augmentations: Optional[transforms.Compose] = None,  # New argument
+        test_augmentations: Optional[transforms.Compose] = None
     ) -> None:
-        """Initialize a `MNISTDataModule`.
+        """Initialize AcevedoImageDataModule.
 
-        :param data_dir: The data directory. Defaults to `"data/"`.
-        :param train_val_test_split: The train, validation and test split. Defaults to `(55_000, 5_000, 10_000)`.
-        :param batch_size: The batch size. Defaults to `64`.
-        :param num_workers: The number of workers. Defaults to `0`.
-        :param pin_memory: Whether to pin memory. Defaults to `False`.
+        :param data_dir: The data directory.
+        :param batch_size: The batch size.
+        :param num_workers: The number of workers.
+        :param pin_memory: Whether to pin memory.
+        :param augmentations: Transformations for training (from config).
         """
         super().__init__()
 
-        # this line allows to access init params with 'self.hparams' attribute
-        # also ensures init params will be stored in ckpt
         self.save_hyperparameters(logger=False)
         self.data_dir = data_dir
         self.num_classes = num_classes
 
-        # data transformations
-        # Augmentations for training
-        self.train_transform = transforms.Compose([
-            transforms.RandomResizedCrop(224),
-            transforms.RandomHorizontalFlip(),
-            transforms.RandomVerticalFlip(),
-            transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1),
-            transforms.ToTensor(),
-            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-        ])
-        # Basic transforms for val/test
-        self.test_transform = transforms.Compose([
-            transforms.Resize(256),
-            transforms.CenterCrop(224),
-            transforms.ToTensor(),
-            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-        ])
+        if train_augmentations:
+                # It's a config, instantiate it
+                self.train_transform = train_augmentations
+        else:
+            # Default fallback
+            self.train_transform = transforms.Compose([
+                transforms.ToTensor(),
+                transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+            ])
+
+        # Same logic for eval_transforms
+        if test_augmentations:
+                # It's a config, instantiate it
+                self.test_transform = test_augmentations
+        else:
+            # Default fallback
+            self.test_transform = transforms.Compose([
+                transforms.ToTensor(),
+                transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+            ])
 
         self.data_train: Optional[Dataset] = None
         self.data_val: Optional[Dataset] = None

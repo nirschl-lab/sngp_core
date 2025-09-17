@@ -22,8 +22,9 @@ uv run src/train.py \
     trainer.max_epochs=$MAX_EPOCHS \
     trainer.accelerator=$ACCELERATOR \
     model.optimizer.lr=$LR \
-    data.batch_size=$BATCH_SIZE \
+    data.datamodule.batch_size=$BATCH_SIZE \
     callbacks=$CALLBACKS \
     model.hist_bins=$HIST_BINS \
     logger.wandb.log_model=$WANDB_LOG_MODEL \
+    +trainer.fast_dev_run=True
     "$@"
