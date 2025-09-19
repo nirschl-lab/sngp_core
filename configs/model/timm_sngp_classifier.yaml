@@ -14,14 +14,15 @@ scheduler:
   patience: 10
 
 net:
-  _target_: src.models.timm_classification_models.TimmBasicClassifier
+  _target_: src.models.timm_classification_models.TimmSNGPClassifier
   model_name: resnet50
   num_classes: 8
   pretrained: True
   in_chans: 3
+  reduction_dim: 512
 
 # compile model for faster training with pytorch 2.0
 compile: false
 
 #no of bins for drawing histogram at the end of training on testset
-hist_bins: 10
+hist_bins: 25

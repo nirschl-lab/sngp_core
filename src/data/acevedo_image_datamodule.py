@@ -9,6 +9,7 @@ import yaml
 from src.utils import RankedLogger
 import pdb
 import hydra
+import datasets
 
 # Custom Dataset wrapper
 class HFDataset(Dataset):
@@ -39,7 +40,7 @@ class AcevedoImageDataModule(LightningDataModule):
 
     def __init__(
         self,
-        data_dir: str,
+        dataset_name: str,
         num_classes: int = 8,
         batch_size: int = 64,
         num_workers: int = 0,
@@ -58,7 +59,7 @@ class AcevedoImageDataModule(LightningDataModule):
         super().__init__()
 
         self.save_hyperparameters(logger=False)
-        self.data_dir = data_dir
+        self.dataset_name = dataset_name
         self.num_classes = num_classes
 
         if train_augmentations:
@@ -115,13 +116,15 @@ class AcevedoImageDataModule(LightningDataModule):
 
         # load and split datasets only if not loaded already
         # if not self.data_train and not self.data_val and not self.data_test:
-        data_train_ = load_dataset(self.data_dir, split="train",)
+        data = datasets.load_dataset(self.dataset_name)
+
+        data_train_ = data['train'] #load_dataset(self.data_dir, split="train",)
         self.data_train = HFDataset(data_train_, transform=self.train_transform, type='train')
 
-        data_val_ = load_dataset(self.data_dir, split="validation",)
+        data_val_ = data["validation"] #load_dataset(self.data_dir, split="validation",)
         self.data_val = HFDataset(data_val_, transform=self.test_transform, type='val')
         
-        data_test_ = load_dataset(self.data_dir, split="test",)
+        data_test_ = data["test"] #load_dataset(self.data_dir, split="test",)
         self.data_test = HFDataset(data_test_, transform=self.test_transform, type='test')
         
         # pdb.set_trace()

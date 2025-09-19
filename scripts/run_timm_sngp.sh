@@ -3,15 +3,15 @@
 set -e
 
 # --------- User-configurable parameters ---------
-MODEL="timm_basic_classifier"
+MODEL="timm_sngp_classifier"
 DATA="acevedo_image_classifier"
-MAX_EPOCHS=10
+MAX_EPOCHS=50
 LR=1e-4
 CALLBACKS="default"
 HIST_BINS=10
-WANDB_LOG_MODEL=False
+WANDB_LOG_MODEL=True
 ACCELERATOR=gpu
-BATCH_SIZE=128
+BATCH_SIZE=256
 
 # --------- Script ---------
 # Usage: ./run_basic.sh [extra hydra args]

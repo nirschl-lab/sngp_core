@@ -4,7 +4,7 @@ defaults:
 
 datamodule:
   _target_: src.data.acevedo_image_datamodule.AcevedoImageDataModule
-  data_dir: ${paths.data_cache_dir}
+  dataset_name: nirschl-lab/acevedo_et_al_2020
   num_classes: 8
   batch_size: 64
   num_workers: 0

@@ -47,8 +47,15 @@ def evaluate(cfg: DictConfig) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     """
     assert cfg.ckpt_path
 
-    log.info(f"Instantiating datamodule <{cfg.data._target_}>")
-    datamodule: LightningDataModule = hydra.utils.instantiate(cfg.data)
+    train_augmentations = None
+    test_augmentations = None
+
+    if cfg.data['img_augmentations']:
+        log.info(f"Augmentations <{cfg.data.img_augmentations.train._target_}>")
+        test_augmentations = hydra.utils.instantiate( cfg.data.img_augmentations.test)
+
+    log.info(f"Instantiating datamodule <{cfg.data.datamodule._target_}>")
+    datamodule: LightningDataModule = hydra.utils.instantiate(cfg.data.datamodule, train_augmentations=train_augmentations, test_augmentations=test_augmentations)
 
     log.info(f"Instantiating model <{cfg.model._target_}>")
     model: LightningModule = hydra.utils.instantiate(cfg.model)

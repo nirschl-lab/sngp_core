@@ -5,12 +5,12 @@ from lightning import LightningModule
 from torchmetrics import MaxMetric, MeanMetric
 import torch.nn.functional as F
 from torchmetrics.classification.accuracy import Accuracy
-from src.models.timm_classification_models import TimmBackboneWithProbe
 from src.visualization.multi_class_ROC import plot_roc_curve
 from src.visualization.plot_prob_histograms import single_model_probablity_histogram
 import matplotlib.pyplot as plt
 import wandb
 import pdb
+import numpy as np
 from src.utils import RankedLogger
 
 class TimmClassificationLitModule(LightningModule):
@@ -176,14 +176,17 @@ class TimmClassificationLitModule(LightningModule):
     def on_test_epoch_end(self) -> None:
         """Lightning hook that is called when a test epoch ends."""
         # self.log_.info('------------------->< * * ><---test epoch end----------')
-        probs = torch.cat(self._test_probs).numpy()
+        probs_all = torch.cat(self._test_probs).numpy()
         targets = torch.cat(self._test_targets).numpy()
 
-        fig = plot_roc_curve(probs, targets, num_classes=self.num_classes)
+        prediction_prob_score = np.max(probs_all, axis=1)
+
+        # pdb.set_trace()
+        fig = plot_roc_curve(probs_all, targets, num_classes=self.num_classes)
         self.logger.experiment.log({"test/roc_curve": wandb.Image(fig)})
         plt.close(fig)
         
-        fig = single_model_probablity_histogram(probs, bins=self.bins)
+        fig = single_model_probablity_histogram(prediction_prob_score, bins=self.bins)
         self.logger.experiment.log({"test/logits_distribution": wandb.Image(fig)})
         plt.close(fig)
         
