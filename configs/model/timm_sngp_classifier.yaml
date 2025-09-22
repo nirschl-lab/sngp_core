@@ -1,0 +1,28 @@
+_target_: src.models.timm_classification_lit_module.TimmClassificationLitModule
+
+optimizer:
+  _target_: torch.optim.Adam
+  _partial_: true
+  lr: 0.001
+  weight_decay: 0.0
+
+scheduler:
+  _target_: torch.optim.lr_scheduler.ReduceLROnPlateau
+  _partial_: true
+  mode: min
+  factor: 0.1
+  patience: 10
+
+net:
+  _target_: src.models.timm_classification_models.TimmSNGPClassifier
+  model_name: resnet50
+  num_classes: 8
+  pretrained: True
+  in_chans: 3
+  reduction_dim: 512
+
+# compile model for faster training with pytorch 2.0
+compile: false
+
+#no of bins for drawing histogram at the end of training on testset
+hist_bins: 25

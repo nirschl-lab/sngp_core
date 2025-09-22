@@ -39,7 +39,7 @@ class AcevedoDataModule(LightningDataModule):
 
         :return: The train dataloader.
         """
-        X = torch.tensor(self.data_train[self.data_train.columns[8:]].to_numpy(), dtype=torch.float32)
+        X = self.data_train['']
         y = torch.tensor(self.data_train["label"].values, dtype=torch.long)
         
         return DataLoader(torch.utils.data.TensorDataset(X, y), self.batch_size_per_device, shuffle=True)

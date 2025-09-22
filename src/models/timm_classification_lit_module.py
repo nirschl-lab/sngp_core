@@ -5,46 +5,16 @@ from lightning import LightningModule
 from torchmetrics import MaxMetric, MeanMetric
 import torch.nn.functional as F
 from torchmetrics.classification.accuracy import Accuracy
-from src.models.sngp_models import SNGPCustom
 from src.visualization.multi_class_ROC import plot_roc_curve
 from src.visualization.plot_prob_histograms import single_model_probablity_histogram
 import matplotlib.pyplot as plt
 import wandb
 import pdb
+import numpy as np
+from src.utils import RankedLogger
 
-class SNGPLitModule(LightningModule):
-    """Example of a `LightningModule` for MNIST classification.
-
-    A `LightningModule` implements 8 key methods:
-
-    ```python
-    def __init__(self):
-    # Define initialization code here.
-
-    def setup(self, stage):
-    # Things to setup before each stage, 'fit', 'validate', 'test', 'predict'.
-    # This hook is called on every process when using DDP.
-
-    def training_step(self, batch, batch_idx):
-    # The complete training step.
-
-    def validation_step(self, batch, batch_idx):
-    # The complete validation step.
-
-    def test_step(self, batch, batch_idx):
-    # The complete test step.
-
-    def predict_step(self, batch, batch_idx):
-    # The complete predict step.
-
-    def configure_optimizers(self):
-    # Define and configure optimizers and LR schedulers.
-    ```
-
-    Docs:
-        https://lightning.ai/docs/pytorch/latest/common/lightning_module.html
-    """
-
+class TimmClassificationLitModule(LightningModule):
+    
     def __init__(
         self,
         net: torch.nn.Module,
@@ -93,6 +63,7 @@ class SNGPLitModule(LightningModule):
 
         #plotting
         self.bins = hist_bins
+        self.log_ = RankedLogger(__name__, rank_zero_only=True)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Perform a forward pass through the model `self.net`.
@@ -124,8 +95,10 @@ class SNGPLitModule(LightningModule):
         """
         x, y = batch
         logits = self.forward(x)
-        if len(logits) > 1: # for sngp output is logits, cov
-            logits = logits[0]  
+        # pdb.set_trace()
+        if len(logits.shape) > 2: # for sngp output is B, L, Cov_matrix
+            logits = logits[:1]
+        
         loss = self.criterion(logits, y)
         probs = torch.softmax(logits, dim=1)
         preds = torch.argmax(probs, dim=1)
@@ -141,6 +114,7 @@ class SNGPLitModule(LightningModule):
         :param batch_idx: The index of the current batch.
         :return: A tensor of losses between model predictions and targets.
         """
+        # self.log_.info('------------------->< * * ><-------------')
         loss, probs, preds, targets = self.model_step(batch)
 
         # update and log metrics
@@ -186,6 +160,8 @@ class SNGPLitModule(LightningModule):
             labels.
         :param batch_idx: The index of the current batch.
         """
+        # self.log_.info('------------------->< * * ><----------test step---')
+        # print('-------------------test step-------------')
         loss, probs, preds, targets = self.model_step(batch)
 
         # update and log metrics
@@ -199,14 +175,18 @@ class SNGPLitModule(LightningModule):
         
     def on_test_epoch_end(self) -> None:
         """Lightning hook that is called when a test epoch ends."""
-        probs = torch.cat(self._test_probs).numpy()
+        # self.log_.info('------------------->< * * ><---test epoch end----------')
+        probs_all = torch.cat(self._test_probs).numpy()
         targets = torch.cat(self._test_targets).numpy()
 
-        fig = plot_roc_curve(probs, targets, num_classes=self.num_classes)
+        prediction_prob_score = np.max(probs_all, axis=1)
+
+        # pdb.set_trace()
+        fig = plot_roc_curve(probs_all, targets, num_classes=self.num_classes)
         self.logger.experiment.log({"test/roc_curve": wandb.Image(fig)})
         plt.close(fig)
         
-        fig = single_model_probablity_histogram(probs, bins=self.bins)
+        fig = single_model_probablity_histogram(prediction_prob_score, bins=self.bins)
         self.logger.experiment.log({"test/logits_distribution": wandb.Image(fig)})
         plt.close(fig)
         
@@ -265,23 +245,52 @@ class SNGPLitModule(LightningModule):
         #     "loss": loss.detach().cpu(),
         # }
 
+# cache_dir = 'timm_cache_dir'
+# model = TimmBackboneWithProbe(
+#     "resnet50",
+#     proj_dim=512,
+#     num_classes=10,
+#     pretrained=True,
+#     cache_dir=cache_dir,   # NEW
+#     freeze_backbone=True            # NEW
+# )
+# # Test the model with random input
+# batch_size = 2
+# in_chans = 3
+# height = width = 224
+# x = torch.randn(batch_size, in_chans, height, width)
+# out = model(x)
+# print(f"Input shape: {x.shape}")
+# print(f"Output shape: {out.shape}")
+
 
 if __name__ == "__main__":
+    img_channels = 3
+    img_len = 512
+    img_width = 512
     input_dim = 384
     num_classes = 8
     batch_size = 4
     # net = BaselineModel(input_dim, num_classes)
-    net = SNGPCustom(input_dim, num_classes)
-    module = SNGPLitModule(net, None, None, False, num_classes=num_classes)
+    cache_dir = 'timm_cache_dir'
+    net = TimmBackboneWithProbe(
+        "resnet50",
+        proj_dim=512,
+        num_classes=num_classes,
+        pretrained=True,
+        cache_dir=cache_dir,   # NEW
+        freeze_backbone=True            # NEW
+    )
+    module = TimmClassificationLitModule(net, None, None, False, num_classes=num_classes)
 
     # Create a synthetic batch
-    x = torch.randn(batch_size, input_dim)
+    x = torch.randn(batch_size, img_channels, img_len, img_width)
     y = torch.randint(0, num_classes, (batch_size,))
     batch = (x, y)
 
     # Forward pass
     logits = module.forward(x)
-    if len(logits)>1:
+    if len(logits.shape)>2:
         logits = logits[0]
     print(f"Logits shape: {logits.shape}")
 

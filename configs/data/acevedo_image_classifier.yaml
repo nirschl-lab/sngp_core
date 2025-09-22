@@ -1,0 +1,11 @@
+# configs/data/acevedo_image_classifier.yaml
+defaults:
+  - /img_augmentations: default   # absolute group ref; no ".yaml"
+
+datamodule:
+  _target_: src.data.acevedo_image_datamodule.AcevedoImageDataModule
+  dataset_name: nirschl-lab/acevedo_et_al_2020
+  num_classes: 8
+  batch_size: 64
+  num_workers: 0
+  pin_memory: false

@@ -1,0 +1,2 @@
+model: 'dinov2_vit_S14'
+dataset: 'acevedo_et_al_2020'
