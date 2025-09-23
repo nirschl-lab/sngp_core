@@ -4,9 +4,11 @@ import torch
 from lightning import LightningModule
 from torchmetrics import MaxMetric, MeanMetric
 import torch.nn.functional as F
-from torchmetrics.classification.accuracy import Accuracy
+from torchmetrics.classification.accuracy import Accuracy 
+from torchmetrics.classification import MulticlassCalibrationError
 from src.visualization.multi_class_ROC import plot_roc_curve
 from src.visualization.plot_prob_histograms import single_model_probablity_histogram
+from src.visualization.plot_ece import plot_calibration_curve
 import matplotlib.pyplot as plt
 import wandb
 import pdb
@@ -23,6 +25,7 @@ class TimmClassificationLitModule(LightningModule):
         compile: bool,
         num_classes: int = 8,
         hist_bins = 10, #for histogram plotting
+        calibration_curve_bins=10 #for ece plot
     ) -> None:
         """Initialize a `MNISTLitModule`.
 
@@ -47,6 +50,9 @@ class TimmClassificationLitModule(LightningModule):
         self.val_acc = Accuracy(task="multiclass", num_classes=num_classes)
         self.test_acc = Accuracy(task="multiclass", num_classes=num_classes)
 
+        # for calculating ece
+        self.test_ece = MulticlassCalibrationError(num_classes=num_classes, n_bins=10, norm='l1')
+
         # for averaging loss across batches
         self.train_loss = MeanMetric()
         self.val_loss = MeanMetric()
@@ -62,8 +68,10 @@ class TimmClassificationLitModule(LightningModule):
         self._predict_targets: List[torch.Tensor] = []
 
         #plotting
-        self.bins = hist_bins
+        self.hist_bins = hist_bins
+        self.calibration_curve_bins = calibration_curve_bins
         self.log_ = RankedLogger(__name__, rank_zero_only=True)
+
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Perform a forward pass through the model `self.net`.
@@ -170,23 +178,33 @@ class TimmClassificationLitModule(LightningModule):
 
         self.test_loss(loss)
         self.test_acc(preds, targets)
+        self.test_ece(probs, targets)
         self.log("test/loss", self.test_loss, on_step=False, on_epoch=True, prog_bar=True)
         self.log("test/acc", self.test_acc, on_step=False, on_epoch=True, prog_bar=True)
+        self.log("test/ece", self.test_ece, on_step=False, on_epoch=True, prog_bar=True)
         
     def on_test_epoch_end(self) -> None:
         """Lightning hook that is called when a test epoch ends."""
         # self.log_.info('------------------->< * * ><---test epoch end----------')
         probs_all = torch.cat(self._test_probs).numpy()
         targets = torch.cat(self._test_targets).numpy()
-
         prediction_prob_score = np.max(probs_all, axis=1)
 
         # pdb.set_trace()
-        fig = plot_roc_curve(probs_all, targets, num_classes=self.num_classes)
+        fig = plot_calibration_curve(preds=probs_all, \
+                                    targets=targets, \
+                                    num_classes=self.num_classes, \
+                                    n_bins=self.calibration_curve_bins, \
+                                    image_classes=self.test_idx_to_classes)
+        
+        self.logger.experiment.log({"test/ece_plot": wandb.Image(fig)})
+        plt.close(fig)
+
+        fig = plot_roc_curve(probs_all, targets, num_classes=self.num_classes, class_names=self.test_idx_to_classes)
         self.logger.experiment.log({"test/roc_curve": wandb.Image(fig)})
         plt.close(fig)
         
-        fig = single_model_probablity_histogram(prediction_prob_score, bins=self.bins)
+        fig = single_model_probablity_histogram(prediction_prob_score, bins=self.hist_bins)
         self.logger.experiment.log({"test/logits_distribution": wandb.Image(fig)})
         plt.close(fig)
         
@@ -202,6 +220,17 @@ class TimmClassificationLitModule(LightningModule):
         """
         if self.hparams.compile and stage == "fit":
             self.net = torch.compile(self.net)
+        
+        #indexing classes
+        self.log_.info(f'Trainer initialized - {self._trainer is not None}')
+        if self._trainer is not None:
+            # self.log_.info('------------------********-------------------')
+            self.train_classes_to_idx = self._trainer.train_classes_to_idx
+            self.train_idx_to_classes = self._trainer.train_idx_to_classes
+            self.val_classes_to_idx = self._trainer.val_classes_to_idx
+            self.val_idx_to_classes = self._trainer.val_idx_to_classes
+            self.test_classes_to_idx = self._trainer.test_classes_to_idx
+            self.test_idx_to_classes = self._trainer.test_idx_to_classes
 
     def configure_optimizers(self) -> Dict[str, Any]:
         """Choose what optimizers and learning-rate schedulers to use in your optimization.

@@ -10,6 +10,7 @@ from src.utils import RankedLogger
 import pdb
 import hydra
 import datasets
+import ast
 
 # Custom Dataset wrapper
 class HFDataset(Dataset):
@@ -114,6 +115,7 @@ class AcevedoImageDataModule(LightningDataModule):
                 )
             self.batch_size_per_device = self.hparams.batch_size // self.trainer.world_size
 
+
         # load and split datasets only if not loaded already
         # if not self.data_train and not self.data_val and not self.data_test:
         data = datasets.load_dataset(self.dataset_name)
@@ -127,14 +129,13 @@ class AcevedoImageDataModule(LightningDataModule):
         data_test_ = data["test"] #load_dataset(self.data_dir, split="test",)
         self.data_test = HFDataset(data_test_, transform=self.test_transform, type='test')
         
-        # pdb.set_trace()
-        # self.log_.info('*******setup step train')
-        
-        # self.log_.info('*******setup step val')
-        
-        # self.log_.info('*******setup step test')
-        
-
+        if self.trainer is not None:
+            self.trainer.train_classes_to_idx = ast.literal_eval(data_train_[0]['classes_to_idx'])
+            self.trainer.train_idx_to_classes = {idx:cls for cls,idx in self.trainer.train_classes_to_idx.items()}
+            self.trainer.val_classes_to_idx = ast.literal_eval(data_val_[0]['classes_to_idx'])
+            self.trainer.val_idx_to_classes = {idx:cls for cls,idx in self.trainer.val_classes_to_idx.items()}
+            self.trainer.test_classes_to_idx = ast.literal_eval(data_val_[0]['classes_to_idx'])
+            self.trainer.test_idx_to_classes = {idx:cls for cls,idx in self.trainer.test_classes_to_idx.items()}
 
     def train_dataloader(self) -> DataLoader[Any]:
         """Create and return the train dataloader.

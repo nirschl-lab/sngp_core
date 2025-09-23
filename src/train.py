@@ -61,7 +61,7 @@ def train(cfg: DictConfig) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     if cfg.data['img_augmentations']:
         log.info(f"Augmentations <{cfg.data.img_augmentations.train._target_}>")
         train_augmentations = hydra.utils.instantiate( cfg.data.img_augmentations.train)
-        log.info(f"Augmentations <{cfg.data.img_augmentations.train._target_}>")
+        log.info(f"Augmentations <{cfg.data.img_augmentations.test._target_}>")
         test_augmentations = hydra.utils.instantiate( cfg.data.img_augmentations.test)
 
     log.info(f"Instantiating datamodule <{cfg.data.datamodule._target_}>")
