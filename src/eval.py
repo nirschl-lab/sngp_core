@@ -5,6 +5,7 @@ import rootutils
 from lightning import LightningDataModule, LightningModule, Trainer
 from lightning.pytorch.loggers import Logger
 from omegaconf import DictConfig
+import pdb
 
 rootutils.setup_root(__file__, indicator=".project-root", pythonpath=True)
 # ------------------------------------------------------------------------------------ #
@@ -51,7 +52,7 @@ def evaluate(cfg: DictConfig) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     test_augmentations = None
 
     if cfg.data['img_augmentations']:
-        log.info(f"Augmentations <{cfg.data.img_augmentations.train._target_}>")
+        log.info(f"Augmentations <{cfg.data.img_augmentations.test._target_}>")
         test_augmentations = hydra.utils.instantiate( cfg.data.img_augmentations.test)
 
     log.info(f"Instantiating datamodule <{cfg.data.datamodule._target_}>")
