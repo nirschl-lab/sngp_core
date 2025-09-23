@@ -25,7 +25,8 @@ class TimmClassificationLitModule(LightningModule):
         compile: bool,
         num_classes: int = 8,
         hist_bins = 10, #for histogram plotting
-        calibration_curve_bins=10 #for ece plot
+        calibration_curve_bins=10, #for ece plot
+        reset_sngp_precision=False,
     ) -> None:
         """Initialize a `MNISTLitModule`.
 
@@ -72,6 +73,8 @@ class TimmClassificationLitModule(LightningModule):
         self.calibration_curve_bins = calibration_curve_bins
         self.log_ = RankedLogger(__name__, rank_zero_only=True)
 
+        #sngp specifics
+        self.reset_sngp_precision = reset_sngp_precision
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Perform a forward pass through the model `self.net`.
@@ -136,7 +139,8 @@ class TimmClassificationLitModule(LightningModule):
 
     def on_train_epoch_end(self) -> None:
         "Lightning hook that is called when a training epoch ends."
-        pass
+        if self.reset_sngp_precision:
+            self.net.sngp_classifier.gp_classifier.reset_precision()
 
     def validation_step(self, batch: Tuple[torch.Tensor, torch.Tensor], batch_idx: int) -> None:
         """Perform a single validation step on a batch of data from the validation set.
