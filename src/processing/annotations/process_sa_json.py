@@ -1,5 +1,5 @@
 # #!/usr/bin/env python3
-# """process_sa_json.py in src/argusdp/processing/annotations."""
+# """process_sa_json.py in src/sngp_core/processing/annotations."""
 # from typing import Tuple
 #
 # import cv2

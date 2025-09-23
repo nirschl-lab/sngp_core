@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""writers.py in src/argusdp/fileio/text."""
+"""writers.py in src/sngp_core/fileio/text."""
 
 import os
 import pprint

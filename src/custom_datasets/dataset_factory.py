@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""dataset_factory.py in src/argusdp/custom_datasets.
+"""dataset_factory.py in src/sngp_core/custom_datasets.
 
 Adapted from:
 https://github.com/sanketx/AL-foundation-models/blob/main/ALFM/src/datasets/factory.py

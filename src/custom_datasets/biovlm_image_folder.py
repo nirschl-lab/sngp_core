@@ -43,7 +43,7 @@ class BioVLMImageFolder(BaseDataset):
 
         metadata_file = get_metadata_file(root, metadata_format="yaml")
 
-        # initialize superclass BaseDataset from argusdp.custom_datasets.base_dataset
+        # initialize superclass BaseDataset from sngp_core.custom_datasets.base_dataset
         super().__init__(
             root,
             split=split,

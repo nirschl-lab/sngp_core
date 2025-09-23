@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""conversions.py in src/argusdp/processing/image."""
+"""conversions.py in src/sngp_core/processing/image."""
 
 import cv2
 import numpy as np

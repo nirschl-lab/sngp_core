@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""compiled_regex.py in src/argusdp/conf."""
+"""compiled_regex.py in src/sngp_core/conf."""
 import re
 
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""wsi.py in src/argusdp/fileio/image."""
+"""wsi.py in src/sngp_core/fileio/image."""
 from pathlib import Path
 from typing import Union
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""writers.py in src/argusdp/fileio/hdf."""
+"""writers.py in src/sngp_core/fileio/hdf."""
 import os
 import shutil
 from pathlib import Path

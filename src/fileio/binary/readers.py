@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""readers.py in src/argusdp/fileio/binary."""
+"""readers.py in src/sngp_core/fileio/binary."""
 
 
 from loguru import logger

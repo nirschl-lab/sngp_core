@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""apply_icc_profile.py in src/argusdp/processing/image."""
+"""apply_icc_profile.py in src/sngp_core/processing/image."""
 
 from pathlib import Path
 from typing import Optional

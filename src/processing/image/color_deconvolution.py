@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""color_deconvolution.py in src/argusdp/processing/image."""
+"""color_deconvolution.py in src/sngp_core/processing/image."""
 
 from pathlib import Path
 from typing import Optional
@@ -107,7 +107,7 @@ def load_stain_matrix(
 ) -> np.ndarray:
     """Load color deconvolution matrix from configuration."""
     project_dir = Path(__file__).resolve().parents[4]
-    config_dir = project_dir.joinpath("src", "argusdp", "conf")
+    config_dir = project_dir.joinpath("src", "sngp_core", "conf")
     config = config or config_dir.joinpath("stain_matrix.yaml")
     if is_empty_file(config):
         logger.error(f"Config file {config} is empty.")

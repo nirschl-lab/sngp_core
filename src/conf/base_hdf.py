@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""base_hdf.py in src/argusdp/conf."""
+"""base_hdf.py in src/sngp_core/conf."""
 import ast
 from pathlib import Path
 from typing import Any

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""registration.py in src/argusdp/processing/image."""
+"""registration.py in src/sngp_core/processing/image."""
 import cv2
 
 

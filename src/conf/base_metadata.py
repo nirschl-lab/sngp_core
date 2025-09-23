@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""base_metadata.py in src/argusdp/conf.
+"""base_metadata.py in src/sngp_core/conf.
 
 Pydantic class for minimum metadata requirements for a dataset yaml/json.
 """

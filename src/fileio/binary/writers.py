@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""save_pickle.py in src/argusdp/fileio/binary."""
+"""save_pickle.py in src/sngp_core/fileio/binary."""
 from pathlib import Path
 from typing import Any
 from typing import Union

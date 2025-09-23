@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""fuzzy_search.py in src/argusdp/models."""
+"""fuzzy_search.py in src/sngp_core/models."""
 
 from typing import Optional
 from typing import Union

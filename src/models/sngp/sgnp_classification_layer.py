@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""sgnp_classification_layer.py in src/argusdp/models/sngp.
+"""sgnp_classification_layer.py in src/sngp_core/models/sngp.
 
 https://github.com/Jmkernes/Spectral-Normalized-Gaussian-Process/blob/main/sngp_classification_layer.py
 """

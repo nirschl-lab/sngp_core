@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""__init__.py in src/argusdp/conf."""
+"""__init__.py in src/sngp_core/conf."""
 
 __all__ = ["STAINS", "DOMAINS", "MODALITIES", "VERSIONS"]
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""readers.py in src/argusdp/fileio/text."""
+"""readers.py in src/sngp_core/fileio/text."""
 
 import os
 from pathlib import Path

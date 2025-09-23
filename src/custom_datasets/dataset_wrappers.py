@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""dataset_wrappers.py in src/argusdp/custom_datasets.
+"""dataset_wrappers.py in src/sngp_core/custom_datasets.
 
 Adapted from:
 https://github.com/sanketx/AL-foundation-models/blob/main/ALFM/src/datasets/dataset_wrappers.py
@@ -70,7 +70,7 @@ from src.custom_datasets.sa_dataset import SADataset
 from src.custom_datasets.sa_instance_dataset import SAInstanceDataset
 import pdb
 
-# from argusdp.custom_datasets.biovlm_dataframe import BioVLMDataframe
+# from sngp_core.custom_datasets.biovlm_dataframe import BioVLMDataframe
 
 RANDOM_SEED = 8675309
 

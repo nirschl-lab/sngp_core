@@ -1,3 +1,3 @@
 #!/usr/bin/env python3
-"""__init__.py in src/argusdp/fileio/backup."""
+"""__init__.py in src/sngp_core/fileio/backup."""
 # pragma: no cover

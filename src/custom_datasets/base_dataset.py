@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""base_dataset in src/argusdp/custom_datasets."""
+"""base_dataset in src/sngp_core/custom_datasets."""
 import pprint
 import random
 from collections import Counter

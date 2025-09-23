@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""harmonize_text.py in src/argusdp/processing/text."""
+"""harmonize_text.py in src/sngp_core/processing/text."""
 from typing import List
 from typing import Union
 

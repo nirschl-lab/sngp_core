@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""random_fourier_features.py in src/argusdp/models/sngp.
+"""random_fourier_features.py in src/sngp_core/models/sngp.
 
 https://github.com/Jmkernes/Spectral-Normalized-Gaussian-Process/blob/main/random_fourier_features.py
 """

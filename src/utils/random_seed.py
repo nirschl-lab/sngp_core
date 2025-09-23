@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""random_seed.py in src/argusdp/utils."""
+"""random_seed.py in src/sngp_core/utils."""
 
 import random
 

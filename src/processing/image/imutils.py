@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""imutils.py in src/argusdp/processing/image."""
+"""imutils.py in src/sngp_core/processing/image."""
 
 from pathlib import Path
 from typing import Dict

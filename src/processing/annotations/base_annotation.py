@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""base_annotation.py in src/argusdp/processing/annotations."""
+"""base_annotation.py in src/sngp_core/processing/annotations."""
 import pprint
 from pathlib import Path
 from typing import Union
