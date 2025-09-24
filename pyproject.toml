@@ -16,6 +16,8 @@ dependencies = [
     "pandas>=2.3.2",
     "pyarrow>=21.0.0",
     "pydantic>=2.11.7",
+    "pytest>=8.4.2",
+    "pytest-randomly>=4.0.1",
     "pytorch-lightning>=2.5.5",
     "rapidfuzz>=3.14.1",
     "rich>=14.1.0",
@@ -32,10 +34,13 @@ dependencies = [
 
 [tool.pytest.ini_options]
 addopts = [
-  "--color=yes",
-  "--durations=0",
-  "--strict-markers",
-  "--doctest-modules",
+    "-rsxX",
+    "--last-failed",
+    "--color=yes",
+    "--durations=0",
+    "--strict-markers",
+    "--doctest-modules",
+    "--showlocals"
 ]
 filterwarnings = [
   "ignore::DeprecationWarning",
@@ -43,7 +48,9 @@ filterwarnings = [
 ]
 log_cli = "True"
 markers = [
-  "slow: slow tests",
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "smoke: determines whether the deployed build is stable or not (select with '-m \"smoke\"')",
+    "debug: marks tests as actively under debugging (deselect with '-m \"not debug\"')",
 ]
 minversion = "6.0"
 testpaths = "tests/"
