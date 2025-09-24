@@ -4,11 +4,15 @@
 import json
 from pathlib import Path
 
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from loguru import logger
 
 from src.metrics.smooth_ece import smECE_fast_compat
 from src.metrics.utils import _bootstrap_ci_width
+from src.visualization.reliability import (rel_diagram_binned,
+                                           rel_diagram_smoothed)
 
 # read sample_data.json in the same directory
 sample_data_filepath = Path("./sample_data.json")
@@ -20,12 +24,13 @@ with open("./sample_data.json", "r") as f:
 
 
 # load data
-# data in the format
+# data in the format: {
 #  'resnext50_32x4d': {'url': 'https://raw.githubusercontent.com/hollance/reliability-diagrams/master/results//ImageNet_pytorch-image-models/resnext50_32x4d.csv',
 #   'dataset_name': 'ImageNet',
 #   'model': 'resnext50_32x4d',
 #   'ece_expected': 0.05804360030577724,
 #   'ece_ci_width': 0.004293579205581294}
+# }
 
 
 def load_data(dataset: str) -> tuple[np.ndarray, np.ndarray]:
@@ -35,6 +40,7 @@ def load_data(dataset: str) -> tuple[np.ndarray, np.ndarray]:
     # train dataset
     dataset_name = sample_data[dataset]["dataset_name"]
     model = sample_data[dataset]["model"]
+    logger.debug(f"Loading dataset {dataset_name} with model {model}")
 
     url = sample_data[dataset]["url"]
     df = pd.read_csv(url)
@@ -75,13 +81,26 @@ for dataset in sample_data.keys():
 
     # compute smECE (global ECE)
     ece_val = smECE_fast_compat(f, y)
-    ece_ci_width = _bootstrap_ci_width(f, y, smECE_fast_compat, confidence=0.95)
+    ece_ci_width = _bootstrap_ci_width(f, y, smECE_fast_compat, confidence=0.999)
 
     # assert
     assert np.isclose(ece_val, ece_expected, atol=1e-2), f"ECE mismatch for {dataset}"
+    assert np.isclose(
+        ece_ci_width, ci_width, atol=1e-2
+    ), f"CI width mismatch for {dataset}"
     print(
         f"{dataset}: smECE = {ece_val:.6f}, expected ECE = {sample_data[dataset]['ece_expected']:.6f}"
     )
+    print(
+        f"{dataset}: CI width = {ece_ci_width:.6f}, expected CI width = {sample_data[dataset]['ece_ci_width']:.6f}"
+    )
+
+    # test plot reliability diagram
+    fig, ax = rel_diagram_binned(f, y, nbins=15)
+    plt.show()
+
+    fig, ax = rel_diagram_smoothed(f, y)
+    plt.show()
 
 #
 print("All datasets processed successfully.")
