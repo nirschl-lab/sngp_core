@@ -7,9 +7,9 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import relplot
 from loguru import logger
 
-import relplot
 from src.metrics.smooth_ece import smECE_fast_compat
 from src.metrics.utils import _bootstrap_ci_width
 from src.visualization.reliability import (rel_diagram_binned,

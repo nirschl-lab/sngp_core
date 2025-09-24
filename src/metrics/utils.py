@@ -2,9 +2,9 @@
 """utils.py in src/metrics."""
 
 from typing import Any
-from pydantic import PositiveInt
-import numpy as np
 
+import numpy as np
+from pydantic import PositiveInt
 
 
 def _bootstrap_ci_width(

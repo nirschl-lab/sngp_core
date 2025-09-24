@@ -15,7 +15,7 @@ def set_default_style(use_tex: bool = False) -> None:
     mpl.rcParams.update(
         {
             "axes.edgecolor": "0.5",
-            "font.size": 18,
+            "font.size": 22,
             "legend.frameon": False,
             "patch.force_edgecolor": False,
             "figure.figsize": [6.0, 6.0],
