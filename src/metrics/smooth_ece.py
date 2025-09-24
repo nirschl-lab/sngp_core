@@ -3,112 +3,110 @@
 
 Smoothed Expected Calibration Error  (Błasiok & Nakkiran 2023).
 """
-
-from typing import Any, Optional, Sequence, Tuple
-
 import numpy as np
-from numpy.typing import NDArray
-from pydantic import PositiveFloat, field_validator
-from pydantic.dataclasses import dataclass
-from scipy.special import logit
-from scipy.stats import norm
+from pydantic import PositiveFloat, PositiveInt
+from loguru import logger
 
 
-@dataclass
-class SmoothECEInput:
-    """Validate inputs for SmoothECE."""
 
-    p: Any
-    y: Any
-    sigma: PositiveFloat  # ensures sigma > 0 automatically
+def _smooth_round_to_grid(f: np.ndarray, v: np.ndarray, eval_points: PositiveInt) -> np.ndarray:
+    """Linear 'splatting' of values v at positions f onto a uniform grid."""
+    if eval_points < 2:
+        raise ValueError("eval_points must be at least 2.")
 
-    @field_validator("p", "y", mode="before")
-    @classmethod
-    def to_numpy(cls, v):
-        """Convert input lists/tuples/arrays into 1D numpy float64 arrays."""
-        return np.asarray(v, dtype=np.float64).reshape(-1)
-
-    @field_validator("y")
-    @classmethod
-    def check_arrays(cls, y: np.ndarray, info):
-        """Check shape consistency and non-empty arrays."""
-        p = info.data.get("p")
-        if p is not None:
-            if p.size == 0 or y.size == 0:
-                raise ValueError("Input arrays must be non-empty.")
-            if p.shape != y.shape:
-                raise ValueError(f"Shape mismatch: p {p.shape}, y {y.shape}")
-            if np.any((p < 0) | (p > 1)):
-                raise ValueError("Probabilities p must be in [0, 1].")
-            # Clip probabilities for stability
-            info.data["p"] = np.clip(p, 1e-6, 1 - 1e-6)
-
-        return y
+    f = np.asarray(f, float).clip(0, 1).reshape(-1)
+    v = np.asarray(v, float).reshape(-1)
+    assert f.shape == v.shape
+    out = np.zeros(eval_points, float)
+    # map f to [0, eval_points-1] bins with linear interpolation to neighbors
+    x = f * (eval_points - 1)
+    lo = np.floor(x).astype(int).clip(0, eval_points - 2)
+    hi = lo + 1
+    w_hi = x - lo
+    w_lo = 1.0 - w_hi
+    np.add.at(out, lo, w_lo * v)
+    np.add.at(out, hi, w_hi * v)
+    return out
 
 
-def smoothed_ece_logit(
-    p: NDArray[np.float64],
-    y: NDArray[np.float64],
-    sigma: float = 0.1,
-    n_grid: int = 1000,
-    eps: float = 1e-6,
-) -> float:
-    """Compute logit-smoothed Expected Calibration Error (SmoothECE)."""
-    validated = SmoothECEInput(p=p, y=y, sigma=sigma)
-    p, y, sigma = validated.p, validated.y, validated.sigma
+def _gaussian_kernel_1d(sigma: PositiveFloat, m: PositiveInt) -> np.ndarray:
+    """Gaussian kernel samples, centered at 0.5 on [0,1]."""
+    if sigma <= 0:
+        raise ZeroDivisionError("sigma must be positive.")
 
-    logit_p = logit(p)
-    residuals = p - y
+    if m < 1:
+        raise ValueError("m must be at least 1.")
 
-    # Evaluation grid
-    t = np.linspace(eps, 1 - eps, n_grid)
-    logit_t = logit(t)
-
-    # Gaussian kernel smoothing in logit space
-    logger.debug(f"Using sigma={sigma} for logit-space smoothing.")
-    K = norm.pdf((logit_t[:, None] - logit_p[None, :]) / sigma)
-
-    weighted_residuals = K @ residuals
-    density = K @ np.ones_like(residuals)
-
-    smoothed_error = np.divide(
-        weighted_residuals,
-        density + eps,
-        out=np.zeros_like(weighted_residuals),
-        where=density > 0,
-    )
-
-    return float(np.mean(np.abs(smoothed_error)))
+    t = np.linspace(0, 1, m)
+    return np.exp(-0.5 * (t - 0.5) ** 2 / (sigma**2)) / (np.sqrt(2 * np.pi) * sigma)
 
 
-def smoothed_ece_logit_search(
-    p: NDArray[np.float64],
-    y: NDArray[np.float64],
+
+def _smooth_ece_interpolated(r_grid: np.ndarray, sigma: PositiveFloat) -> float:
+    if sigma <= 0:
+        raise ZeroDivisionError("sigma must be positive.")
+
+    ker = _gaussian_kernel_1d(sigma, len(r_grid))
+    rs = _reflected_convolve(r_grid, ker)
+    return float(np.sum(np.abs(rs)) / len(r_grid))
+
+
+def _reflected_convolve(values: np.ndarray, ker: np.ndarray) -> np.ndarray:
+    """Convolution with reflection."""
+    if len(ker) < 1:
+        raise ValueError("Kernel length must be at least 1.")
+    elif len(ker) == 1:
+        logger.warning("Kernel length is 1; convolution is a no-op.")
+        return values.copy()
+
+    if len(values) < 1:
+        raise ValueError("Values length must be at least 1.")
+
+    if  len(values) < len(ker):
+        raise ValueError("Kernel length must be at least as long as values length.")
+
+    m = len(values)
+    # correct reflection: flip without double-counting edges
+    ext = np.concatenate([np.flip(values)[:-1], values, np.flip(values)[1:]])
+    conv = np.convolve(ext, ker, mode="valid")
+    return conv[m // 2 : m // 2 + m]
+
+
+def smECE_fast_compat(
+    f: np.ndarray,
+    y: np.ndarray,
     eps: float = 1e-3,
-    n_steps: int = 20,
-    search_range: Optional[Tuple[float, float]] = None,
-    return_bandwidth: bool = False,
-) -> float | Tuple[float, float]:
-    """
-    Adaptive bandwidth search for SmoothECE.
+    m: PositiveInt = 200,
+    return_width: bool = False,
+) -> float | tuple[float, float]:
+    """Reimplementation of smECE_fast in probability space."""
+    f = np.asarray(f, float).reshape(-1)
+    y = np.asarray(y, float).reshape(-1)
+    assert f.shape == y.shape and f.size > 0
 
-    Finds sigma* such that smECE_sigma*(p,y) ≈ sigma* (fixed-point).
-    """
-    # Validate inputs with minimal sigma
-    validated = SmoothECEInput(p=p, y=y, sigma=1e-3)
-    p, y = validated.p, validated.y
+    # coarse grid
+    m = 200 if m < 200 else m
+    r_grid = _smooth_round_to_grid(f, f - y, eval_points=m) / f.size
 
-    lo, hi = (1.0, 1e-3) if search_range is None else search_range
-    best_val, best_sigma = float("inf"), hi
+    def _maybe_refine(alpha: float):
+        nonlocal m, r_grid
+        while round(20.0 / alpha) > m:
+            m *= 4
+            r_grid = _smooth_round_to_grid(f, f - y, eval_points=m) / f.size
 
-    for _ in range(n_steps):
-        sigma = (lo + hi) / 2
-        val = smoothed_ece_logit(p, y, sigma=sigma)
-        if val < best_val:
-            best_val, best_sigma = val, sigma
-        if val < eps:
-            hi = sigma
+    def _check_smooth_ece(alpha: float) -> bool:
+        _maybe_refine(alpha)
+        return (alpha < eps) or (alpha < _smooth_ece_interpolated(r_grid, alpha))
+
+    # Binary search like orig search_param
+    start, end = 1.0, 0.0
+    sigma = start
+    for _ in range(10):
+        mid = 0.5 * (start + end)
+        if _check_smooth_ece(mid):
+            end, sigma = mid, mid
         else:
-            lo = sigma
+            start = mid
 
-    return (best_val, best_sigma) if return_bandwidth else best_val
+    val = _smooth_ece_interpolated(r_grid, sigma)
+    return (val, float(sigma)) if return_width else val
