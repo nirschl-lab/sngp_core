@@ -1,0 +1,72 @@
+{
+    "pop3": {
+        "dataset_name": "POP3 Precipitation Forecasts",
+        "model": "real",
+        "ece_expected": 0.1320483557790682,
+        "ece_ci_width": 0.05251468713614624,
+        "url": "https://www.cawcr.gov.au/projects/verification/POP3/POP_3cat_2003.txt"
+    },
+    "densenetblur121d": {
+        "dataset_name": "ImageNet",
+        "model": "densenetblur121d",
+        "ece_expected": 0.06961500157798647,
+        "ece_ci_width": 0.0051122517276505075,
+        "url": "https://raw.githubusercontent.com/hollance/reliability-diagrams/master/results//ImageNet_pytorch-image-models/densenetblur121d.csv"
+    },
+    "efficientnet_b1": {
+        "dataset_name": "ImageNet",
+        "model": "efficientnet_b1",
+        "ece_expected": 0.10003683605758262,
+        "ece_ci_width": 0.00426260349327931,
+        "url": "https://raw.githubusercontent.com/hollance/reliability-diagrams/master/results//ImageNet_pytorch-image-models/efficientnet_b1.csv"
+    },
+    "efficientnet_b3a": {
+        "url": "https://raw.githubusercontent.com/hollance/reliability-diagrams/master/results//ImageNet_pytorch-image-models/efficientnet_b3a.csv",
+        "dataset_name": "ImageNet",
+        "model": "efficientnet_b3a",
+        "ece_expected": 0.12379678578382505,
+        "ece_ci_width": 0.004106922141870403
+    },
+    "ese_vovnet19b_dw": {
+        "url": "https://raw.githubusercontent.com/hollance/reliability-diagrams/master/results//ImageNet_pytorch-image-models/ese_vovnet19b_dw.csv",
+        "dataset_name": "ImageNet",
+        "model": "ese_vovnet19b_dw",
+        "ece_expected": 0.12292477923618204,
+        "ece_ci_width": 0.00385933248448736
+    },
+    "gluon_senet154": {
+        "url": "https://raw.githubusercontent.com/hollance/reliability-diagrams/master/results//ImageNet_pytorch-image-models/gluon_senet154.csv",
+        "dataset_name": "ImageNet",
+        "model": "gluon_senet154",
+        "ece_expected": 0.05064417226638479,
+        "ece_ci_width": 0.003938169837294059
+    },
+    "mixnet_m": {
+        "url": "https://raw.githubusercontent.com/hollance/reliability-diagrams/master/results//ImageNet_pytorch-image-models/mixnet_m.csv",
+        "dataset_name": "ImageNet",
+        "model": "mixnet_m",
+        "ece_expected": 0.0648926173902063,
+        "ece_ci_width": 0.004863158316699964
+    },
+    "mobilenetv3_large_100": {
+        "url": "https://raw.githubusercontent.com/hollance/reliability-diagrams/master/results//ImageNet_pytorch-image-models/mobilenetv3_large_100.csv",
+        "dataset_name": "ImageNet",
+        "model": "mobilenetv3_large_100",
+        "ece_expected": 0.06698512769541007,
+        "ece_ci_width": 0.004618214815049565
+    },
+    "resnet34": {
+        "url": "https://raw.githubusercontent.com/hollance/reliability-diagrams/master/results//ImageNet_pytorch-image-models/resnet34.csv",
+        "dataset_name": "ImageNet",
+        "model": "resnet34",
+        "ece_expected": 0.07787103345947394,
+        "ece_ci_width": 0.005345507233791444
+    },
+    "resnext50_32x4d": {
+        "url": "https://raw.githubusercontent.com/hollance/reliability-diagrams/master/results//ImageNet_pytorch-image-models/resnext50_32x4d.csv",
+        "dataset_name": "ImageNet",
+        "model": "resnext50_32x4d",
+        "ece_expected": 0.05804360030577724,
+        "ece_ci_width": 0.004293579205581294
+    }
+}
