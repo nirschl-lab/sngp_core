@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 from loguru import logger
 
+import relplot
 from src.metrics.smooth_ece import smECE_fast_compat
 from src.metrics.utils import _bootstrap_ci_width
 from src.visualization.reliability import (rel_diagram_binned,
@@ -96,10 +97,8 @@ for dataset in sample_data.keys():
     )
 
     # test plot reliability diagram
-    fig, ax = rel_diagram_binned(f, y, nbins=15)
-    plt.show()
-
-    fig, ax = rel_diagram_smoothed(f, y)
+    fig, ax = rel_diagram_smoothed(f, y, sigma=0.1, n_bootstrap=500)
+    plt.title(f"Custom implementation")
     plt.show()
 
 #
