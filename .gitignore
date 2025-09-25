@@ -153,10 +153,14 @@ dmypy.json
 *.tar
 *.tar.gz
 *.zip
+*.gz
+*.npy
 
 # Lightning-Hydra-Template
 configs/local/default.yaml
-data/**
+data/MNIST
+data/**/*.png
+data/**/*.json
 logs/**
 .env
 
