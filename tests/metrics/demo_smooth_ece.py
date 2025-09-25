@@ -96,8 +96,13 @@ for dataset in sample_data.keys():
         f"{dataset}: CI width = {ece_ci_width:.6f}, expected CI width = {sample_data[dataset]['ece_ci_width']:.6f}"
     )
 
+    #
+    fig, ax = rel_diagram_binned(f, y, nbins=10)
+    plt.title(f"Custom implementation")
+    plt.show()
+
     # test plot reliability diagram
-    fig, ax = rel_diagram_smoothed(f, y, sigma=0.1, n_bootstrap=500)
+    fig, ax = rel_diagram_smoothed(f, y, sigma=0.1, n_bootstrap=100)
     plt.title(f"Custom implementation")
     plt.show()
 

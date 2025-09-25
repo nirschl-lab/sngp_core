@@ -3,6 +3,8 @@
 
 Smoothed Expected Calibration Error  (Błasiok & Nakkiran 2023).
 """
+from typing import Any, Dict, Literal, Tuple, Union
+
 import numpy as np
 from loguru import logger
 from pydantic import PositiveFloat, PositiveInt
@@ -138,33 +140,13 @@ def _reflected_convolve(values: np.ndarray, ker: np.ndarray) -> np.ndarray:
     return conv[m // 2 : m // 2 + m]
 
 
-def smECE_fast_compat(
-    f: np.ndarray,  # probs Nx1
-    y: np.ndarray,  # targets Nx1
+def _smece_binary_core(
+    f: np.ndarray,
+    y: np.ndarray,
     eps: float = 1e-3,
     m: PositiveInt = 200,
-    return_width: bool = False,
-) -> float | tuple[float, float]:
-    """
-    Computes the smoothed Expected Calibration Error (smECE) in probability space.
-
-    This function estimates the calibration error by adaptively refining a discretized grid
-    and performing a binary search to find the optimal smoothing parameter. It returns either
-    the smoothed ECE value or a tuple of the value and the smoothing width.
-
-    Args:
-        f: Array of predicted probabilities, shape (N,).
-        y: Array of true targets, shape (N,).
-        eps: Stopping threshold for the search (default 1e-3).
-        m: Initial number of grid points for discretization (default 200).
-        return_width: If True, also return the smoothing width (sigma).
-
-    Returns:
-        The smoothed ECE value as a float, or a tuple (value, sigma) if return_width is True.
-
-    Raises:
-        AssertionError: If input arrays do not have the same shape or are empty.
-    """
+) -> Tuple[float, float]:
+    """smECE Binary classification: returns (value, sigma)."""
     f = np.asarray(f, float).reshape(-1)
     y = np.asarray(y, float).reshape(-1)
     assert f.shape == y.shape and f.size > 0
@@ -183,7 +165,7 @@ def smECE_fast_compat(
         _maybe_refine(alpha)
         return (alpha < eps) or (alpha < _smooth_ece_interpolated(r_grid, alpha))
 
-    # Binary search like orig search_param
+    # Binary search
     start, end = 1.0, 0.0
     sigma = start
     for _ in range(10):
@@ -194,4 +176,133 @@ def smECE_fast_compat(
             start = mid
 
     val = _smooth_ece_interpolated(r_grid, sigma)
-    return (val, float(sigma)) if return_width else val
+    return float(val), float(sigma)
+
+
+def smECE_fast_compat(
+    f: np.ndarray,
+    y: np.ndarray,
+    eps: float = 1e-3,
+    m: PositiveInt = 200,
+    return_width: bool = False,
+    *,
+    average: Literal["macro", "weighted"] = "macro",
+    return_details: bool = False,
+) -> Union[
+    float,
+    Tuple[float, float],
+    Dict[str, Any],
+]:
+    """
+    Smoothed ECE in probability space (binary *and* multiclass).
+
+    Parameters
+    ----------
+    f : np.ndarray
+        - Binary: shape (n,), predicted probabilities for the positive class.
+        - Multiclass: shape (n, C), class probabilities over C classes.
+    y : np.ndarray
+        - Binary: shape (n,), 0/1 labels.
+        - Multiclass: shape (n,), integer labels in {0, …, C-1}.
+    eps : float
+        Fixed-point search threshold for bandwidth.
+    m : int
+        Initial grid size for discretization (refined automatically).
+    return_width : bool
+        If True (binary): return (value, sigma).
+        If True (multiclass): return (value, sigmas_per_class_mean)  # kept for backward compat.
+    average : {"macro","weighted"}
+        Aggregation of per-class smECE for multiclass.
+    return_details : bool
+        If True (multiclass): return a dict with rich fields.
+
+    Returns
+    -------
+    - Binary:
+        value : float
+        or (value, sigma) if return_width.
+    - Multiclass:
+        default: value : float
+        if return_width: (value, sigma_bar)  # mean bandwidth just to preserve tuple type
+        if return_details: dict with
+            {
+              "value": float,
+              "per_class": np.ndarray[C],
+              "sigmas": np.ndarray[C],
+              "weights": np.ndarray[C],
+              "average": "macro" or "weighted"
+            }
+
+    Notes
+    -----
+    - Multiclass is computed via one-vs-rest reduction:
+        f_c = P(Y=c),  y_c = 1{y==c}
+      Then aggregate per-class smECE by macro-mean or label-frequency weighting.
+    - We do NOT normalize by density (faithful to Apple fast path).
+    """
+    f = np.asarray(f)
+    y = np.asarray(y)
+
+    # --- Binary classification---
+    if f.ndim == 1:
+        val, sigma = _smece_binary_core(f, y, eps=eps, m=m)
+        if return_width:
+            return val, sigma
+        return val
+
+    # --- Multiclass classification ---
+    if f.ndim != 2:
+        raise ValueError("f must be 1D (binary) or 2D (n, C) for multiclass.")
+
+    n, C = f.shape
+    if y.ndim != 1 or y.shape[0] != n:
+        raise ValueError(
+            "For multiclass, y must be shape (n,) with integer class labels."
+        )
+    y_int = y.astype(int).reshape(-1)
+    if (y_int < 0).any() or (y_int >= C).any():
+        logger.debug(f"y unique labels: {np.unique(y_int)}")
+        logger.debug(f"C={C}")
+        raise ValueError("y contains class indices outside [0, C-1].")
+
+    per_class_vals = np.zeros(C, dtype=float)
+    per_class_sigmas = np.zeros(C, dtype=float)
+    class_weights = np.zeros(C, dtype=float)
+
+    for c in range(C):
+        f_c = np.asarray(f[:, c], float).reshape(-1)
+        y_c = (y_int == c).astype(float).reshape(-1)
+        per_class_vals[c], per_class_sigmas[c] = _smece_binary_core(
+            f_c, y_c, eps=eps, m=m
+        )
+        class_weights[c] = float(y_c.mean())  # prevalence
+
+    if average == "macro":
+        value = float(per_class_vals.mean())
+    elif average == "weighted":
+        if class_weights.sum() == 0:
+            value = float(per_class_vals.mean())
+        else:
+            value = float(np.average(per_class_vals, weights=class_weights))
+    else:
+        raise ValueError("average must be 'macro' or 'weighted'.")
+
+    if return_details:
+        return {
+            "value": value,
+            "per_class": per_class_vals,
+            "sigmas": per_class_sigmas,
+            "weights": class_weights,
+            "average": average,
+        }
+
+    if return_width:
+        # For backward compat with binary tuple return, provide an aggregate sigma.
+        # We use a weighted mean of sigmas under the same 'average' policy.
+        if average == "macro" or class_weights.sum() == 0:
+            sigma_bar = float(per_class_sigmas.mean())
+        else:
+            sigma_bar = float(np.average(per_class_sigmas, weights=class_weights))
+        return value, sigma_bar
+
+    return value

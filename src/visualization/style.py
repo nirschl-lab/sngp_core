@@ -15,10 +15,10 @@ def set_default_style(use_tex: bool = False) -> None:
     mpl.rcParams.update(
         {
             "axes.edgecolor": "0.5",
-            "font.size": 22,
+            "font.size": 18,
             "legend.frameon": False,
             "patch.force_edgecolor": False,
-            "figure.figsize": [6.0, 6.0],
+            "figure.figsize": [10.0, 10.0],
             "axes.titlepad": 20,
         }
     )
