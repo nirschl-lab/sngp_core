@@ -116,7 +116,7 @@ def plot_rel_diagram_binned(
     Uses legends for class labels and per-class ECEs, positioned outside the plot.
     """
     if ax is None:
-        fig, ax = plt.subplots(figsize=(6, 6))
+        fig, ax = plt.subplots(figsize=(8, 6), constrained_layout=True)
     else:
         fig = ax.figure
 
@@ -160,13 +160,15 @@ def plot_rel_diagram_binned(
         labels.append(f"Aggregate ECE = {diagram['ece']:.3f}")
 
     # Place legend outside plot (right side)
-    ax.legend(
-        handles,
-        labels,
-        loc="center left",
-        bbox_to_anchor=(1.05, 0.5),
-        frameon=True,
-    )
+    if labels:
+        ax.legend(
+            handles,
+            labels,
+            loc="center left",
+            bbox_to_anchor=(1.02, 0.5),
+            borderaxespad=0,
+            frameon=True,
+        )
 
     # Labels and axes
     ax.set_xlim(0, 1)
@@ -178,13 +180,13 @@ def plot_rel_diagram_binned(
     if title:
         ax.set_title(title)
 
-    fig.tight_layout(rect=[0, 0, 0.8, 1])  # leave space for legend
+    # fig.tight_layout(rect=[0, 0, 0.8, 1])  # leave space for legend
     return fig, ax
 
 
 
-def rel_diagram_binned(f: np.ndarray, y: np.ndarray, nbins: int = 15, ax=None):
-    return plot_rel_diagram_binned(prepare_rel_diagram_binned(f, y, nbins), ax=ax)
+def rel_diagram_binned(f: np.ndarray, y: np.ndarray, nbins: int = 15, **kwargs):
+    return plot_rel_diagram_binned(prepare_rel_diagram_binned(f, y, nbins), **kwargs)
 
 
 # === SMOOTHED ECE ===
@@ -313,10 +315,10 @@ def plot_rel_diagram_smoothed(
 ) -> Tuple[plt.Figure, plt.Axes]:
     """
     Plot a smoothed reliability diagram from prepared data (binary or multiclass).
-    Uses external legends (like binned).
+    Uses external legends (like binned), with harmonized colors.
     """
     if ax is None:
-        fig, ax = plt.subplots(figsize=(6, 6))
+        fig, ax = plt.subplots(figsize=(8, 6), constrained_layout=True)
     else:
         fig = ax.figure
 
@@ -324,6 +326,11 @@ def plot_rel_diagram_smoothed(
 
     t = diagram["mesh"]
     mus = diagram["mu"]
+
+    # Choose consistent color palette
+    if colors is None:
+        C = len(mus)
+        colors = plt.cm.tab10.colors if C <= 10 else plt.cm.tab20.colors
 
     # Perfect calibration diagonal
     if show_diagonal:
@@ -339,21 +346,18 @@ def plot_rel_diagram_smoothed(
                 t, diagram["lower"], diagram["upper"],
                 color="gray", alpha=0.3, label="95% CI"
             )
-        ax.plot(t, mu, color="red", lw=2, label="Smoothed calibration")
+        ax.plot(t, mu, color=colors[0], lw=2, label="Smoothed calibration")
 
         if "ce" in diagram:
             ce_text = f"smECE = {diagram['ce']:.3f}"
             if "ce_ci_width" in diagram:
                 ce_text += f" ± {diagram['ce_ci_width']:.3f}"
-            handles.append(plt.Line2D([0], [0], color="red", lw=2))
+            handles.append(plt.Line2D([0], [0], color=colors[0], lw=2))
             labels.append(ce_text)
 
     # === Multiclass case ===
     else:
         C = len(mus)
-        if colors is None:
-            colors = plt.cm.tab10.colors if C <= 10 else plt.cm.tab20.colors
-
         for c, mu in enumerate(mus):
             color = colors[c % len(colors)]
             ax.plot(t, mu, lw=2, color=color)
@@ -373,7 +377,8 @@ def plot_rel_diagram_smoothed(
             handles,
             labels,
             loc="center left",
-            bbox_to_anchor=(1.05, 0.5),
+            bbox_to_anchor=(1.02, 0.5),  # slightly outside
+            borderaxespad=0,
             frameon=True,
         )
 
@@ -388,7 +393,7 @@ def plot_rel_diagram_smoothed(
         ax.set_title(title)
 
     # Leave space on the right for the legend
-    fig.tight_layout(rect=[0, 0, 0.8, 1])
+    # fig.tight_layout(rect=[0, 0, 0.8, 1])
 
     return fig, ax
 

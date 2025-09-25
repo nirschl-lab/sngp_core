@@ -152,11 +152,12 @@ dmypy.json
 *.h5
 *.tar
 *.tar.gz
+*.zip
 
 # Lightning-Hydra-Template
 configs/local/default.yaml
-/data/
-/logs/
+data/**
+logs/**
 .env
 
 # Aim logging
@@ -164,3 +165,7 @@ configs/local/default.yaml
 
 #other
 /checkpoints/
+
+# allow dvc
+!data/**/*.dvc
+!*.dvc
