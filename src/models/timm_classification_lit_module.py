@@ -9,6 +9,7 @@ from torchmetrics.classification import MulticlassCalibrationError
 from src.visualization.multi_class_ROC import plot_roc_curve
 from src.visualization.plot_prob_histograms import single_model_probablity_histogram
 from src.visualization.plot_ece import plot_calibration_curve
+from src.visualization.reliability import rel_diagram_smoothed, rel_diagram_binned
 import matplotlib.pyplot as plt
 import wandb
 import pdb
@@ -179,7 +180,8 @@ class TimmClassificationLitModule(LightningModule):
         # update and log metrics
         self._test_probs.append(probs.detach().cpu())
         self._test_targets.append(targets.detach().cpu())
-
+        # self.log_.info(f'probs shape - {}')
+        pdb.set_trace()
         self.test_loss(loss)
         self.test_acc(preds, targets)
         self.test_ece(probs, targets)
@@ -189,28 +191,38 @@ class TimmClassificationLitModule(LightningModule):
         
     def on_test_epoch_end(self) -> None:
         """Lightning hook that is called when a test epoch ends."""
-        # self.log_.info('------------------->< * * ><---test epoch end----------')
-        probs_all = torch.cat(self._test_probs).numpy()
-        targets = torch.cat(self._test_targets).numpy()
+        probs_all = torch.cat(self._test_probs).numpy() # n x C
+        targets = torch.cat(self._test_targets).numpy() # N x 1 (0-C)
         prediction_prob_score = np.max(probs_all, axis=1)
+        true_bin_label = (np.argmax(probs_all, axis=-1) == targets)*1
+        # pdb.set_trace()
+        fig, ax = rel_diagram_smoothed(prediction_prob_score, true_bin_label, n_bootstrap=100, num_mesh=200)
+        self.logger.experiment.log({"test/smooth_ece_plot": wandb.Image(fig)})
+        # fig.close()
+
+        fig, ax = rel_diagram_binned(prediction_prob_score, true_bin_label)
+        self.logger.experiment.log({"test/binned_ece_plot": wandb.Image(fig)})
+
 
         # pdb.set_trace()
-        fig = plot_calibration_curve(preds=probs_all, \
-                                    targets=targets, \
-                                    num_classes=self.num_classes, \
-                                    n_bins=self.calibration_curve_bins, \
-                                    image_classes=self.test_idx_to_classes)
+        # fig = plot_calibration_curve(preds=probs_all, \
+        #                             targets=targets, \
+        #                             num_classes=self.num_classes, \
+        #                             n_bins=self.calibration_curve_bins, \
+        #                             image_classes=self.test_idx_to_classes)
         
-        self.logger.experiment.log({"test/ece_plot": wandb.Image(fig)})
-        plt.close(fig)
+        # self.logger.experiment.log({"test/ece_plot": wandb.Image(fig)})
+        # plt.close(fig)
 
-        fig = plot_roc_curve(probs_all, targets, num_classes=self.num_classes, class_names=self.test_idx_to_classes)
-        self.logger.experiment.log({"test/roc_curve": wandb.Image(fig)})
-        plt.close(fig)
+        # fig = plot_roc_curve(probs_all, targets, num_classes=self.num_classes, class_names=self.test_idx_to_classes)
+        # self.logger.experiment.log({"test/roc_curve": wandb.Image(fig)})
+        # plt.close(fig)
         
         fig = single_model_probablity_histogram(prediction_prob_score, bins=self.hist_bins)
         self.logger.experiment.log({"test/logits_distribution": wandb.Image(fig)})
         plt.close(fig)
+    
+    # def _convert_multi_class_to_binary(bro)
         
 
     def setup(self, stage: str) -> None:

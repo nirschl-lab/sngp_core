@@ -7,7 +7,7 @@ defaults:
 
 model_checkpoint:
   dirpath: ${paths.output_dir}/checkpoints
-  filename: "epoch_{epoch:03d}"
+  filename: "epoch={epoch}-step={step}-val_acc={val/acc:.2f}"
   monitor: "val/acc"
   mode: "max"
   save_last: True
@@ -15,7 +15,7 @@ model_checkpoint:
 
 early_stopping:
   monitor: "val/acc"
-  patience: 100
+  patience: 5
   mode: "max"
 
 model_summary:

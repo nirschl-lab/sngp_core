@@ -29,7 +29,6 @@ class TimmSNGPClassifier(nn.Module):
                             )
         
         in_feats = getattr(self.backbone, "num_features", None)
-        self.pool = nn.AdaptiveAvgPool2d(1)
         self.reduce_dim = nn.Linear(in_feats, reduction_dim)
 
         self.sngp_classifier = SNGP(
