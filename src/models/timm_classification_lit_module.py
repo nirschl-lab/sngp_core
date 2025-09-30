@@ -1,3 +1,4 @@
+import os
 from typing import Any, Dict, Tuple, List
 
 import torch
@@ -7,7 +8,7 @@ import torch.nn.functional as F
 from torchmetrics.classification.accuracy import Accuracy 
 from torchmetrics.classification import MulticlassCalibrationError
 from src.visualization.multi_class_ROC import plot_roc_curve
-from src.visualization.plot_prob_histograms import single_model_probablity_histogram
+from src.visualization.plot_prob_histograms import single_model_probability_histogram
 from src.visualization.plot_ece import plot_calibration_curve
 from src.visualization.reliability import rel_diagram_smoothed, rel_diagram_binned
 import matplotlib.pyplot as plt
@@ -15,6 +16,7 @@ import wandb
 import pdb
 import numpy as np
 from src.utils import RankedLogger
+import pandas as pd
 
 class TimmClassificationLitModule(LightningModule):
     
@@ -28,6 +30,8 @@ class TimmClassificationLitModule(LightningModule):
         hist_bins = 10, #for histogram plotting
         calibration_curve_bins=10, #for ece plot
         reset_sngp_precision=False,
+        test_name = "test_predictions",
+        log_csv = False
     ) -> None:
         """Initialize a `MNISTLitModule`.
 
@@ -65,9 +69,10 @@ class TimmClassificationLitModule(LightningModule):
 
         self._test_probs: List[torch.Tensor] = []
         self._test_targets: List[torch.Tensor] = []
+        self._test_image_ids: List[str] = []
 
-        self._predict_probs: List[torch.Tensor] = []
-        self._predict_targets: List[torch.Tensor] = []
+        # self._predict_probs: List[torch.Tensor] = []
+        # self._predict_targets: List[torch.Tensor] = []
 
         #plotting
         self.hist_bins = hist_bins
@@ -76,6 +81,10 @@ class TimmClassificationLitModule(LightningModule):
 
         #sngp specifics
         self.reset_sngp_precision = reset_sngp_precision
+
+        # csv name
+        self.test_name = test_name
+        self.log_csv = log_csv
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Perform a forward pass through the model `self.net`.
@@ -105,7 +114,7 @@ class TimmClassificationLitModule(LightningModule):
             - A tensor of predictions.
             - A tensor of target labels.
         """
-        x, y = batch
+        img_ids, x, y = batch
         logits = self.forward(x)
         # pdb.set_trace()
         if len(logits.shape) > 2: # for sngp output is B, L, Cov_matrix
@@ -114,7 +123,7 @@ class TimmClassificationLitModule(LightningModule):
         loss = self.criterion(logits, y)
         probs = torch.softmax(logits, dim=1)
         preds = torch.argmax(probs, dim=1)
-        return loss, probs, preds, y
+        return img_ids, loss, probs, preds, y
 
     def training_step(
         self, batch: Tuple[torch.Tensor, torch.Tensor], batch_idx: int
@@ -127,7 +136,7 @@ class TimmClassificationLitModule(LightningModule):
         :return: A tensor of losses between model predictions and targets.
         """
         # self.log_.info('------------------->< * * ><-------------')
-        loss, probs, preds, targets = self.model_step(batch)
+        img_ids, loss, probs, preds, targets = self.model_step(batch)
 
         # update and log metrics
         self.train_loss(loss)
@@ -150,7 +159,7 @@ class TimmClassificationLitModule(LightningModule):
             labels.
         :param batch_idx: The index of the current batch.
         """
-        loss, probs, preds, targets = self.model_step(batch)
+        img_ids, loss, probs, preds, targets = self.model_step(batch)
 
         # update and log metrics
         self.val_loss(loss)
@@ -175,13 +184,15 @@ class TimmClassificationLitModule(LightningModule):
         """
         # self.log_.info('------------------->< * * ><----------test step---')
         # print('-------------------test step-------------')
-        loss, probs, preds, targets = self.model_step(batch)
+        img_ids, loss, probs, preds, targets = self.model_step(batch)
 
         # update and log metrics
         self._test_probs.append(probs.detach().cpu())
         self._test_targets.append(targets.detach().cpu())
+        self._test_image_ids.extend(img_ids)  # Assuming img_ids is a list of strings
+        # pdb.set_trace()
         # self.log_.info(f'probs shape - {}')
-        pdb.set_trace()
+        # pdb.set_trace()
         self.test_loss(loss)
         self.test_acc(preds, targets)
         self.test_ece(probs, targets)
@@ -193,8 +204,24 @@ class TimmClassificationLitModule(LightningModule):
         """Lightning hook that is called when a test epoch ends."""
         probs_all = torch.cat(self._test_probs).numpy() # n x C
         targets = torch.cat(self._test_targets).numpy() # N x 1 (0-C)
+        # pdb.set_trace()
         prediction_prob_score = np.max(probs_all, axis=1)
+        prediction = np.argmax(probs_all, axis=-1)
         true_bin_label = (np.argmax(probs_all, axis=-1) == targets)*1
+
+        # Create DataFrame with all the data
+        data_dict = {
+            'image_id': self._test_image_ids,
+            'target': targets,
+            'prediction': prediction,
+            'prediction_prob_score': prediction_prob_score,
+            'true_bin_label': true_bin_label,
+            'class_probs': probs_all.tolist()
+        }
+
+        if self.log_csv:
+            self._log_csv_artifact(data_dict)
+
         # pdb.set_trace()
         fig, ax = rel_diagram_smoothed(prediction_prob_score, true_bin_label, n_bootstrap=100, num_mesh=200)
         self.logger.experiment.log({"test/smooth_ece_plot": wandb.Image(fig)})
@@ -218,11 +245,28 @@ class TimmClassificationLitModule(LightningModule):
         # self.logger.experiment.log({"test/roc_curve": wandb.Image(fig)})
         # plt.close(fig)
         
-        fig = single_model_probablity_histogram(prediction_prob_score, bins=self.hist_bins)
+        fig = single_model_probability_histogram(prediction_prob_score, bins=self.hist_bins)
         self.logger.experiment.log({"test/logits_distribution": wandb.Image(fig)})
         plt.close(fig)
+
+    def _log_csv_artifact(self, data_dict):
+
+        df = pd.DataFrame(data_dict)
+        csv_path = self.test_name + ".csv"
+        df.to_csv(csv_path, index=False)
+        # Create and log wandb artifact
+        artifact = wandb.Artifact(
+            name=self.test_name,
+            type="predictions",
+            description="Test set predictions with probabilities and metadata"
+        )
+        artifact.add_file(csv_path)
+        self.logger.experiment.log_artifact(artifact)
     
-    # def _convert_multi_class_to_binary(bro)
+        # Clean up local file if desired
+        import os
+        os.remove(csv_path)
+    
         
 
     def setup(self, stage: str) -> None:

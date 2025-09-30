@@ -6,6 +6,7 @@ wandb/
 artifacts/
 timm_cache_dir/
 temp_data_cache/
+csv/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

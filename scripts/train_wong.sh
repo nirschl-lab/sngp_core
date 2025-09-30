@@ -3,26 +3,26 @@
 set -e
 
 # --------- User-configurable parameters ---------
-MODEL="timm_basic_classifier"
+MODEL="timm_sngp_classifier"
 DATA="acevedo_image_classifier"
 MAX_EPOCHS=50
 LR=1e-4
 CALLBACKS="default"
 HIST_BINS=10
-WANDB_LOG_MODEL=False
+WANDB_LOG_MODEL=True
 ACCELERATOR=gpu
-BATCH_SIZE=512
+BATCH_SIZE=256
 
 DATASET="nirschl-lab/wong_et_al_2022"
 N_CLASSES=4
 
-WANDB_GROUP="training"
-EXPERIMENT_NAME="basline_tang"
+WANDB_GROUP="training_fixing_gpu"
+EXPERIMENT_NAME="sngp_wong"
 
 # --------- Script ---------
 # Usage: ./run_basic.sh [extra hydra args]
 
-uv run src/train.py \
+CUDA_VISIBLE_DEVICES=2 uv run src/train.py \
     model=$MODEL \
     data=$DATA \
     data.datamodule.dataset_name=$DATASET \

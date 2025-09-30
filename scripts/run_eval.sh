@@ -9,6 +9,7 @@ DATA="acevedo_image_classifier"
 
 CKPT_PATH="logs/train/runs/2025-09-17_15-02-56/checkpoints/epoch_043.ckpt"
 MODEL="timm_sngp_classifier"
+# WANDB_ARTIFACT="nirschl-lab/SNGP/model-bpsugy0j:v1"
 
 # CKPT_PATH="logs/train/runs/2025-09-17_15-52-06/checkpoints/epoch_045.ckpt"
 # MODEL="timm_basic_classifier"
@@ -18,6 +19,8 @@ EXPERIMENT_NAME="testing1"
 ACCELERATOR=gpu
 BATCH_SIZE=2048
 
+TEST_NAME="trail"
+LOG_CSV=False
 
 # DATASET_NAMES=(
 #     "nirschl-lab/nirschl_et_al_2018"
@@ -42,3 +45,5 @@ uv run src/eval.py \
 	logger.wandb.group="${WANDB_GROUP}" \
 	+logger.wandb.name="${EXPERIMENT_NAME}" \
     trainer.accelerator=$ACCELERATOR \
+	model.test_name=$TEST_NAME \
+	model.log_csv=$LOG_CSV

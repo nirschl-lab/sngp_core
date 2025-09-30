@@ -48,6 +48,20 @@ def evaluate(cfg: DictConfig) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     """
     assert cfg.ckpt_path
 
+    
+
+    if not cfg.ckpt_path.endswith(".ckpt"):
+        import wandb
+        project = cfg.get("logger")['wandb'].get('project', 'default-project')
+        job_type = cfg.get("logger")['wandb'].get('job_type', 'inference')
+
+        run = wandb.init(project=project, job_type=job_type)
+        artifact = run.use_artifact(cfg.ckpt_path.replace("wandb-artifact://", ""), type='model')
+        artifact_dir = artifact.download()
+        cfg.ckpt_path = f"{artifact_dir}/model.ckpt" # Adjust if your checkpoint name is different
+        log.info(f"Using checkpoint from W&B artifact: {cfg.ckpt_path}")
+    # pdb.set_trace()
+
     train_augmentations = None
     test_augmentations = None
 

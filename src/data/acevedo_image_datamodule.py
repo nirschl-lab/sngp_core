@@ -27,12 +27,13 @@ class HFDataset(Dataset):
         try:
             image = item['image']  # PIL Image
             label = item['label']
+            image_id = item['image_id']
         except TypeError as e:
             pdb.set_trace()
             raise
         if self.transform:
             image = self.transform(image)
-        return image, label
+        return image_id, image, label
     
 class AcevedoImageDataModule(LightningDataModule):
     """`LightningDataModule` for the Acevedo Image dataset.

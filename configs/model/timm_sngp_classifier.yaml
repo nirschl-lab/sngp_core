@@ -26,3 +26,7 @@ compile: false
 
 #no of bins for drawing histogram at the end of training on testset
 hist_bins: 25
+
+#test csv name
+test_name: "test_predictions.csv"
+log_csv: false
