@@ -69,8 +69,11 @@ class TimmClassificationLitModule(LightningModule):
 
         # Add precision, recall, and F1 metrics
         self.test_precision = MulticlassPrecision(num_classes=self.num_classes, average='macro')
+        self.val_precision = MulticlassPrecision(num_classes=self.num_classes, average='macro')
         self.test_recall = MulticlassRecall(num_classes=self.num_classes, average='macro')
+        self.val_recall = MulticlassRecall(num_classes=self.num_classes, average='macro')
         self.test_f1 = MulticlassF1Score(num_classes=self.num_classes, average='macro')
+        self.val_f1 = MulticlassF1Score(num_classes=self.num_classes, average='macro')
         
         # Per-class metrics for detailed analysis
         self.test_precision_per_class = MulticlassPrecision(num_classes=self.num_classes, average=None)
@@ -85,6 +88,9 @@ class TimmClassificationLitModule(LightningModule):
 
         # for tracking best so far validation accuracy
         self.val_acc_best = MaxMetric()
+        self.val_precision_best = MaxMetric()
+        self.val_recall_best = MaxMetric()
+        self.val_f1_best = MaxMetric()
 
         self._test_probs: List[torch.Tensor] = []
         self._test_targets: List[torch.Tensor] = []
@@ -238,16 +244,33 @@ class TimmClassificationLitModule(LightningModule):
         # update and log metrics
         self.val_loss(loss)
         self.val_acc(preds, targets)
+        self.val_precision(preds, targets)
+        self.val_recall(preds, targets)
+        self.val_f1(preds, targets)
+        
         self.log("val/loss", self.val_loss, on_step=False, on_epoch=True, prog_bar=True)
         self.log("val/acc", self.val_acc, on_step=False, on_epoch=True, prog_bar=True)
+        self.log("val/precision", self.val_precision, on_step=False, on_epoch=True, prog_bar=True)
+        self.log("val/recall", self.val_recall, on_step=False, on_epoch=True, prog_bar=True)
+        self.log("val/f1", self.val_f1, on_step=False, on_epoch=True, prog_bar=True)
 
     def on_validation_epoch_end(self) -> None:
         "Lightning hook that is called when a validation epoch ends."
         acc = self.val_acc.compute()  # get current val acc
         self.val_acc_best(acc)  # update best so far val acc
+        precision = self.val_precision.compute()
+        self.val_precision_best(precision)  # update best so far val precision
+        recall = self.val_recall.compute()
+        self.val_recall_best(recall)  # update best so far val recall
+        f1 = self.val_f1.compute()
+        self.val_f1_best(f1)  # update best so far val f1
+        
         # log `val_acc_best` as a value through `.compute()` method, instead of as a metric object
         # otherwise metric would be reset by lightning after each epoch
         self.log("val/acc_best", self.val_acc_best.compute(), sync_dist=True, prog_bar=True)
+        self.log("val/precision_best", self.val_precision_best.compute(), sync_dist=True, prog_bar=True)
+        self.log("val/recall_best", self.val_recall_best.compute(), sync_dist=True, prog_bar=True)
+        self.log("val/f1_best", self.val_f1_best.compute(), sync_dist=True, prog_bar=True)
 
     def test_step(self, batch: Tuple[torch.Tensor, torch.Tensor], batch_idx: int) -> None:
         """Perform a single test step on a batch of data from the test set.
