@@ -7,6 +7,7 @@ from typing import Optional, Iterable
 class TimmBasicClassifier(nn.Module):
     def __init__(self, model_name, num_classes, pretrained=True, in_chans=3):
         super().__init__()
+        self.num_classes = num_classes
 
         self.backbone = timm.create_model(
             model_name,
@@ -18,6 +19,17 @@ class TimmBasicClassifier(nn.Module):
     def forward(self, x):
         return self.backbone(x)
 
+class TimmDropOutBasicClassifier(nn.Module):
+    def __init__(self, model_name, num_classes, pretrained=True, in_chans=3, drop_rate=0.2):
+        super().__init__()
+        self.num_classes = num_classes
+        self.model = timm.create_model(model_name, pretrained=pretrained, num_classes=self.num_classes, in_chans=in_chans)
+        in_features = self.model.get_classifier().in_features if hasattr(self.model.get_classifier(), 'in_features') else self.model.fc.in_features
+        self.model.fc = nn.Sequential(nn.Dropout(p=drop_rate), nn.Linear(in_features, 4))
+    
+    def forward(self, x):
+        return self.model(x)
+
 class TimmSNGPClassifier(nn.Module):
     def __init__(self, 
                  model_name, 
@@ -26,6 +38,7 @@ class TimmSNGPClassifier(nn.Module):
                  in_chans=3,
                  reduction_dim=512):
         super().__init__()
+        self.num_classes = num_classes
 
         self.backbone = timm.create_model(
                             model_name,

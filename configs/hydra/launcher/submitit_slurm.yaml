@@ -1,0 +1,20 @@
+defaults:
+  - submitit_slurm
+
+partition: shared
+nodes: 1
+tasks_per_node: 1
+cpus_per_task: 8
+mem_gb: 32
+timeout_min: 120
+name: optuna_baseline_tang
+
+# Request 1 NVIDIA L40S per trial (use ONLY one of gres or gpus_per_node)
+gpus_per_node: null
+gres: "gpu:nvidia_l40s:3"
+
+# If your site needs these, uncomment:
+# account: your_account
+# qos: your_qos
+# sbatch_args:
+#   # constraint: "nvidia_l40s"  # usually not needed since you already specify the GPU type in gres

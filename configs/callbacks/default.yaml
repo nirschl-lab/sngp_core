@@ -7,7 +7,7 @@ defaults:
 
 model_checkpoint:
   dirpath: ${paths.output_dir}/checkpoints
-  filename: "epoch={epoch}-step={step}-val_acc={val/acc:.2f}"
+  filename: "epoch_{epoch}_step_{step}_val_acc={val/acc:.2f}"
   monitor: "val/acc"
   mode: "max"
   save_last: True

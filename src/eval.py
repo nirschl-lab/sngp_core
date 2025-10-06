@@ -48,19 +48,35 @@ def evaluate(cfg: DictConfig) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     """
     assert cfg.ckpt_path
 
-    
+    log.info("Instantiating loggers...")
+    logger: List[Logger] = instantiate_loggers(cfg.get("logger"))
 
     if not cfg.ckpt_path.endswith(".ckpt"):
         import wandb
-        project = cfg.get("logger")['wandb'].get('project', 'default-project')
-        job_type = cfg.get("logger")['wandb'].get('job_type', 'inference')
-
-        run = wandb.init(project=project, job_type=job_type)
+        from lightning.pytorch.loggers import WandbLogger
+        
+        # Find the WandbLogger from instantiated loggers
+        wandb_logger = None
+        for lg in logger:
+            if isinstance(lg, WandbLogger):
+                wandb_logger = lg
+                break
+        
+        if wandb_logger is not None:
+            # Use the existing W&B run from the logger
+            run = wandb_logger.experiment
+            log.info(f"Using existing W&B run: {run.id}")
+        else:
+            # Fallback to creating new run if no WandbLogger found
+            project = cfg.get("logger")['wandb'].get('project', 'default-project')
+            job_type = cfg.get("logger")['wandb'].get('job_type', 'inference')
+            run = wandb.init(project=project, job_type=job_type)
+            log.info("Created new W&B run for artifact download")
+        
         artifact = run.use_artifact(cfg.ckpt_path.replace("wandb-artifact://", ""), type='model')
         artifact_dir = artifact.download()
-        cfg.ckpt_path = f"{artifact_dir}/model.ckpt" # Adjust if your checkpoint name is different
+        cfg.ckpt_path = f"{artifact_dir}/model.ckpt"
         log.info(f"Using checkpoint from W&B artifact: {cfg.ckpt_path}")
-    # pdb.set_trace()
 
     train_augmentations = None
     test_augmentations = None
@@ -74,9 +90,6 @@ def evaluate(cfg: DictConfig) -> Tuple[Dict[str, Any], Dict[str, Any]]:
 
     log.info(f"Instantiating model <{cfg.model._target_}>")
     model: LightningModule = hydra.utils.instantiate(cfg.model)
-
-    log.info("Instantiating loggers...")
-    logger: List[Logger] = instantiate_loggers(cfg.get("logger"))
 
     log.info(f"Instantiating trainer <{cfg.trainer._target_}>")
     trainer: Trainer = hydra.utils.instantiate(cfg.trainer, logger=logger)

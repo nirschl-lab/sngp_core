@@ -4,6 +4,7 @@ defaults:
   - _self_
   - data: acevedo_image_classifier # choose datamodule with `test_dataloader()` for evaluation
   - model: image_classifier_baseline
+  - callbacks: default
   - logger: wandb
   - trainer: default
   - paths: default

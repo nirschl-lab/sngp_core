@@ -1,0 +1,36 @@
+_target_: src.models.timm_classification_lit_module.TimmClassificationLitModule
+
+optimizer:
+  _target_: torch.optim.Adam
+  _partial_: true
+  lr: 0.001
+  weight_decay: 0.0
+
+scheduler:
+  _target_: torch.optim.lr_scheduler.ReduceLROnPlateau
+  _partial_: true
+  mode: min
+  factor: 0.1
+  patience: 10
+
+net:
+  _target_: src.models.timm_classification_models.TimmDropOutBasicClassifier
+  model_name: resnet50
+  num_classes: 8
+  pretrained: true
+  in_chans: 3
+  drop_rate: 0.2
+
+# compile model for faster training with pytorch 2.0
+compile: false
+
+#no of bins for drawing histogram at the end of training on testset
+hist_bins: 10
+
+#test csv name
+test_name: "test_predictions.csv"
+log_csv: false
+
+#mc for testing
+use_mc: false
+mc_passes: 25

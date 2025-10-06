@@ -6,7 +6,11 @@ from lightning import LightningModule
 from torchmetrics import MaxMetric, MeanMetric
 import torch.nn.functional as F
 from torchmetrics.classification.accuracy import Accuracy 
-from torchmetrics.classification import MulticlassCalibrationError
+from torchmetrics.classification import \
+                    MulticlassCalibrationError, \
+                    MulticlassPrecision, \
+                    MulticlassRecall, \
+                    MulticlassF1Score
 from src.visualization.multi_class_ROC import plot_roc_curve
 from src.visualization.plot_prob_histograms import single_model_probability_histogram
 from src.visualization.plot_ece import plot_calibration_curve
@@ -17,6 +21,7 @@ import pdb
 import numpy as np
 from src.utils import RankedLogger
 import pandas as pd
+from torch.nn.modules.dropout import _DropoutNd
 
 class TimmClassificationLitModule(LightningModule):
     
@@ -31,7 +36,10 @@ class TimmClassificationLitModule(LightningModule):
         calibration_curve_bins=10, #for ece plot
         reset_sngp_precision=False,
         test_name = "test_predictions",
-        log_csv = False
+        log_csv = False,
+        log_metrics_per_class = False,
+        use_mc = False,
+        mc_passes = 25
     ) -> None:
         """Initialize a `MNISTLitModule`.
 
@@ -46,19 +54,30 @@ class TimmClassificationLitModule(LightningModule):
         self.save_hyperparameters(logger=False)
 
         self.net = net
-        self.num_classes = num_classes
+        self.num_classes = self.net.num_classes
 
         # loss function
         self.criterion = torch.nn.CrossEntropyLoss()
 
         # metric objects for calculating and averaging accuracy across batches
-        self.train_acc = Accuracy(task="multiclass", num_classes=num_classes)
-        self.val_acc = Accuracy(task="multiclass", num_classes=num_classes)
-        self.test_acc = Accuracy(task="multiclass", num_classes=num_classes)
+        self.train_acc = Accuracy(task="multiclass", num_classes=self.num_classes)
+        self.val_acc = Accuracy(task="multiclass", num_classes=self.num_classes)
+        self.test_acc = Accuracy(task="multiclass", num_classes=self.num_classes)
 
         # for calculating ece
-        self.test_ece = MulticlassCalibrationError(num_classes=num_classes, n_bins=10, norm='l1')
+        self.test_ece = MulticlassCalibrationError(num_classes=self.num_classes, n_bins=10, norm='l1')
 
+        # Add precision, recall, and F1 metrics
+        self.test_precision = MulticlassPrecision(num_classes=self.num_classes, average='macro')
+        self.test_recall = MulticlassRecall(num_classes=self.num_classes, average='macro')
+        self.test_f1 = MulticlassF1Score(num_classes=self.num_classes, average='macro')
+        
+        # Per-class metrics for detailed analysis
+        self.test_precision_per_class = MulticlassPrecision(num_classes=self.num_classes, average=None)
+        self.test_recall_per_class = MulticlassRecall(num_classes=self.num_classes, average=None)
+        self.test_f1_per_class = MulticlassF1Score(num_classes=self.num_classes, average=None)
+
+        
         # for averaging loss across batches
         self.train_loss = MeanMetric()
         self.val_loss = MeanMetric()
@@ -85,6 +104,11 @@ class TimmClassificationLitModule(LightningModule):
         # csv name
         self.test_name = test_name
         self.log_csv = log_csv
+        self.log_metrics_per_class = log_metrics_per_class
+
+        #montae carlo
+        self.use_mc = use_mc
+        self.mc_passes = mc_passes
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Perform a forward pass through the model `self.net`.
@@ -101,6 +125,49 @@ class TimmClassificationLitModule(LightningModule):
         self.val_loss.reset()
         self.val_acc.reset()
         self.val_acc_best.reset()
+    
+    def _enable_mc_dropout(self):
+        """Freeze everything (eval) but keep dropout stochastic."""
+        self.net.eval()
+        for m in self.net.modules():
+            if isinstance(m, _DropoutNd):
+                m.train()
+
+    @torch.no_grad()
+    def _mc_forward(self, x: torch.Tensor, T: int):
+        """
+        Returns:
+        mean_logits: [B, C]
+        mean_probs:  [B, C]
+        var_probs:   [B, C]
+        pred_entropy: [B]
+        mutual_info:  [B]
+        """
+        self._enable_mc_dropout()
+        logits_list = []
+        probs_list = []
+        for _ in range(T):
+            logits_t = self.net(x)
+            # handle optional SNGP shape B, L, ...
+            if logits_t.ndim > 2:
+                logits_t = logits_t[0]
+            logits_list.append(logits_t)
+            probs_list.append(F.softmax(logits_t, dim=-1))
+
+        logits = torch.stack(logits_list, dim=0)   # [T, B, C]
+        probs  = torch.stack(probs_list,  dim=0)   # [T, B, C]
+
+        mean_logits = logits.mean(dim=0)           # [B, C]
+        mean_probs  = probs.mean(dim=0)            # [B, C]
+        # var_probs   = probs.var(dim=0, unbiased=False)
+
+        # Uncertainty (predictive entropy & BALD MI)
+        # eps = 1e-12
+        # pred_entropy = -(mean_probs * (mean_probs + eps).log()).sum(dim=-1)
+        # exp_entropy  = - (probs * (probs + eps).log()).sum(dim=-1).mean(dim=0)
+        # mutual_info  = pred_entropy - exp_entropy
+        # return mean_logits, mean_probs, var_probs, pred_entropy, mutual_info
+        return mean_logits, mean_probs
 
     def model_step(
         self, batch: Tuple[torch.Tensor, torch.Tensor]
@@ -115,14 +182,21 @@ class TimmClassificationLitModule(LightningModule):
             - A tensor of target labels.
         """
         img_ids, x, y = batch
-        logits = self.forward(x)
-        # pdb.set_trace()
-        if len(logits.shape) > 2: # for sngp output is B, L, Cov_matrix
-            logits = logits[:1]
-        
-        loss = self.criterion(logits, y)
-        probs = torch.softmax(logits, dim=1)
+
+        if self.use_mc:
+            self.log_.info('using monate carlo')
+            mean_logits, mean_probs = self._mc_forward(x, T=self.mc_passes)
+            logits = mean_logits
+            probs = mean_probs
+        else:
+            logits = self.forward(x)
+            if len(logits.shape) > 2: # for sngp output is B, L, Cov_matrix
+                logits = logits[:1]
+            probs = torch.softmax(logits, dim=1)
+            
         preds = torch.argmax(probs, dim=1)
+        loss = self.criterion(logits, y)
+
         return img_ids, loss, probs, preds, y
 
     def training_step(
@@ -182,24 +256,34 @@ class TimmClassificationLitModule(LightningModule):
             labels.
         :param batch_idx: The index of the current batch.
         """
-        # self.log_.info('------------------->< * * ><----------test step---')
-        # print('-------------------test step-------------')
+        
         img_ids, loss, probs, preds, targets = self.model_step(batch)
 
         # update and log metrics
         self._test_probs.append(probs.detach().cpu())
         self._test_targets.append(targets.detach().cpu())
         self._test_image_ids.extend(img_ids)  # Assuming img_ids is a list of strings
-        # pdb.set_trace()
-        # self.log_.info(f'probs shape - {}')
-        # pdb.set_trace()
+
         self.test_loss(loss)
         self.test_acc(preds, targets)
         self.test_ece(probs, targets)
-        self.log("test/loss", self.test_loss, on_step=False, on_epoch=True, prog_bar=True)
-        self.log("test/acc", self.test_acc, on_step=False, on_epoch=True, prog_bar=True)
-        self.log("test/ece", self.test_ece, on_step=False, on_epoch=True, prog_bar=True)
+
+        # Update precision, recall, and F1 metrics
+        self.test_precision(preds, targets)
+        self.test_recall(preds, targets)
+        self.test_f1(preds, targets)
+        self.test_precision_per_class(preds, targets)
+        self.test_recall_per_class(preds, targets)
+        self.test_f1_per_class(preds, targets)
+
+        # self.log("test/loss", self.test_loss, on_step=False, on_epoch=True, prog_bar=True)
+        # self.log("test/acc", self.test_acc, on_step=False, on_epoch=True, prog_bar=True)
+        # self.log("test/ece", self.test_ece, on_step=False, on_epoch=True, prog_bar=True)
+        # self.log("test/precision", self.test_precision, on_step=False, on_epoch=True, prog_bar=True)
+        # self.log("test/recall", self.test_recall, on_step=False, on_epoch=True, prog_bar=True)
+        # self.log("test/f1", self.test_f1, on_step=False, on_epoch=True, prog_bar=True)
         
+
     def on_test_epoch_end(self) -> None:
         """Lightning hook that is called when a test epoch ends."""
         probs_all = torch.cat(self._test_probs).numpy() # n x C
@@ -209,41 +293,76 @@ class TimmClassificationLitModule(LightningModule):
         prediction = np.argmax(probs_all, axis=-1)
         true_bin_label = (np.argmax(probs_all, axis=-1) == targets)*1
 
-        # Create DataFrame with all the data
-        data_dict = {
-            'image_id': self._test_image_ids,
-            'target': targets,
-            'prediction': prediction,
-            'prediction_prob_score': prediction_prob_score,
-            'true_bin_label': true_bin_label,
-            'class_probs': probs_all.tolist()
-        }
+        # Compute final metrics
+        precision_macro = self.test_precision.compute()
+        recall_macro = self.test_recall.compute()
+        f1_macro = self.test_f1.compute()
+        loss = self.test_loss.compute()
+        acc = self.test_acc.compute()
+        ece = self.test_ece.compute()
+
+        # Log macro-averaged metrics
+        self.log("test/precision_final", precision_macro, prog_bar=True)
+        self.log("test/recall_final", recall_macro, prog_bar=True)
+        self.log("test/f1_final", f1_macro, prog_bar=True)
+        self.log("test/loss_final", loss, on_step=False, on_epoch=True, prog_bar=True)
+        self.log("test/acc_final", acc, on_step=False, on_epoch=True, prog_bar=True)
+        self.log("test/ece_final", ece, on_step=False, on_epoch=True, prog_bar=True)
+
+        # Log per-class metrics
+        if self.log_metrics_per_class:
+            precision_per_class = self.test_precision_per_class.compute()
+            recall_per_class = self.test_recall_per_class.compute()
+            f1_per_class = self.test_f1_per_class.compute()
+            if hasattr(self, 'test_idx_to_classes') and self.test_idx_to_classes:
+                for i, class_name in self.test_idx_to_classes.items():
+                    self.log(f"test/precision_{class_name}", precision_per_class[i])
+                    self.log(f"test/recall_{class_name}", recall_per_class[i])
+                    self.log(f"test/f1_{class_name}", f1_per_class[i])
+            else:
+                for i in range(self.num_classes):
+                    self.log(f"test/precision_class_{i}", precision_per_class[i])
+                    self.log(f"test/recall_class_{i}", recall_per_class[i])
+                    self.log(f"test/f1_class_{i}", f1_per_class[i])
+
 
         if self.log_csv:
+            # Create DataFrame with all the data
+            data_dict = {
+                'image_id': self._test_image_ids,
+                'target': targets,
+                'prediction': prediction,
+                'prediction_prob_score': prediction_prob_score,
+                'true_bin_label': true_bin_label,
+                'class_probs': probs_all.tolist()
+            }
             self._log_csv_artifact(data_dict)
 
-        # pdb.set_trace()
         fig, ax = rel_diagram_smoothed(prediction_prob_score, true_bin_label, n_bootstrap=100, num_mesh=200)
         self.logger.experiment.log({"test/smooth_ece_plot": wandb.Image(fig)})
-        # fig.close()
 
         fig, ax = rel_diagram_binned(prediction_prob_score, true_bin_label)
         self.logger.experiment.log({"test/binned_ece_plot": wandb.Image(fig)})
 
 
-        # pdb.set_trace()
-        # fig = plot_calibration_curve(preds=probs_all, \
-        #                             targets=targets, \
-        #                             num_classes=self.num_classes, \
-        #                             n_bins=self.calibration_curve_bins, \
-        #                             image_classes=self.test_idx_to_classes)
+        data_classes = len(self.test_idx_to_classes)
+        if data_classes < self.num_classes:
+            for i in range(self.num_classes - data_classes):
+                self.test_idx_to_classes[data_classes + i] = 'No class ' + str(data_classes + i)
+                self.log_.info("Class names not found, using numbers for plotting.")
         
-        # self.logger.experiment.log({"test/ece_plot": wandb.Image(fig)})
-        # plt.close(fig)
+        fig = plot_calibration_curve(preds=probs_all, \
+                                    targets=targets, \
+                                    num_classes=self.num_classes, \
+                                    n_bins=self.calibration_curve_bins, \
+                                    image_classes=self.test_idx_to_classes)
+        
+        self.logger.experiment.log({"test/ece_plot": wandb.Image(fig)})
+        plt.close(fig)
 
-        # fig = plot_roc_curve(probs_all, targets, num_classes=self.num_classes, class_names=self.test_idx_to_classes)
-        # self.logger.experiment.log({"test/roc_curve": wandb.Image(fig)})
-        # plt.close(fig)
+        fig = plot_roc_curve(probs_all, targets, num_classes=self.num_classes, class_names=self.test_idx_to_classes)
+        self.logger.experiment.log({"test/roc_curve": wandb.Image(fig)})
+        plt.close(fig)
         
         fig = single_model_probability_histogram(prediction_prob_score, bins=self.hist_bins)
         self.logger.experiment.log({"test/logits_distribution": wandb.Image(fig)})
