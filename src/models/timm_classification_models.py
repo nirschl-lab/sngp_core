@@ -25,7 +25,7 @@ class TimmDropOutBasicClassifier(nn.Module):
         self.num_classes = num_classes
         self.model = timm.create_model(model_name, pretrained=pretrained, num_classes=self.num_classes, in_chans=in_chans)
         in_features = self.model.get_classifier().in_features if hasattr(self.model.get_classifier(), 'in_features') else self.model.fc.in_features
-        self.model.fc = nn.Sequential(nn.Dropout(p=drop_rate), nn.Linear(in_features, 4))
+        self.model.fc = nn.Sequential(nn.Dropout(p=drop_rate), nn.Linear(in_features, num_classes))
     
     def forward(self, x):
         return self.model(x)

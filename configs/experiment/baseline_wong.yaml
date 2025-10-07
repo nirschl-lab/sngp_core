@@ -44,3 +44,8 @@ logger:
     log_model: True
   aim:
     experiment: ""
+
+callbacks:
+  early_stopping:
+    monitor: "val/f1"
+    patience: 5

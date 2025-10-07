@@ -218,6 +218,8 @@ class TimmClassificationLitModule(LightningModule):
         # self.log_.info('------------------->< * * ><-------------')
         img_ids, loss, probs, preds, targets = self.model_step(batch)
 
+        # pdb.set_trace()
+
         # update and log metrics
         self.train_loss(loss)
         self.train_acc(preds, targets)
@@ -239,6 +241,7 @@ class TimmClassificationLitModule(LightningModule):
             labels.
         :param batch_idx: The index of the current batch.
         """
+        
         img_ids, loss, probs, preds, targets = self.model_step(batch)
 
         # update and log metrics
@@ -256,21 +259,31 @@ class TimmClassificationLitModule(LightningModule):
 
     def on_validation_epoch_end(self) -> None:
         "Lightning hook that is called when a validation epoch ends."
+
         acc = self.val_acc.compute()  # get current val acc
-        self.val_acc_best(acc)  # update best so far val acc
         precision = self.val_precision.compute()
-        self.val_precision_best(precision)  # update best so far val precision
         recall = self.val_recall.compute()
-        self.val_recall_best(recall)  # update best so far val recall
         f1 = self.val_f1.compute()
-        self.val_f1_best(f1)  # update best so far val f1
         
+
+        # self.val_acc_best(acc)  # update best so far val acc
+        # self.val_precision_best(precision)  # update best so far val precision
+        # self.val_recall_best(recall)  # update best so far val recall
+        # self.val_f1_best(f1)  # update best so far val f1
+
         # log `val_acc_best` as a value through `.compute()` method, instead of as a metric object
         # otherwise metric would be reset by lightning after each epoch
-        self.log("val/acc_best", self.val_acc_best.compute(), sync_dist=True, prog_bar=True)
-        self.log("val/precision_best", self.val_precision_best.compute(), sync_dist=True, prog_bar=True)
-        self.log("val/recall_best", self.val_recall_best.compute(), sync_dist=True, prog_bar=True)
-        self.log("val/f1_best", self.val_f1_best.compute(), sync_dist=True, prog_bar=True)
+        # self.log("val/acc_best", self.val_acc_best.compute(), sync_dist=True, prog_bar=True)
+        # self.log("val/precision_best", self.val_precision_best.compute(), sync_dist=True, prog_bar=True)
+        # self.log("val/recall_best", self.val_recall_best.compute(), sync_dist=True, prog_bar=True)
+        # self.log("val/f1_best", self.val_f1_best.compute(), sync_dist=True, prog_bar=True)
+
+        self.log("val/acc", acc, sync_dist=True, prog_bar=True)
+        self.log("val/precision", precision, sync_dist=True, prog_bar=True)
+        self.log("val/recall", recall, sync_dist=True, prog_bar=True)
+        self.log("val/f1", f1, sync_dist=True, prog_bar=True)
+
+
 
     def test_step(self, batch: Tuple[torch.Tensor, torch.Tensor], batch_idx: int) -> None:
         """Perform a single test step on a batch of data from the test set.

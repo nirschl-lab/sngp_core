@@ -45,3 +45,8 @@ logger:
     log_model: True
   aim:
     experiment: "mc dropout training on tang dataset"
+
+callbacks:
+  early_stopping:
+    monitor: "val/f1"
+    patience: 5
