@@ -19,10 +19,13 @@ def single_model_probability_histogram(probs: np.ndarray, bins=25, alpha=0.6, la
     fig, ax = plt.subplots(figsize=(6,5))
 
     # Plot histogram normalized to 1
-    counts, bins, patches = ax.hist(probs, bins=bins, alpha=alpha, label=label, density=True, edgecolor='black')
+    # counts, bins, patches = ax.hist(probs, bins=bins, alpha=alpha, label=label, density=True, edgecolor='black')
 
-    # Convert density to percentage on y-axis
-    # ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda y, _: '{:.0f}%'.format(y*100)))
+    counts, bins, patches = ax.hist(
+    probs, bins=bins, alpha=alpha,
+    weights=np.ones_like(probs)/len(probs),  # normalize to total=1
+    edgecolor='black')
+    ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda y, _: f"{y*100:.0f}%"))
 
     # Force x-axis to stay in probability range
     ax.set_xlim(0, 1)

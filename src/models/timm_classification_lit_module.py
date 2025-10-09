@@ -95,6 +95,7 @@ class TimmClassificationLitModule(LightningModule):
         self._test_probs: List[torch.Tensor] = []
         self._test_targets: List[torch.Tensor] = []
         self._test_image_ids: List[str] = []
+        self._test_fold: List[str] = []
 
         # self._predict_probs: List[torch.Tensor] = []
         # self._predict_targets: List[torch.Tensor] = []
@@ -187,7 +188,7 @@ class TimmClassificationLitModule(LightningModule):
             - A tensor of predictions.
             - A tensor of target labels.
         """
-        img_ids, x, y = batch
+        img_ids, x, y, fold = batch
 
         if self.use_mc:
             self.log_.info('using monate carlo')
@@ -203,7 +204,7 @@ class TimmClassificationLitModule(LightningModule):
         preds = torch.argmax(probs, dim=1)
         loss = self.criterion(logits, y)
 
-        return img_ids, loss, probs, preds, y
+        return img_ids, loss, probs, preds, y, fold
 
     def training_step(
         self, batch: Tuple[torch.Tensor, torch.Tensor], batch_idx: int
@@ -216,7 +217,7 @@ class TimmClassificationLitModule(LightningModule):
         :return: A tensor of losses between model predictions and targets.
         """
         # self.log_.info('------------------->< * * ><-------------')
-        img_ids, loss, probs, preds, targets = self.model_step(batch)
+        img_ids, loss, probs, preds, targets, _ = self.model_step(batch)
 
         # pdb.set_trace()
 
@@ -241,8 +242,8 @@ class TimmClassificationLitModule(LightningModule):
             labels.
         :param batch_idx: The index of the current batch.
         """
-        
-        img_ids, loss, probs, preds, targets = self.model_step(batch)
+
+        img_ids, loss, probs, preds, targets, _ = self.model_step(batch)
 
         # update and log metrics
         self.val_loss(loss)
@@ -293,12 +294,13 @@ class TimmClassificationLitModule(LightningModule):
         :param batch_idx: The index of the current batch.
         """
         
-        img_ids, loss, probs, preds, targets = self.model_step(batch)
+        img_ids, loss, probs, preds, targets, fold = self.model_step(batch)
 
         # update and log metrics
         self._test_probs.append(probs.detach().cpu())
         self._test_targets.append(targets.detach().cpu())
         self._test_image_ids.extend(img_ids)  # Assuming img_ids is a list of strings
+        self._test_fold.extend(fold)  # Assuming fold is a list of strings
 
         self.test_loss(loss)
         self.test_acc(preds, targets)
@@ -308,9 +310,10 @@ class TimmClassificationLitModule(LightningModule):
         self.test_precision(preds, targets)
         self.test_recall(preds, targets)
         self.test_f1(preds, targets)
-        self.test_precision_per_class(preds, targets)
-        self.test_recall_per_class(preds, targets)
-        self.test_f1_per_class(preds, targets)
+
+        # self.test_precision_per_class(preds, targets)
+        # self.test_recall_per_class(preds, targets)
+        # self.test_f1_per_class(preds, targets)
 
         # self.log("test/loss", self.test_loss, on_step=False, on_epoch=True, prog_bar=True)
         # self.log("test/acc", self.test_acc, on_step=False, on_epoch=True, prog_bar=True)
@@ -370,15 +373,16 @@ class TimmClassificationLitModule(LightningModule):
                 'prediction': prediction,
                 'prediction_prob_score': prediction_prob_score,
                 'true_bin_label': true_bin_label,
-                'class_probs': probs_all.tolist()
+                'class_probs': probs_all.tolist(),
+                'fold': self._test_fold
             }
             self._log_csv_artifact(data_dict)
 
-        fig, ax = rel_diagram_smoothed(prediction_prob_score, true_bin_label, n_bootstrap=100, num_mesh=200)
-        self.logger.experiment.log({"test/smooth_ece_plot": wandb.Image(fig)})
+        # fig, ax = rel_diagram_smoothed(prediction_prob_score, true_bin_label, n_bootstrap=100, num_mesh=200)
+        # self.logger.experiment.log({"test/smooth_ece_plot": wandb.Image(fig)})
 
-        fig, ax = rel_diagram_binned(prediction_prob_score, true_bin_label)
-        self.logger.experiment.log({"test/binned_ece_plot": wandb.Image(fig)})
+        # fig, ax = rel_diagram_binned(prediction_prob_score, true_bin_label)
+        # self.logger.experiment.log({"test/binned_ece_plot": wandb.Image(fig)})
 
 
         data_classes = len(self.test_idx_to_classes)
@@ -476,7 +480,7 @@ class TimmClassificationLitModule(LightningModule):
         :param batch: A batch of data (a tuple) containing the input tensor and target labels.
         :param batch_idx: The index of the current batch.
         """
-        loss, probs, preds, targets = self.model_step(batch)
+        loss, probs, preds, targets, fold = self.model_step(batch)
 
         
         return loss, probs, preds, targets

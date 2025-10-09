@@ -14,10 +14,10 @@ import ast
 
 # Custom Dataset wrapper
 class HFDataset(Dataset):
-    def __init__(self, hf_dataset, transform=None, type=None):
+    def __init__(self, hf_dataset, transform=None, fold=None):
         self.dataset = hf_dataset
         self.transform = transform
-        self.type = type
+        self.fold = fold
 
     def __len__(self):
         return len(self.dataset)
@@ -33,7 +33,7 @@ class HFDataset(Dataset):
             raise
         if self.transform:
             image = self.transform(image)
-        return image_id, image, label
+        return image_id, image, label, self.fold
     
 class AcevedoImageDataModule(LightningDataModule):
     """`LightningDataModule` for the Acevedo Image dataset.
@@ -48,7 +48,8 @@ class AcevedoImageDataModule(LightningDataModule):
         num_workers: int = 0,
         pin_memory: bool = False,
         train_augmentations: Optional[transforms.Compose] = None,  # New argument
-        test_augmentations: Optional[transforms.Compose] = None
+        test_augmentations: Optional[transforms.Compose] = None,
+        test_all_folds: Optional[bool] = False,
     ) -> None:
         """Initialize AcevedoImageDataModule.
 
@@ -57,6 +58,7 @@ class AcevedoImageDataModule(LightningDataModule):
         :param num_workers: The number of workers.
         :param pin_memory: Whether to pin memory.
         :param augmentations: Transformations for training (from config).
+        :param test_folds: None -> tests on only test fold, 'all' -> tests on train test and val
         """
         super().__init__()
 
@@ -93,6 +95,8 @@ class AcevedoImageDataModule(LightningDataModule):
 
         self.log_ = RankedLogger(__name__, rank_zero_only=True)
 
+        self.test_all_folds = test_all_folds
+
     # @property
     # def num_classes(self) -> int:
     
@@ -122,13 +126,11 @@ class AcevedoImageDataModule(LightningDataModule):
         data = datasets.load_dataset(self.dataset_name)
 
         data_train_ = data['train'] #load_dataset(self.data_dir, split="train",)
-        self.data_train = HFDataset(data_train_, transform=self.train_transform, type='train')
+        self.data_train = HFDataset(data_train_, transform=self.train_transform, fold='train')
 
         data_val_ = data["validation"] #load_dataset(self.data_dir, split="validation",)
-        self.data_val = HFDataset(data_val_, transform=self.test_transform, type='val')
-        
-        data_test_ = data["test"] #load_dataset(self.data_dir, split="test",)
-        self.data_test = HFDataset(data_test_, transform=self.test_transform, type='test')
+        self.data_val = HFDataset(data_val_, transform=self.test_transform, fold='val')
+
         
         if self.trainer is not None:
             self.trainer.train_classes_to_idx = ast.literal_eval(data_train_[0]['classes_to_idx'])
@@ -172,14 +174,36 @@ class AcevedoImageDataModule(LightningDataModule):
         :return: The test dataloader.
 
         """
-        # self.log_.info('------------------->< * * ><----------test loader called---')
-        return DataLoader(
-            dataset=self.data_test,
-            batch_size=self.batch_size_per_device,
-            num_workers=self.hparams.num_workers,
-            pin_memory=self.hparams.pin_memory,
-            shuffle=False,
-        )
+        if self.test_all_folds:
+            self.log_.info('Testing on all folds - train, val and test')
+            eval_train = HFDataset(datasets.load_dataset(self.dataset_name)['train'],
+                                transform=self.test_transform, fold='train')
+            eval_val   = HFDataset(datasets.load_dataset(self.dataset_name)['validation'],
+                                transform=self.test_transform, fold='val')
+            eval_test  = HFDataset(datasets.load_dataset(self.dataset_name)['test'],
+                                transform=self.test_transform, fold='test')
+
+            combined_dataset = ConcatDataset([eval_train, eval_val, eval_test])
+            return DataLoader(
+                dataset=combined_dataset,
+                batch_size=self.batch_size_per_device,
+                num_workers=self.hparams.num_workers,
+                pin_memory=self.hparams.pin_memory,
+                shuffle=False,
+            )
+
+            # rebuild eval-friendly versions of each split
+        else:
+            data_test_ = data["test"] #load_dataset(self.data_dir, split="test",)
+            self.data_test = HFDataset(data_test_, transform=self.test_transform, fold='test')
+            return DataLoader(dataset=self.data_test,
+                batch_size=self.batch_size_per_device,
+                num_workers=self.hparams.num_workers,
+                pin_memory=self.hparams.pin_memory,
+                shuffle=False,
+            )
+        
+
 
     def teardown(self, stage: Optional[str] = None) -> None:
         """Lightning hook for cleaning up after `trainer.fit()`, `trainer.validate()`,
