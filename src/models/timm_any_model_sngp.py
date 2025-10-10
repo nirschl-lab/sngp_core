@@ -1,7 +1,7 @@
 import timm
 import torch
 import torch.nn as nn
-from src.models.sngp.sgnp_classification_layer import SNGP
+from src.models.sngp.sngp_classification_layer import SNGP
 
 
 class TimmSNGPClassifier(nn.Module):
