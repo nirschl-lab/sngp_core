@@ -57,7 +57,8 @@ class SNGP(nn.Module):
             'covariance_likelihood': 'gaussian',
             'return_dict': False,
             'output_bias_trainable': False,
-            'scale_random_features': False,  # <-- change to False to mirror Edward2
+            'gp_output_initializer': True,
+            'scale_random_features': True,  # <-- change to False to mirror Edward2
         }
 
         for k, v in kwargs.items():

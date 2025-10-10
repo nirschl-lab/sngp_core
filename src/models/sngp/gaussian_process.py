@@ -13,7 +13,7 @@ import torch
 from torch import nn
 
 from src.models.sngp.random_fourier_features import RandomFourierFeatures
-
+from loguru import logger
 
 _SUPPORTED_LIKELIHOOD = ("binary_logistic", "poisson", "gaussian")
 _SUPPORTED_RBF_KERNEL_TYPES = ["gaussian", "laplacian"]
@@ -26,14 +26,14 @@ class IdentityLayer(nn.Module):
     def forward(self, x):
         return x
 
-
-class L2Normalize(nn.Module):
-    def __init__(self, eps: float = 1e-8):
-        super().__init__()
-        self.eps = eps
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return x / (x.norm(dim=-1, keepdim=True) + self.eps)
+#
+# class L2Normalize(nn.Module):
+#     def __init__(self, eps: float = 1e-8):
+#         super().__init__()
+#         self.eps = eps
+#
+#     def forward(self, x: torch.Tensor) -> torch.Tensor:
+#         return x / (x.norm(dim=-1, keepdim=True) + self.eps)
 
 
 class CustomRandomFeatureLayer(nn.Module):
@@ -127,7 +127,7 @@ class RandomFeatureGaussianProcess(nn.Module):
         out_features,
         random_features=1024,
         normalize_input=False,
-        scale_random_features=False,  # False in original code
+        scale_random_features=True,  # False in original code
         return_random_features=False,
         return_covariance=True,
         kernel_type="gaussian",
@@ -141,6 +141,7 @@ class RandomFeatureGaussianProcess(nn.Module):
         covariance_likelihood="gaussian",
         custom_random_features_initializer=None,
         custom_random_features_activation=None,
+        gp_output_initializer=True,
         return_dict=True,
     ):
         """Initializes a random-feature Gaussian process layer instance.
@@ -211,7 +212,7 @@ class RandomFeatureGaussianProcess(nn.Module):
         self.normalize_input = normalize_input
 
         # remove input_scale to more closely align with Edward2/TF implementation
-        # self.input_scale = 1.0 / math.sqrt(kernel_scale)
+        self.input_scale = 1.0 / math.sqrt(kernel_scale)
         self.feature_scale = math.sqrt(2.0 / float(random_features))
         self.scale_random_features = scale_random_features
 
@@ -238,7 +239,8 @@ class RandomFeatureGaussianProcess(nn.Module):
         self.return_dict = return_dict
 
         if normalize_input:
-            self.input_norm = L2Normalize()
+            # self.input_norm = L2Normalize()
+            self.input_norm = nn.LayerNorm(in_features)
 
         if not use_custom_random_features:
             self.random_feature_layer = RandomFourierFeatures(
@@ -248,6 +250,7 @@ class RandomFeatureGaussianProcess(nn.Module):
                 kernel_scale=self.kernel_scale,
                 kernel_scale_trainable=self.kernel_scale_trainable,
             )
+
         # Make random feature layer
         elif kernel_type.lower() == "linear":
             self.random_features = random_features = in_features
@@ -274,7 +277,9 @@ class RandomFeatureGaussianProcess(nn.Module):
         self.output_layer = nn.Linear(
             self.random_features, self.out_features, bias=False
         )
-        nn.init.normal_(self.output_layer.weight, std=0.01)  # TF gp_output_initializer
+        if gp_output_initializer:
+            logger.debug("Initializing GP output layer using Gaussian with small SD (0.01)")
+            nn.init.normal_(self.output_layer.weight, std=0.01)  # TF gp_output_initializer
 
         self.output_bias = nn.Parameter(
             torch.ones(out_features) * init_output_bias,
@@ -287,13 +292,10 @@ class RandomFeatureGaussianProcess(nn.Module):
     def forward(self, x):
         if self.normalize_input:
             x = self.input_norm(x)
-        # # comment out for now
-        # if self.normalize_input:
-        #     x = self.input_layernorm(x)
-
-        # # remove the 1/sqrt(ℓ) path; rely on RFF layer to divide weights by ℓ
-        # elif self.use_custom_random_features:
-        #     x = x * self.input_scale
+        # remove the 1/sqrt(ℓ) path; rely on RFF layer to divide weights by ℓ
+        elif self.use_custom_random_features:
+            raise NotImplementedError
+            # x = x * self.input_scale
 
         Phi = self.random_feature_layer(x)
 
@@ -481,16 +483,12 @@ class LaplaceRandomFeatureCovariance(nn.Module):
         Returns:
             (torch.tensor) Predictive covariance matrix, shape (batch_size, batch_size).
         """
-        # Cov_train = (ΦᵀΦ + λI)^(-1)
-        # Cov_test  = Φ Cov_train Φᵀ
-        return Phi @ self.covariance.to(Phi.device) @ Phi.transpose(-2, -1)
-
-        # return (
-        #     self.ridge_penalty
-        #     * Phi
-        #     @ self.covariance.to(Phi.device)
-        #     @ torch.transpose(Phi, -2, -1)
-        # )
+        # orig impl
+        return self.ridge_penalty * Phi @ self.covariance.to(Phi.device) @ torch.transpose(Phi, -2, -1)
+    # prev impl
+    # Cov_train = (ΦᵀΦ + λI)^(-1)
+    # Cov_test  = Φ Cov_train Φᵀ
+    # return Phi @ self.covariance.to(Phi.device) @ Phi.transpose(-2, -1)
 
     def forward(self, Phi, logits=None):
         """Minibatch updates the GP's posterior precision matrix estimate.
@@ -515,7 +513,7 @@ class LaplaceRandomFeatureCovariance(nn.Module):
 
 
 # Note: I believe the orig impl used mean_field_factor math.pi/8
-def mean_field_logits(logits, covariance_matrix=None, mean_field_factor=math.pi / 8):
+def mean_field_logits(logits, covariance_matrix=None, mean_field_factor= 1.0): # 1.0 # math.pi / 8
     """Adjust the model logits so its softmax approximates the posterior mean [1].
 
     [1]: Zhiyun Lu, Eugene Ie, Fei Sha. Uncertainty Estimation with Infinitesimal
