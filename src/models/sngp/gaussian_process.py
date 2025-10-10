@@ -419,16 +419,15 @@ class LaplaceRandomFeatureCovariance(nn.Module):
                     f'"logits" cannot be None when likelihood={self.likelihood}'
                 )
             if logits.shape[-1] != 1:
-                raise ValueError(
-                    f"likelihood={self.likelihood} only supports univariate logits."
-                    f"Got logits dimension: {logits.shape[-1]}"
-                )
+                # support multi-class
+                with torch.no_grad():
+                    probs = torch.softmax(logits, dim=-1)
+                    m = (probs * (1.0 - probs)).amax(dim=-1, keepdim=True)  # [B, 1]
 
         batch_size = Phi.shape[0]
 
         if self.likelihood == "binary_logistic":
-            prob = torch.sigmoid(logits)
-            prob_multiplier = prob * (1.0 - prob)
+            prob_multiplier = m
         elif self.likelihood == "poisson":
             prob_multiplier = torch.exp(logits)
         elif self.likelihood == "gaussian":

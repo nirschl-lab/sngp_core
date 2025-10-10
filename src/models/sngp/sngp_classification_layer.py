@@ -54,7 +54,7 @@ class SNGP(nn.Module):
             'kernel_scale': 1.0,
             'kernel_scale_trainable': True,
             'covariance_momentum': 0.999,
-            'covariance_likelihood': 'gaussian',
+            'covariance_likelihood': 'binary_logistic', # gaussian, binary_logistic
             'return_dict': False,
             'output_bias_trainable': False,
             'gp_output_initializer': True,
