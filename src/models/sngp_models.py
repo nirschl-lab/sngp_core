@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 from typing import Iterable, Optional
-from src.models.sngp.sgnp_classification_layer import SNGP
+from src.models.sngp.sngp_classification_layer import SNGP
 from src.models.sngp.gaussian_process import RandomFeatureGaussianProcess
 from torch.nn.utils import spectral_norm
 from src.utils.helper import count_num_parms
