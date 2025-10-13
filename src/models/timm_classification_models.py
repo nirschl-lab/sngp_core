@@ -1,87 +1,192 @@
+#!/usr/bin/env python3
+"""TIMM classifier models with Spectral-normalized Gaussian Process head."""
+import os
+from typing import Iterable, Optional
+
 import timm
 import torch
 import torch.nn as nn
+
 from src.models.sngp.sngp_classification_layer import SNGP
-from typing import Optional, Iterable
+from torch.nn.utils import spectral_norm
+import torch.nn.utils.parametrize as parametrize
+from loguru import logger
+
+
+class ScaledWeightParam(torch.nn.Module):
+    """Applies a scalar multiplier to a layer's weight for spectral normalization bound."""
+    def __init__(self, scale: float):
+        super().__init__()
+        self.scale = torch.nn.Parameter(torch.tensor(scale), requires_grad=False)
+
+    def forward(self, w):
+        return w * self.scale
+
+
+def apply_spectral_norm_to_model(
+    model: nn.Module,
+    spec_norm_bound: float = 1.0,
+    spec_norm_iteration: int = 1,
+    verbose: bool = False,
+) -> nn.Module:
+    """
+    Recursively apply spectral normalization to Conv2d and Linear layers.
+
+    Args:
+        model: Model or submodule to modify.
+        spec_norm_bound: Maximum spectral norm (like TF norm_multiplier).
+        spec_norm_iteration: Power iteration count (like TF iteration).
+        verbose: Print wrapped layers if True.
+
+    Returns:
+        Model with spectral normalization applied in-place.
+    """
+    for name, module in model.named_children():
+        if isinstance(module, (nn.Conv2d, nn.Linear)):
+            if not hasattr(module, "weight_u"):
+                try:
+                    # apply spectral normalization
+                    spectral_norm(module, n_power_iterations=spec_norm_iteration)
+                    if spec_norm_bound != 1.0:
+                        # apply scaling parametrization
+                        parametrize.register_parametrization(
+                            module, "weight", ScaledWeightParam(spec_norm_bound)
+                        )
+                    if verbose:
+                        print(f"Applied SN to {name}: iter={spec_norm_iteration}, bound={spec_norm_bound}")
+                except Exception as e:
+                    error_msg = f"Failed to wrap {name}: {e}"
+                    logger.error(error_msg)
+                    raise RuntimeError(error_msg) from e
+
+        else:
+            apply_spectral_norm_to_model(module, spec_norm_bound, spec_norm_iteration, verbose)
+    return model
+
 
 class TimmBasicClassifier(nn.Module):
-    def __init__(self, model_name, num_classes, pretrained=True, in_chans=3):
+    """Standard TIMM model with classification head."""
+
+    def __init__(
+        self,
+        model_name: str,
+        num_classes: int,
+        pretrained: bool = True,
+        in_chans: int = 3,
+    ):
+        super().__init__()
+        self.model = timm.create_model(
+            model_name,
+            pretrained=pretrained,
+            num_classes=num_classes,
+            in_chans=in_chans,
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.model(x)
+
+
+class TimmDropOutBasicClassifier(nn.Module):
+    """TIMM model with dropout-based classification head."""
+
+    def __init__(
+        self,
+        model_name: str,
+        num_classes: int,
+        pretrained: bool = True,
+        in_chans: int = 3,
+        drop_rate: float = 0.2,
+    ):
+        super().__init__()
+        self.model = timm.create_model(
+            model_name,
+            pretrained=pretrained,
+            num_classes=num_classes,
+            in_chans=in_chans,
+        )
+        in_features = (
+            self.model.get_classifier().in_features
+            if hasattr(self.model.get_classifier(), "in_features")
+            else self.model.fc.in_features
+        )
+        self.model.fc = nn.Sequential(
+            nn.Dropout(p=drop_rate),
+            nn.Linear(in_features, num_classes),
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.model(x)
+
+
+class TimmSNGPClassifier(nn.Module):
+    """TIMM model with all conv and linear layers spectral-normalized, as well as a spectral normalized Gaussian Process head."""
+
+    def __init__(
+        self,
+        model_name: str,
+        num_classes: int,
+        pretrained: bool = True,
+        in_chans: int = 3,
+        reduction_dim: int = 512,
+        use_spec_norm: bool = True,
+        spec_norm_bound=0.95,
+        spec_norm_iteration=1
+    ):
         super().__init__()
         self.num_classes = num_classes
 
         self.backbone = timm.create_model(
             model_name,
             pretrained=pretrained,
-            num_classes=num_classes,
-            in_chans=in_chans
+            num_classes=0,  # remove classifier head
+            in_chans=in_chans,
         )
-    
-    def forward(self, x):
-        return self.backbone(x)
 
-class TimmDropOutBasicClassifier(nn.Module):
-    def __init__(self, model_name, num_classes, pretrained=True, in_chans=3, drop_rate=0.2):
-        super().__init__()
-        self.num_classes = num_classes
-        self.model = timm.create_model(model_name, pretrained=pretrained, num_classes=self.num_classes, in_chans=in_chans)
-        in_features = self.model.get_classifier().in_features if hasattr(self.model.get_classifier(), 'in_features') else self.model.fc.in_features
-        self.model.fc = nn.Sequential(nn.Dropout(p=drop_rate), nn.Linear(in_features, num_classes))
-    
-    def forward(self, x):
-        return self.model(x)
+        # apply spectral normalization recursively
+        if use_spec_norm:
+            logger.debug("Applying spectral normalization to backbone")
+            self.backbone = apply_spectral_norm_to_model(
+                self.backbone,
+                spec_norm_bound=spec_norm_bound,
+                spec_norm_iteration=spec_norm_iteration,
+            )
 
-class TimmSNGPClassifier(nn.Module):
-    def __init__(self, 
-                 model_name, 
-                 num_classes, 
-                 pretrained=True, 
-                 in_chans=3,
-                 reduction_dim=512):
-        super().__init__()
-        self.num_classes = num_classes
-
-        self.backbone = timm.create_model(
-                            model_name,
-                            pretrained=pretrained,
-                            )
-        
+        # build proj + SNGP head
         in_feats = getattr(self.backbone, "num_features", None)
+        if in_feats is None:
+            raise ValueError(f"Backbone {model_name} has no num_features attribute")
+
+        # TODO check TF impl to see if necessary
         self.pool = nn.AdaptiveAvgPool2d(1)
-        self.reduce_dim = nn.Linear(in_feats, reduction_dim)
+        self.reduce_dim = (
+            nn.utils.spectral_norm(nn.Linear(in_feats, reduction_dim))
+            if use_spec_norm
+            else nn.Linear(in_feats, reduction_dim)
+        )
 
         self.sngp_classifier = SNGP(
-                in_features=reduction_dim,
-                num_classes=num_classes,
-                kernel_scale_trainable=True,
-                scale_random_features=True,
-                normalize_input=False,
-                covariance_momentum=0.999,
-                return_dict=False,
-            )
-        
-    def forward(self, x):
+            in_features=reduction_dim,
+            num_classes=num_classes,
+            kernel_scale_trainable=True,
+            scale_random_features=True,
+            normalize_input=False,
+            covariance_momentum=0.999,
+            return_dict=False,
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = self.backbone.forward_features(x)
         x = self.pool(x).flatten(1)
         x = self.reduce_dim(x)
         return self.sngp_classifier(x)[0]
 
 
-if __name__ == '__main__':
-    batch_size = 2
-    in_chans = 3
-    height = width = 224
-    x = torch.randn(batch_size, in_chans, height, width)
-    model_name = "resnet50"
-    num_classes = 8
-    basic_classifier = TimmBasicClassifier(model_name, num_classes, pretrained=True, in_chans=3)
-    sngp_model = TimmSNGPClassifier(model_name, 
-                 num_classes, 
-                 pretrained=True, 
-                 in_chans=3,
-                 reduction_dim=512)
-    base_out = basic_classifier(x)
-    sngp_out = sngp_model(x)
-
+if __name__ == "__main__":
+    # Smoke test
+    x = torch.randn(2, 3, 224, 224)
+    model = TimmSNGPClassifier(
+        "resnet50", num_classes=8, pretrained=True, reduction_dim=512
+    )
+    y = model(x)
     print(f"Input shape: {x.shape}")
-    print(f"Base Output shape: {base_out.shape}")
-    print(f"SNGP Output shape: {sngp_out.shape}")
+    print(f"Output shape: {y.shape}")
