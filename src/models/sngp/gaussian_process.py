@@ -438,12 +438,17 @@ class LaplaceRandomFeatureCovariance(nn.Module):
         # --- Curvature multiplier p(1-p) ---
         if self.likelihood == "binary_logistic":
             prob = torch.sigmoid(logits)
-            prob_multiplier = prob * (1.0 - prob)  # [B, 1]
+            prob_multiplier = prob * (1.0 - prob)
+            # get [B, 1] shape
+            if prob_multiplier.ndim > 1:
+                prob_multiplier = prob_multiplier.mean(dim=-1, keepdim=True)
+
         elif self.likelihood == "multiclass_logistic":
             # Approximate curvature upper bound: max_k p_k(1-p_k)
             probs = torch.softmax(logits, dim=-1)
-            prob_multiplier, _ = torch.max(probs * (1.0 - probs), dim=-1, keepdim=True)  # [B, 1]
-            # prob_multiplier = torch.mean(probs * (1 - probs), dim=-1, keepdim=True)
+            # prob_multiplier, _ = torch.max(probs * (1.0 - probs), dim=-1, keepdim=True)
+            # for even tighter TF parity, consider computing the mean curvature instead of the max, which approximates a Laplace average
+            prob_multiplier = torch.mean(probs * (1 - probs), dim=-1, keepdim=True)
         elif self.likelihood == "poisson":
             prob_multiplier = torch.exp(logits)
         elif self.likelihood == "gaussian":
@@ -459,10 +464,9 @@ class LaplaceRandomFeatureCovariance(nn.Module):
         # Correct exponential moving average update (TF/Edward2 parity)
         if self.momentum > 0:
             batch_precision = batch_precision / batch_size
-            self.precision = (
-                    self.momentum * self.precision
-                    + (1.0 - self.momentum) * batch_precision.to(self.device)
-            )
+            self.precision = self.momentum * self.precision + (
+                1.0 - self.momentum
+            ) * batch_precision.to(self.device)
         else:
             # Exact accumulation (no EMA)
             self.precision += batch_precision.to(self.device)
@@ -516,7 +520,8 @@ class LaplaceRandomFeatureCovariance(nn.Module):
         """
         # add ridge penalty for numerical stability
         cov_train = torch.linalg.inv(
-            self.precision + self.ridge_penalty * torch.eye(self.in_features, device=Phi.device)
+            self.precision
+            + self.ridge_penalty * torch.eye(self.in_features, device=Phi.device)
         )
         return Phi @ cov_train @ Phi.t()
 
