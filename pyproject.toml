@@ -2,7 +2,7 @@
 name = "sngp-core"
 version = "0.1.0"
 dependencies = [
-    "albumentations>=2.0.8",
+    "albumentationsx>=2.0.12",
     "click>=8.2.1",
     "datasets>=4.0.0",
     "email-validator>=2.3.0",
