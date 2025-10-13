@@ -194,8 +194,9 @@ class AcevedoImageDataModule(LightningDataModule):
 
             # rebuild eval-friendly versions of each split
         else:
-            data_test_ = data["test"] #load_dataset(self.data_dir, split="test",)
-            self.data_test = HFDataset(data_test_, transform=self.test_transform, fold='test')
+            self.data_test = HFDataset(datasets.load_dataset(self.dataset_name)['test'], 
+                                       transform=self.test_transform, 
+                                       fold='test')
             return DataLoader(dataset=self.data_test,
                 batch_size=self.batch_size_per_device,
                 num_workers=self.hparams.num_workers,

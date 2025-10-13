@@ -22,6 +22,7 @@ import numpy as np
 from src.utils import RankedLogger
 import pandas as pd
 from torch.nn.modules.dropout import _DropoutNd
+from src.models.sngp.gaussian_process import mean_field_logits
 
 class TimmClassificationLitModule(LightningModule):
     
@@ -39,7 +40,8 @@ class TimmClassificationLitModule(LightningModule):
         log_csv = False,
         log_metrics_per_class = False,
         use_mc = False,
-        mc_passes = 25
+        mc_passes = 25,
+        use_mean_field_logits = False
     ) -> None:
         """Initialize a `MNISTLitModule`.
 
@@ -86,6 +88,10 @@ class TimmClassificationLitModule(LightningModule):
         self.val_loss = MeanMetric()
         self.test_loss = MeanMetric()
 
+        # Add NLL loss metrics
+        self.val_nll = MeanMetric()
+        self.test_nll = MeanMetric()
+
         # for tracking best so far validation accuracy
         self.val_acc_best = MaxMetric()
         self.val_precision_best = MaxMetric()
@@ -116,6 +122,7 @@ class TimmClassificationLitModule(LightningModule):
         #montae carlo
         self.use_mc = use_mc
         self.mc_passes = mc_passes
+        self.use_mean_field_logits = use_mean_field_logits
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Perform a forward pass through the model `self.net`.
@@ -191,14 +198,18 @@ class TimmClassificationLitModule(LightningModule):
         img_ids, x, y, fold = batch
 
         if self.use_mc:
-            self.log_.info('using monate carlo')
+            self.log_.info('using monate carlo for {} passes'.format(self.mc_passes))
             mean_logits, mean_probs = self._mc_forward(x, T=self.mc_passes)
             logits = mean_logits
             probs = mean_probs
         else:
             logits = self.forward(x)
             if len(logits.shape) > 2: # for sngp output is B, L, Cov_matrix
-                logits = logits[:1]
+                logits, cov = logits
+                if self.use_mean_field_logits:
+                    self.log_.info('using mean field logits')
+                    logits = mean_field_logits(logits, cov)
+                # logits = logits[:1]
             probs = torch.softmax(logits, dim=1)
             
         preds = torch.argmax(probs, dim=1)
@@ -245,14 +256,20 @@ class TimmClassificationLitModule(LightningModule):
 
         img_ids, loss, probs, preds, targets, _ = self.model_step(batch)
 
+        # Calculate NLL loss
+        log_probs = torch.log(probs + 1e-8)  # Add small epsilon to avoid log(0)
+        nll_loss = F.nll_loss(log_probs, targets)
+
         # update and log metrics
         self.val_loss(loss)
+        self.val_nll(nll_loss)
         self.val_acc(preds, targets)
         self.val_precision(preds, targets)
         self.val_recall(preds, targets)
         self.val_f1(preds, targets)
         
         self.log("val/loss", self.val_loss, on_step=False, on_epoch=True, prog_bar=True)
+        self.log("val/nll", self.val_nll, on_step=False, on_epoch=True, prog_bar=True)
         self.log("val/acc", self.val_acc, on_step=False, on_epoch=True, prog_bar=True)
         self.log("val/precision", self.val_precision, on_step=False, on_epoch=True, prog_bar=True)
         self.log("val/recall", self.val_recall, on_step=False, on_epoch=True, prog_bar=True)
@@ -265,6 +282,8 @@ class TimmClassificationLitModule(LightningModule):
         precision = self.val_precision.compute()
         recall = self.val_recall.compute()
         f1 = self.val_f1.compute()
+        loss = self.val_loss.compute()
+        nll = self.val_nll.compute()
         
 
         # self.val_acc_best(acc)  # update best so far val acc
@@ -283,8 +302,8 @@ class TimmClassificationLitModule(LightningModule):
         self.log("val/precision", precision, sync_dist=True, prog_bar=True)
         self.log("val/recall", recall, sync_dist=True, prog_bar=True)
         self.log("val/f1", f1, sync_dist=True, prog_bar=True)
-
-
+        self.log("val/nll", nll, sync_dist=True, prog_bar=True)
+        self.log("val/loss", loss, sync_dist=True, prog_bar=True)
 
     def test_step(self, batch: Tuple[torch.Tensor, torch.Tensor], batch_idx: int) -> None:
         """Perform a single test step on a batch of data from the test set.
@@ -296,6 +315,10 @@ class TimmClassificationLitModule(LightningModule):
         
         img_ids, loss, probs, preds, targets, fold = self.model_step(batch)
 
+        # Calculate NLL loss
+        log_probs = torch.log(probs + 1e-8)  # Add small epsilon to avoid log(0)
+        nll_loss = F.nll_loss(log_probs, targets)
+
         # update and log metrics
         self._test_probs.append(probs.detach().cpu())
         self._test_targets.append(targets.detach().cpu())
@@ -303,6 +326,7 @@ class TimmClassificationLitModule(LightningModule):
         self._test_fold.extend(fold)  # Assuming fold is a list of strings
 
         self.test_loss(loss)
+        self.test_nll(nll_loss)
         self.test_acc(preds, targets)
         self.test_ece(probs, targets)
 
@@ -337,6 +361,7 @@ class TimmClassificationLitModule(LightningModule):
         recall_macro = self.test_recall.compute()
         f1_macro = self.test_f1.compute()
         loss = self.test_loss.compute()
+        nll = self.test_nll.compute()
         acc = self.test_acc.compute()
         ece = self.test_ece.compute()
 
@@ -345,6 +370,7 @@ class TimmClassificationLitModule(LightningModule):
         self.log("test/recall_final", recall_macro, prog_bar=True)
         self.log("test/f1_final", f1_macro, prog_bar=True)
         self.log("test/loss_final", loss, on_step=False, on_epoch=True, prog_bar=True)
+        self.log("test/nll_final", nll, on_step=False, on_epoch=True, prog_bar=True)
         self.log("test/acc_final", acc, on_step=False, on_epoch=True, prog_bar=True)
         self.log("test/ece_final", ece, on_step=False, on_epoch=True, prog_bar=True)
 

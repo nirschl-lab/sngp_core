@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 from src.models.sngp.sgnp_classification_layer import SNGP
 from typing import Optional, Iterable
-
+import pdb
 class TimmBasicClassifier(nn.Module):
     def __init__(self, model_name, num_classes, pretrained=True, in_chans=3):
         super().__init__()
