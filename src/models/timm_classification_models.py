@@ -47,8 +47,8 @@ def apply_spectral_norm_to_model(
                 try:
                     # apply spectral normalization
                     spectral_norm(module, n_power_iterations=spec_norm_iteration)
-                    if spec_norm_bound != 1.0:
-                        # apply scaling parametrization
+                    if spec_norm_bound != 1.0 and isinstance(module, nn.Linear) and hasattr(module, "weight_u") :
+                        # apply scaling parametrization (currently only works for nn.Linear)
                         parametrize.register_parametrization(
                             module, "weight", ScaledWeightParam(spec_norm_bound)
                         )
