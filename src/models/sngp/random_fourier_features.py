@@ -6,7 +6,7 @@ https://github.com/Jmkernes/Spectral-Normalized-Gaussian-Process/blob/main/rando
 
 
 import math
-
+import os
 import torch
 from torch import nn
 from loguru import logger
@@ -60,7 +60,8 @@ class RandomFourierFeatures(nn.Module):
         kernel_type="gaussian",
         kernel_scale=1.0,
         kernel_scale_trainable=False,
-        use_softplus=True # Not in TF but consider trying
+        use_softplus=False, # Not in TF but consider trying
+        verbose= False,
     ):
         if out_features <= 0:
             raise ValueError(
@@ -85,6 +86,7 @@ class RandomFourierFeatures(nn.Module):
             )
 
         super(RandomFourierFeatures, self).__init__()
+        self.verbose = bool(verbose or os.getenv("VERBOSE") or os.getenv("DEBUG"))
 
         self.use_softplus = use_softplus
         if kernel_type.lower() == "gaussian":
@@ -116,9 +118,8 @@ class RandomFourierFeatures(nn.Module):
     def forward(self, x):
         # Keep a positive length-scale; using softplus for smoother gradients.
         if self.use_softplus:
-            logger.warning("Warning: Using softplus")
-            raise NotImplementedError
-            # kernel_scale = torch.nn.functional.softplus(self.kernel_scale_raw) + 1e-6
+            logger.debug("Softplut used for RFF kernel scale") if self.verbose else None
+            kernel_scale = torch.nn.functional.softplus(self.kernel_scale_raw) + 1e-6
         else:
             kernel_scale = nn.functional.relu(self.kernel_scale)
 
