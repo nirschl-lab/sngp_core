@@ -52,6 +52,11 @@ def apply_spectral_norm_to_model(
                         parametrize.register_parametrization(
                             module, "weight", ScaledWeightParam(spec_norm_bound)
                         )
+
+                    # ensure no NaNs in weights after init
+                    if torch.isnan(module.weight).any():
+                        raise ValueError(f"NaN detected in weights of layer {name} after spectral norm application")
+
                     if verbose:
                         print(f"Applied SN to {name}: iter={spec_norm_iteration}, bound={spec_norm_bound}")
                 except Exception as e:
@@ -129,11 +134,13 @@ class TimmSNGPClassifier(nn.Module):
         in_chans: int = 3,
         reduction_dim: int = 512,
         use_spec_norm: bool = True,
-        spec_norm_bound=0.95,
-        spec_norm_iteration=1
+        spec_norm_bound: float =0.95,
+        spec_norm_iteration: int =1,
+        **kwargs,
     ):
         super().__init__()
         self.num_classes = num_classes
+        self.error_flag = False
 
         self.backbone = timm.create_model(
             model_name,
@@ -167,18 +174,26 @@ class TimmSNGPClassifier(nn.Module):
         self.sngp_classifier = SNGP(
             in_features=reduction_dim,
             num_classes=num_classes,
-            kernel_scale_trainable=True,
-            scale_random_features=True,
-            normalize_input=False,
-            covariance_momentum=0.999,
-            return_dict=False,
+            **kwargs,
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = self.backbone.forward_features(x)
+        # Handle all-NaN input by replacing with small stddev random normal values
+        if torch.isnan(x).all():
+            if not self.error_flag:
+                logger.warning("Forward features from TimmSNGPClassifier are all NaN; replacing with random normal tensor (std=1e-2)")
+                x = torch.randn_like(x) * 1e-2
+                self.error_flag = True
+            else:
+                # raise error if happens again
+                logger.error("Forward features from TimmSNGPClassifier are all NaN; previously replaced once, raising error now")
+                raise ValueError("Forward features from TimmSNGPClassifier are all NaN")
+
         x = self.pool(x).flatten(1)
         x = self.reduce_dim(x)
-        return self.sngp_classifier(x)[0]
+        outputs =  self.sngp_classifier(x) # returns dict with logits, cov, features
+        return outputs.get("logits")
 
 
 if __name__ == "__main__":
