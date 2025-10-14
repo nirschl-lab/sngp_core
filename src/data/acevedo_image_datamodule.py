@@ -65,8 +65,9 @@ class AcevedoImageDataModule(LightningDataModule):
         batch_size: int = 64,
         num_workers: int = 0,
         pin_memory: bool = False,
-        train_augmentations: Optional[transforms.Compose] = None,  # New argument
-        test_augmentations: Optional[transforms.Compose] = None,
+        train_augmentations: Optional[transforms.Compose | A.Compose] = None,  # New argument
+        val_augmentations: Optional[transforms.Compose | A.Compose] = None,
+        test_augmentations: Optional[transforms.Compose | A.Compose] = None,
         test_all_folds: Optional[bool] = False,
     ) -> None:
         """Initialize AcevedoImageDataModule.
@@ -90,6 +91,17 @@ class AcevedoImageDataModule(LightningDataModule):
         else:
             # Default fallback
             self.train_transform = transforms.Compose([
+                transforms.ToTensor(),
+                transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+            ])
+
+        # val transforms
+        if val_augmentations:
+                # It's a config, instantiate it
+                self.val_transform = val_augmentations
+        else:
+            # Default fallback
+            self.val_transform = transforms.Compose([
                 transforms.ToTensor(),
                 transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
             ])
@@ -147,7 +159,7 @@ class AcevedoImageDataModule(LightningDataModule):
         self.data_train = HFDataset(data_train_, transform=self.train_transform, fold='train')
 
         data_val_ = data["validation"] #load_dataset(self.data_dir, split="validation",)
-        self.data_val = HFDataset(data_val_, transform=self.test_transform, fold='val')
+        self.data_val = HFDataset(data_val_, transform=self.val_transform, fold='val')
 
         
         if self.trainer is not None:
