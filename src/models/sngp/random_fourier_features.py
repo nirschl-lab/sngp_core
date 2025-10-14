@@ -6,10 +6,10 @@ https://github.com/Jmkernes/Spectral-Normalized-Gaussian-Process/blob/main/rando
 
 
 import math
-
+import os
 import torch
 from torch import nn
-
+from loguru import logger
 
 _SUPPORTED_RBF_KERNEL_TYPES = ["gaussian", "laplacian"]
 
@@ -60,7 +60,8 @@ class RandomFourierFeatures(nn.Module):
         kernel_type="gaussian",
         kernel_scale=1.0,
         kernel_scale_trainable=False,
-        use_softplus=True # Not in TF but consider trying
+        use_softplus=False, # Not in TF but consider trying
+        verbose= False,
     ):
         if out_features <= 0:
             raise ValueError(
@@ -85,6 +86,7 @@ class RandomFourierFeatures(nn.Module):
             )
 
         super(RandomFourierFeatures, self).__init__()
+        self.verbose = bool(verbose or os.getenv("VERBOSE") or os.getenv("DEBUG"))
 
         self.use_softplus = use_softplus
         if kernel_type.lower() == "gaussian":
@@ -108,14 +110,15 @@ class RandomFourierFeatures(nn.Module):
             self.kernel_scale = nn.Parameter(
                 torch.ones(1) * kernel_scale, requires_grad=True
             )
-            self.kernel_scale_raw = nn.Parameter(torch.tensor(float(kernel_scale)))
+            # self.kernel_scale_raw = nn.Parameter(torch.tensor(float(kernel_scale)))
         else:
             self.register_buffer("kernel_scale", torch.ones(1) * kernel_scale)
-            self.register_buffer("kernel_scale_raw", torch.tensor(float(kernel_scale)))
+            # self.register_buffer("kernel_scale_raw", torch.tensor(float(kernel_scale)))
 
     def forward(self, x):
         # Keep a positive length-scale; using softplus for smoother gradients.
         if self.use_softplus:
+            logger.debug("Softplut used for RFF kernel scale") if self.verbose else None
             kernel_scale = torch.nn.functional.softplus(self.kernel_scale_raw) + 1e-6
         else:
             kernel_scale = nn.functional.relu(self.kernel_scale)
@@ -127,4 +130,6 @@ class RandomFourierFeatures(nn.Module):
         else:
             bias = self.bias
 
-        return torch.cos(x @ weight + bias)
+        # === TensorFlow parity: include √2 factor and proper scaling ===
+        features = math.sqrt(2.0) * torch.cos(x @ weight + bias)
+        return features

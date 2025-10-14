@@ -4,8 +4,13 @@ import hydra
 import lightning as L
 import rootutils
 import torch
+import cv2
+
+import hashlib
+
 from lightning import Callback, LightningDataModule, LightningModule, Trainer
 from lightning.pytorch.loggers import Logger
+from omegaconf import OmegaConf as OC
 from omegaconf import DictConfig
 import pdb
 rootutils.setup_root(__file__, indicator=".project-root", pythonpath=True)
@@ -38,6 +43,9 @@ from src.utils import (
 
 log = RankedLogger(__name__, rank_zero_only=True)
 
+# OpenCV performance tweaks for albumentations
+cv2.setNumThreads(0)
+cv2.setUseOptimized(True)
 
 @task_wrapper
 def train(cfg: DictConfig) -> Tuple[Dict[str, Any], Dict[str, Any]]:
@@ -53,19 +61,35 @@ def train(cfg: DictConfig) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     # set seed for random number generators in pytorch, numpy and python.random
     if cfg.get("seed"):
         L.seed_everything(cfg.seed, workers=True)
-    
 
+    if cfg.get("precision"):
+        torch.set_float32_matmul_precision(cfg.get("precision"))
+
+    # compute blake2b hash of config (without ignored fields) and add it to cfg
+    cfg_hash = hashlib.blake2b(OC.to_yaml(cfg, sort_keys=True).encode("utf-8"), digest_size=4).hexdigest()
+    # add to cfg tags
+    cfg.tags = cfg.get("tags", []) + [f"cfg-{cfg_hash}"]
+
+    # set augmentations
     train_augmentations = None
     val_augmentations = None
+    test_augmentations = None
 
     if cfg.data['img_augmentations']:
         log.info(f"Augmentations <{cfg.data.img_augmentations.train._target_}>")
         train_augmentations = hydra.utils.instantiate(cfg.data.img_augmentations.train)
         log.info(f"Augmentations <{cfg.data.img_augmentations.test._target_}>")
+        val_augmentations = hydra.utils.instantiate(cfg.data.img_augmentations.val)
+        log.info(f"Augmentations <{cfg.data.img_augmentations.test._target_}>")
         test_augmentations = hydra.utils.instantiate( cfg.data.img_augmentations.test)
 
     log.info(f"Instantiating datamodule <{cfg.data.datamodule._target_}>")
-    datamodule: LightningDataModule = hydra.utils.instantiate(cfg.data.datamodule, train_augmentations=train_augmentations, test_augmentations=test_augmentations)
+    datamodule: LightningDataModule = hydra.utils.instantiate(
+        cfg.data.datamodule,
+        train_augmentations=train_augmentations,
+        val_augmentations=val_augmentations,
+        test_augmentations=test_augmentations
+    )
     # pdb.set_trace()
     
     log.info(f"Instantiating model <{cfg.model._target_}>")

@@ -8,6 +8,7 @@ import inspect
 
 import torch
 from torch import nn
+from loguru import logger
 
 from src.models.sngp.gaussian_process import RandomFeatureGaussianProcess
 
@@ -47,27 +48,7 @@ class SNGP(nn.Module):
     ):
         super(SNGP, self).__init__()
 
-        # these are some good defaults for the gp layer
-        gp_kwargs = {
-            'random_features': 1024,
-            'normalize_input': True,
-            'kernel_scale': 1.0,
-            'kernel_scale_trainable': True,
-            'covariance_momentum': 0.999,
-            'covariance_likelihood': 'gaussian',
-            'return_dict': False,
-            'output_bias_trainable': False,
-            'scale_random_features': False,  # <-- change to False to mirror Edward2
-        }
-
-        for k, v in kwargs.items():
-            if (
-                k != "self"
-                and k
-                in inspect.getfullargspec(RandomFeatureGaussianProcess.__init__).args
-            ):
-                gp_kwargs[k] = v
-
+        self.error_flag = False
         self.pre_classifier = nn.utils.spectral_norm(
             nn.Linear(in_features, in_features)
         )
@@ -77,7 +58,7 @@ class SNGP(nn.Module):
         self.gp_classifier = RandomFeatureGaussianProcess(
             in_features=reduction_dim,
             out_features=num_classes,
-            **gp_kwargs,
+            **kwargs,
         )
         self.activation = (
             getattr(nn, activation)() if hasattr(nn, activation) else nn.Tanh()
@@ -85,6 +66,17 @@ class SNGP(nn.Module):
         self.dropout = nn.Dropout(p=classif_dropout)
 
     def forward(self, x):
+        # Handle all-NaN input by replacing with small stddev random normal values
+        if torch.isnan(x).all():
+            if not self.error_flag:
+                logger.warning("Input to SNGP is all NaN; replacing with random normal tensor (std=1e-2)")
+                x = torch.randn_like(x) * 1e-2
+                self.error_flag = True
+            else:
+                # raise error if happens again
+                logger.error("Input to SNGP is all NaN; previously replaced once, raising error now")
+                raise ValueError("Input to SNGP is all NaN")
+
         x = self.dropout(self.activation(self.pre_classifier(x)))
         x = self.reduce_dim_layer(x)
         return self.gp_classifier(x)

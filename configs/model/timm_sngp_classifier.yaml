@@ -20,6 +20,16 @@ net:
   pretrained: True
   in_chans: 3
   reduction_dim: 512
+  use_spec_norm: True # required for TimmSNGPClassifier
+  spec_norm_bound: 0.95 # required for TimmSNGPClassifier
+  spec_norm_iteration: 1 # required for TimmSNGPClassifier
+  covariance_likelihood: "gaussian" # kwarg for SNGP
+  covariance_momentum: 0.999 # kwarg for SNGP
+  normalize_input: True # kwarg for SNGP
+  output_bias_trainable: False # kwarg for SNGP
+  random_features: 1024 # kwarg for SNGP
+  scale_random_features: False # kwarg for SNGP <-- change to False to mirror Edward2
+  trainable_kernel_scale: True # kwarg for SNGP
 
 # compile model for faster training with pytorch 2.0
 compile: false

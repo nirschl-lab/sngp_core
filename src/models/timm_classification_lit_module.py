@@ -18,6 +18,7 @@ from src.visualization.reliability import rel_diagram_smoothed, rel_diagram_binn
 import matplotlib.pyplot as plt
 import wandb
 import pdb
+from loguru import logger
 import numpy as np
 from src.utils import RankedLogger
 import pandas as pd
@@ -260,6 +261,10 @@ class TimmClassificationLitModule(LightningModule):
             labels.
         :param batch_idx: The index of the current batch.
         """
+        # skip if batch and epoch are both 0
+        if batch_idx == 0 and self.current_epoch == 0:
+            logger.warning("Skipping validation step for batch 0 in epoch 0")
+            return
 
         img_ids, loss, probs, preds, targets, _ = self.model_step(batch)
 

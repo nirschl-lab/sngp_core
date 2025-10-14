@@ -11,3 +11,7 @@
 #   ----------------------------------------------------------------
 #
 # NEVER ADD THE `.env` FILE WITH SECRETS TO VERSION CONTROL!
+LOGGING_LEVEL=INFO
+PYTHONFAULTHANDLER=1
+
+HYDRA_FULL_ERROR=1
