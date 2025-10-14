@@ -30,3 +30,5 @@ hist_bins: 25
 #test csv name
 test_name: "test_predictions.csv"
 log_csv: false
+
+use_mean_field_logits: false

@@ -5,12 +5,14 @@ from lightning import LightningDataModule
 from torch.utils.data import ConcatDataset, DataLoader, Dataset, random_split
 from datasets import load_dataset
 from torchvision.transforms import transforms
+import albumentations as A
 import yaml
 from src.utils import RankedLogger
 import pdb
 import hydra
 import datasets
 import ast
+import numpy as np
 
 # Custom Dataset wrapper
 class HFDataset(Dataset):
@@ -27,12 +29,28 @@ class HFDataset(Dataset):
         try:
             image = item['image']  # PIL Image
             label = item['label']
+            mask = item.get('mask', None)  # Optional mask
+            if mask is not None:
+                mask = torch.tensor(mask, dtype=torch.float32)
+
             image_id = item['image_id']
         except TypeError as e:
             pdb.set_trace()
             raise
         if self.transform:
-            image = self.transform(image)
+            # Apply transformations
+            if isinstance(self.transform, A.Compose):
+                # Albumentations expects numpy arrays
+                image_np = np.array(image)
+                transformed = self.transform(image=image_np, mask=mask)
+                if mask is not None:
+                    raise NotImplementedError("Mask augmentation is not yet returned")
+                    #image, mask = transformed['image'], transformed['mask']
+                else:
+                    image = transformed['image']
+            else:
+                image = self.transform(image)
+
         return image_id, image, label, self.fold
     
 class AcevedoImageDataModule(LightningDataModule):
@@ -194,8 +212,9 @@ class AcevedoImageDataModule(LightningDataModule):
 
             # rebuild eval-friendly versions of each split
         else:
-            data_test_ = data["test"] #load_dataset(self.data_dir, split="test",)
-            self.data_test = HFDataset(data_test_, transform=self.test_transform, fold='test')
+            self.data_test = HFDataset(datasets.load_dataset(self.dataset_name)['test'], 
+                                       transform=self.test_transform, 
+                                       fold='test')
             return DataLoader(dataset=self.data_test,
                 batch_size=self.batch_size_per_device,
                 num_workers=self.hparams.num_workers,

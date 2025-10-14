@@ -12,13 +12,13 @@ defaults:
 # all parameters below will be merged with parameters from default configurations set above
 # this allows you to overwrite only specified parameters
 
-tags: ["acevedo_et_al_2020", "MCDropout", "paper_exp1"]
+tags: ["acevedo_et_al_2020", "MCDropout", "paper_exp1", "drop_rate_0.0", "val_loss_early_stop"]
 
 seed: 12345
 
 trainer:
   min_epochs: 5
-  max_epochs: 50
+  max_epochs: 100
   accelerator: "gpu"
 
 
@@ -27,7 +27,7 @@ model:
     lr: 0.001
   hist_bins: 10
   net:
-    drop_rate: 0.2
+    drop_rate: 0.0
     num_classes: 8
   compile: false
 
@@ -48,5 +48,6 @@ logger:
 
 callbacks:
   early_stopping:
-    monitor: "val/f1"
-    patience: 5
+    monitor: "val/loss"
+    patience: 20
+    mode: "min"
