@@ -238,7 +238,7 @@ class RandomFeatureGaussianProcess(nn.Module):
         self.return_dict = return_dict
 
         if normalize_input:
-            self.input_norm = L2Normalize()
+            self.input_norm = nn.LayerNorm(self.in_features, elementwise_affine=True)  # TF parity
 
         if not use_custom_random_features:
             self.random_feature_layer = RandomFourierFeatures(
@@ -295,6 +295,8 @@ class RandomFeatureGaussianProcess(nn.Module):
         # # remove the 1/sqrt(ℓ) path; rely on RFF layer to divide weights by ℓ
         # elif self.use_custom_random_features:
         #     x = x * self.input_scale
+        if self.use_custom_random_features and not self.normalize_input and self.kernel_scale is not None:
+            x = x / math.sqrt(float(self.kernel_scale))
 
         Phi = self.random_feature_layer(x)
 
@@ -363,7 +365,7 @@ class LaplaceRandomFeatureCovariance(nn.Module):
         self,
         in_features,
         momentum=0.999,
-        ridge_penalty=1.0,
+        ridge_penalty=1e-6,
         likelihood="gaussian",
         device=None,
         dtype=None,
@@ -387,12 +389,8 @@ class LaplaceRandomFeatureCovariance(nn.Module):
             in_features, **self.factory_kwargs
         )
 
-        self.register_buffer(
-            "_precision", ridge_penalty * torch.eye(in_features, **self.factory_kwargs)
-        )
-        self.register_buffer(
-            "_covariance", ridge_penalty * torch.eye(in_features, **self.factory_kwargs)
-        )
+        self.register_buffer("_precision", torch.zeros(in_features, **self.factory_kwargs))
+        self.register_buffer("_covariance", torch.zeros(in_features, **self.factory_kwargs))
         self.covariance_is_cached = False
 
     @property
@@ -452,27 +450,12 @@ class LaplaceRandomFeatureCovariance(nn.Module):
         elif self.likelihood == "poisson":
             prob_multiplier = torch.exp(logits)
         elif self.likelihood == "gaussian":
-            prob_multiplier = torch.ones((Phi.shape[0], 1), device=Phi.device)
+            prob_multiplier = torch.ones(1, device=Phi.device) * 1.0
         else:
-            raise ValueError(f"Invalid likelihood: {self.likelihood}")
+            raise ValueError(f"Invalid likelihood entered: {self.likelihood}")
 
-        # --- Apply curvature weighting to features ---
-        # Broadcast [B, 1] across [B, D]
-        Phi = Phi * torch.sqrt(prob_multiplier.clamp_min(1e-8))
-        batch_precision = Phi.t() @ Phi
-
-        # Correct exponential moving average update (TF/Edward2 parity)
-        if self.momentum > 0:
-            batch_precision = batch_precision / batch_size
-            self.precision = self.momentum * self.precision + (
-                1.0 - self.momentum
-            ) * batch_precision.to(self.device)
-        else:
-            # Exact accumulation (no EMA)
-            self.precision += batch_precision.to(self.device)
-
-        # Invalidate covariance cache
-        self.covariance_is_cached = False
+        Phi = torch.sqrt(prob_multiplier) * Phi
+        batch_precision = torch.transpose(Phi, -2, -1) @ Phi
 
         # Update the non-batch (i.e. all data) precision matrix.
         if self.momentum > 0:
@@ -518,12 +501,16 @@ class LaplaceRandomFeatureCovariance(nn.Module):
         Returns:
             (torch.tensor) Predictive covariance matrix, shape (batch_size, batch_size).
         """
-        # add ridge penalty for numerical stability
-        cov_train = torch.linalg.inv(
-            self.precision
-            + self.ridge_penalty * torch.eye(self.in_features, device=Phi.device)
-        )
-        return Phi @ cov_train @ Phi.t()
+        # Cov_train = (ΦᵀΦ + λI)^(-1)
+        # Cov_test  = Φ Cov_train Φᵀ
+        return Phi @ self.covariance.to(Phi.device) @ Phi.transpose(-2, -1)
+
+        # return (
+        #     self.ridge_penalty
+        #     * Phi
+        #     @ self.covariance.to(Phi.device)
+        #     @ torch.transpose(Phi, -2, -1)
+        # )
 
     def forward(self, Phi, logits=None):
         """Minibatch updates the GP's posterior precision matrix estimate.

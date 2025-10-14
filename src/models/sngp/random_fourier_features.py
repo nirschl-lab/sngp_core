@@ -57,10 +57,10 @@ class RandomFourierFeatures(nn.Module):
         self,
         in_features,
         out_features,
-        kernel_type="binary_logistic", #"gaussian",
-        kernel_scale=None, # orig None; recent = 1.0
+        kernel_type="gaussian",
+        kernel_scale=1.0,
         kernel_scale_trainable=False,
-        use_softplus=False # Not in TF but consider trying
+        use_softplus=True # Not in TF but consider trying
     ):
         if out_features <= 0:
             raise ValueError(
@@ -129,4 +129,6 @@ class RandomFourierFeatures(nn.Module):
         else:
             bias = self.bias
 
-        return torch.cos(x @ weight + bias)
+        # === TensorFlow parity: include √2 factor and proper scaling ===
+        features = math.sqrt(2.0) * torch.cos(x @ weight + bias)
+        return features

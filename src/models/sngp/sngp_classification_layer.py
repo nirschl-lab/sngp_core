@@ -49,15 +49,15 @@ class SNGP(nn.Module):
 
         # these are some good defaults for the gp layer
         gp_kwargs = {
-            "random_features": 1024,
-            "normalize_input": True,
-            "kernel_scale": 1.0,
-            "kernel_scale_trainable": True,
-            "covariance_momentum": 0.999,
-            "covariance_likelihood": "binary_logistic",  # or multiclass_logistic
-            "return_dict": False,
-            "output_bias_trainable": False,
-            "scale_random_features": True,  # enable RFF scaling √(2/D)
+            'random_features': 1024,
+            'normalize_input': True,
+            'kernel_scale': 1.0,
+            'kernel_scale_trainable': True,
+            'covariance_momentum': 0.999,
+            'covariance_likelihood': 'gaussian',
+            'return_dict': False,
+            'output_bias_trainable': False,
+            'scale_random_features': False,  # <-- change to False to mirror Edward2
         }
 
         for k, v in kwargs.items():
