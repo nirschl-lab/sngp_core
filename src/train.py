@@ -61,7 +61,9 @@ def train(cfg: DictConfig) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     # set seed for random number generators in pytorch, numpy and python.random
     if cfg.get("seed"):
         L.seed_everything(cfg.seed, workers=True)
-    
+
+    if cfg.get("precision"):
+        torch.set_float32_matmul_precision(cfg.get("precision"))
 
     # compute blake2b hash of config (without ignored fields) and add it to cfg
     cfg_hash = hashlib.blake2b(OC.to_yaml(cfg, sort_keys=True).encode("utf-8"), digest_size=4).hexdigest()

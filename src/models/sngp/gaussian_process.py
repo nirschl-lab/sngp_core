@@ -7,35 +7,22 @@ https://github.com/Jmkernes/Spectral-Normalized-Gaussian-Process/blob/main/gauss
 
 
 import math
+import os
 from functools import partial
+from typing import Optional
 
 import torch
+from loguru import logger
 from torch import nn
 
 from src.models.sngp.random_fourier_features import RandomFourierFeatures
 
-
-_SUPPORTED_LIKELIHOOD = ("binary_logistic", "poisson", "gaussian")
-_SUPPORTED_RBF_KERNEL_TYPES = ["gaussian", "laplacian"]
-
-
-class IdentityLayer(nn.Module):
-    def __init__(self):
-        super().__init__()
-
-    def forward(self, x):
-        return x
+_SUPPORTED_LIKELIHOOD = ("binary_logistic", "multiclass_logistic", "poisson", "gaussian")
+# _SUPPORTED_RBF_KERNEL_TYPES = ["gaussian", "laplacian"]
 
 
-class L2Normalize(nn.Module):
-    def __init__(self, eps: float = 1e-8):
-        super().__init__()
-        self.eps = eps
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return x / (x.norm(dim=-1, keepdim=True) + self.eps)
-
-
+# TODO: Currently not used, consider refactoring to use or removing
+# CustomRandomFeatureLayer is unused
 class CustomRandomFeatureLayer(nn.Module):
     """
     Allows users to input custom functions to simulate a kernel.
@@ -71,6 +58,7 @@ class CustomRandomFeatureLayer(nn.Module):
         if activation is None:
             activation = torch.cos
 
+        self.out_features = out_features
         self.weight = kernel_init(
             nn.Parameter(torch.empty(in_features, out_features), requires_grad=False)
         )
@@ -84,257 +72,213 @@ class CustomRandomFeatureLayer(nn.Module):
 
 
 class RandomFeatureGaussianProcess(nn.Module):
-    """Gaussian process layer with random feature approximation [1]. Based heavily
-    on the TensorFlow implementation [2].
+    """Gaussian process layer using random feature approximation for uncertainty-aware predictions.
 
-    During training, the model updates the maximum a posteriori (MAP) logits
-    estimates and posterior precision matrix using minibatch statistics. During
-    inference, the model divides the MAP logit estimates by the predictive
-    standard deviation, which is equivalent to approximating the posterior mean
-    of the predictive probability via the mean-field approximation.
+    This layer combines random feature mappings with a Gaussian process posterior to provide predictive uncertainty estimates.
+    It supports flexible kernel choices, input normalization, and covariance estimation, and is adapted from the TensorFlow implementation referenced below.
 
-    User can specify different types of random features by setting
-    `use_custom_random_features=True`, and changing the initializer and activations
-    of the custom random features. For example:
+    During training, the layer updates the maximum a posteriori (MAP) logits and the posterior precision matrix using minibatch statistics.
+    During inference, it adjusts the MAP logits by the predictive standard deviation, approximating the posterior mean via a mean-field approach.
 
-        MLP Kernel: initializer='random_normal', activation=tf.nn.relu
-        RBF Kernel: initializer='random_normal', activation=tf.math.cos
+    Users can specify different types of random features by enabling `use_custom_features` and providing custom initializers and activations.
+    For example:
+        - MLP Kernel: initializer='random_normal', activation=torch.nn.ReLU
+        - RBF Kernel: initializer='random_normal', activation=torch.cos
 
-    A linear kernel can also be specified by setting gp_kernel_type='linear' and
-    `use_custom_random_features=True`.
+    A linear kernel can also be specified by setting `kernel_type='linear'` and `use_custom_features=True`.
 
-    [1]: Ali Rahimi and Benjamin Recht. Random Features for Large-Scale Kernel
-             Machines. In _Neural Information Processing Systems_, 2007.
-             https://people.eecs.berkeley.edu/~brecht/papers/07.rah.rec.nips.pdf
-    [2]: https://github.com/tensorflow/probability/blob/main/tensorflow_probability/python/distributions/gaussian_process.py
+    References:
+        [1] Ali Rahimi and Benjamin Recht. Random Features for Large-Scale Kernel Machines. NeurIPS, 2007.
+            https://people.eecs.berkeley.edu/~brecht/papers/07.rah.rec.nips.pdf
+        [2] TensorFlow Probability Gaussian Process implementation: https://github.com/tensorflow/probability/blob/main/tensorflow_probability/python/distributions/gaussian_process.py
 
     Attributes:
-        units: (int) The dimensionality of layer.
-        num_inducing: (int) The number of random features for the approximation.
-        is_training: (tf.bool) Whether the layer is set in training mode. If so the
-            layer updates the Gaussian process' variance estimate using statistics
-            computed from the incoming minibatches.
+        in_features: (int) Number of input features.
+        out_features: (int) Number of output features (e.g., number of classes).
+        random_features: (int) Number of random features for kernel approximation.
+        kernel_type: (str) Type of kernel function used.
+        kernel_scale: (float) Length-scale parameter for the kernel.
+        scale_random_features: (bool) Whether to scale random features by sqrt(2. / random_features).
+        normalize_input: (bool) Whether to apply layer normalization to the input.
+        trainable_kernel_scale: (bool) If True, kernel scale is trainable.
+        use_custom_features: (bool) If True, use a custom feature mapping.
+        covariance_momentum: (float) Momentum for updating the covariance estimator.
+        covariance_ridge_penalty: (float) Ridge penalty for covariance regularization.
+        return_covariance: (bool) If True, returns covariance estimates.
+        init_stdev: (float) Standard deviation for output layer weight initialization.
+        output_bias_trainable: (bool) If True, output bias is trainable.
+        covariance_likelihood: (str) Likelihood type for covariance estimation.
+        verbose: (bool) If True, enables verbose logging.
 
-        The scale_random_features param scales Phi by 2. / sqrt(num_inducing) following [1].
-        When using GP layer as the output layer of a nerual network,
-        it is recommended to turn this scaling off to prevent it from changing
-        the learning rate to the hidden layers.
+        The scale_random_features parameter scales Phi by 2. / sqrt(num_inducing) following [1].
+        When using this GP layer as the output layer of a neural network, it is recommended to turn this scaling off to prevent it from changing the learning rate to the hidden layers.
     """
 
     def __init__(
         self,
-        in_features,
-        out_features,
-        random_features=1024,
-        normalize_input=False,
-        scale_random_features=False,  # False in original code
-        return_random_features=False,
-        return_covariance=True,
-        kernel_type="gaussian",
-        kernel_scale=1.0,
-        init_output_bias=0.0,
-        kernel_scale_trainable=False,
-        output_bias_trainable=False,
-        use_custom_random_features=False,
-        covariance_momentum=0.999,
-        covariance_ridge_penalty=1.0,
-        covariance_likelihood="binary_logitstic",
-        custom_random_features_initializer=None,
-        custom_random_features_activation=None,
-        return_dict=True,
+        in_features: int,
+        out_features: int,
+        random_features: int = 1024,
+        covariance_likelihood="gaussian",
+        covariance_momentum: float = 0.999,
+        covariance_ridge_penalty: float = 1e-6,
+        init_stdev: float = 1e-2,
+        kernel_scale: Optional[float] = None,
+        kernel_type: str = "gaussian",  #
+        normalize_input: bool = True,
+        output_bias_trainable: bool = False,
+        return_covariance: bool = True,
+        return_features: bool = False,
+        scale_random_features=True, # Edward2 defaults to True and applies √(2/M) in the GP layer
+        trainable_kernel_scale: bool = False,
+        use_custom_features: bool = False,
+        verbose: bool = False,
     ):
-        """Initializes a random-feature Gaussian process layer instance.
+        """Initializes a Gaussian Process layer using random feature approximation.
+
+        This constructor sets up the random feature mapping, output projection, and covariance estimator for the layer.
+        It supports various kernel types, normalization, and options for trainable parameters.
 
         Args:
-            in_features: (int) Number of input units.
+            in_features: Number of input features.
+            out_features: Number of output features (e.g., number of classes for GP layer).
+            random_features: Number of random Fourier features for kernel approximation.
+            kernel_type: Type of kernel function to use ('gaussian', 'linear', etc.).
+            kernel_scale: Length-scale parameter for the kernel function.
+            scale_random_features: Whether to scale the random features.
+            normalize_input: Whether to apply layer normalization to the input.
+            trainable_kernel_scale: If True, kernel scale is a trainable parameter.
+            use_custom_features: If True, use a custom linear feature mapping.
+            covariance_momentum: Momentum for updating the covariance estimator.
+            covariance_ridge_penalty: Ridge penalty for covariance regularization.
+            return_covariance: If True, the layer returns covariance estimates.
+            init_stdev: Standard deviation for output layer weight initialization.
+            output_bias_trainable: If True, output bias is trainable.
+            covariance_likelihood: Likelihood type for covariance estimation.
+            verbose: If True, enables verbose logging.
 
-            out_features: (int) Number of output units.
-
-            random_features: (int) Number of random Fourier features used for
-                approximating the Gaussian process.
-
-            kernel_type: (string) The type of kernel function to use for Gaussian
-                process. Currently defaults to 'gaussian' which is the Gaussian RBF
-                kernel.
-
-            kernel_scale: (float) The length-scale parameter of the a
-                shift-invariant kernel function, i.e., for RBF kernel:
-                exp(-|x1 - x2|**2 / 2 * kernel_scale).
-
-            output_bias: (float) Scalar initial value for the bias vect
-            or.
-
-            normalize_input: (bool) Whether to normalize the input to Gaussian
-                process.
-
-            kernel_scale_trainable: (bool) Whether the length scale variable is
-                trainable.
-
-            output_bias_trainable: (bool) Whether the bias is trainable.
-
-            cov_momentum: (float) A discount factor used to compute the moving
-                average for posterior covariance matrix.
-
-            cov_ridge_penalty: (float) Initial Ridge penalty to posterior
-                covariance matrix.
-
-            scale_random_features: (bool) Whether to scale the random feature
-                by sqrt(2. / num_inducing).
-
-            use_custom_random_features: (bool) Whether to use custom random
-                features implemented using tf.keras.layers.Dense.
-
-            custom_random_features_initializer: (callable) Initializer for
-                the random features. Default to random normal which approximates a RBF
-                kernel function if activation function is cos.
-
-            custom_random_features_activation: (callable) Activation function for the
-                random feature layer. Default to cosine which approximates a RBF
-                kernel function.
-
-            l2_regularization: (float) The strength of l2 regularization on the output
-                weights.
-
-            covariance_likelihood: (string) Likelihood to use for computing Laplace
-                approximation for covariance matrix. Default to `gaussian`.
-
-            return_covariance: (bool) Whether to also return GP covariance matrix.
-                If False then no covariance learning is performed.
-
-            return_random_features: (bool) Whether to also return random features.
+        Returns:
+            None.
         """
-        super(RandomFeatureGaussianProcess, self).__init__()
+        super().__init__()
+        verbose = bool(verbose or os.getenv("VERBOSE") or os.getenv("DEBUG"))
+        self.verbose = verbose
         self.in_features = in_features
-        self.out_features = out_features
+        self.out_features = out_features # number of classes
         self.random_features = random_features
 
-        self.normalize_input = normalize_input
+        if kernel_type.lower() not in ("gaussian", "laplacian", "linear"):
+            raise ValueError(f"Unsupported kernel_type: {kernel_type}")
+        self.kernel_type = kernel_type.lower()
 
-        # remove input_scale to more closely align with Edward2/TF implementation
-        # self.input_scale = 1.0 / math.sqrt(kernel_scale)
-        self.feature_scale = math.sqrt(2.0 / float(random_features))
+        self.normalize_input = normalize_input
+        self.return_covariance = return_covariance
+        self.return_features = return_features
         self.scale_random_features = scale_random_features
 
-        self.return_random_features = return_random_features
-        self.return_covariance = return_covariance
-
-        self.kernel_type = kernel_type
-        self.kernel_scale = kernel_scale
-        self.init_output_bias = init_output_bias
-        self.kernel_scale_trainable = kernel_scale_trainable
-        self.output_bias_trainable = output_bias_trainable
-
-        # TODO: implement orthogonal random features
-        # custom_random_features_initializer=OrthogonalRandomFeatures(stddev=0.05),
-        # custom_random_features_activation=torch.cos
-        self.use_custom_random_features = use_custom_random_features
-        self.custom_random_features_initializer = custom_random_features_initializer
-        self.custom_random_features_activation = custom_random_features_activation
-
-        self.covariance_momentum = covariance_momentum
-        self.covariance_ridge_penalty = covariance_ridge_penalty
-        self.covariance_likelihood = covariance_likelihood
-
-        self.return_dict = return_dict
+        logger.debug("Initializing RandomFeatureGaussianProcess layer") if self.verbose else None
+        logger.debug(f"Input features: {in_features}") if self.verbose else None
+        logger.debug(f"Output features: {self.out_features}") if self.verbose else None
 
         if normalize_input:
-            self.input_norm = nn.LayerNorm(self.in_features, elementwise_affine=True)  # TF parity
+            logger.debug("Using LayerNorm to normalize input") if self.verbose else None
+            self.input_norm = nn.LayerNorm(in_features, elementwise_affine=True)  # TF parity
 
-        if not use_custom_random_features:
-            self.random_feature_layer = RandomFourierFeatures(
-                in_features=self.in_features,
-                out_features=self.random_features,
-                kernel_type=self.kernel_type,
-                kernel_scale=self.kernel_scale,
-                kernel_scale_trainable=self.kernel_scale_trainable,
-            )
-        # Make random feature layer
+        # Random feature mapping
+        if use_custom_features:
+            logger.debug("Using custom random feature layer") if self.verbose else None
+            self.feature_layer = nn.Linear(in_features, random_features, bias=False)
+            output_in = random_features
         elif kernel_type.lower() == "linear":
-            self.random_features = random_features = in_features
-            self.feature_scale = math.sqrt(2.0 / float(self.random_features))
-            self.random_feature_layer = IdentityLayer()
-
+            logger.debug("Using linear kernel (no random features)") if self.verbose else None
+            self.feature_layer = nn.Identity()
+            # ensure output layer matches input features
+            output_in = in_features
         else:
-            self.random_feature_layer = CustomRandomFeatureLayer(
-                in_features=self.in_features,
-                out_features=self.random_features,
-                kernel_init=self.custom_random_features_initializer,
-                bias_init=None,
-                activation=self.custom_random_features_activation,
+            logger.debug("Using RBF kernel with random features") if self.verbose else None
+            self.feature_layer = RandomFourierFeatures(
+                in_features,
+                random_features,
+                kernel_type,
+                kernel_scale,
+                trainable_kernel_scale,
             )
+            output_in = random_features
 
-        if return_covariance:
-            self.covariance_layer = LaplaceRandomFeatureCovariance(
-                in_features=self.random_features,
-                momentum=covariance_momentum,
-                ridge_penalty=covariance_ridge_penalty,
-                likelihood=covariance_likelihood,
-            )
+        # Output linear projection
+        self.output_layer = nn.Linear(output_in, self.out_features, bias=False)
+        # Initialize output layer weights with normal distribution with small stddev
+        nn.init.normal_(self.output_layer.weight, std=init_stdev)
 
-        self.output_layer = nn.Linear(
-            self.random_features, self.out_features, bias=False
+        # Output bias
+        if output_bias_trainable:
+            logger.debug(f"Output bias is trainable: {output_bias_trainable}") if self.verbose else None
+            self.bias = nn.Parameter(torch.zeros(self.out_features))
+        else:
+            self.register_buffer("bias", torch.zeros(self.out_features))
+
+        nn.init.constant_(self.bias, 0.0)
+        # Covariance estimator
+        self.covariance_layer = LaplaceRandomFeatureCovariance(
+            in_features=output_in,
+            momentum=covariance_momentum,
+            ridge_penalty=covariance_ridge_penalty,
+            likelihood=covariance_likelihood,
         )
-        nn.init.normal_(self.output_layer.weight, std=0.01)  # TF gp_output_initializer
-
-        self.output_bias = nn.Parameter(
-            torch.ones(out_features) * init_output_bias,
-            requires_grad=output_bias_trainable,
-        )
-        self.mean_field_factor = math.pi / 8.0
 
     def reset_precision(self):
+        """Resets the precision matrix of the covariance estimator to its initial state.
+
+        This method is used to clear the accumulated precision statistics in the covariance layer,
+        typically before starting a new training epoch or evaluation.
+
+        Returns:
+            None.
+        """
         self.covariance_layer.reset_precision()
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor):
+        """Performs a forward pass through the Gaussian Process layer.
+
+        This method transforms the input using random features, computes logits and covariance,
+        and applies mean-field adjustment to the logits if covariance is available.
+
+        Args:
+            x: Input tensor of shape (batch_size, in_features).
+
+        Returns:
+            A dictionary containing the adjusted logits, raw logits, covariance matrix, and random features.
+        """
         if self.normalize_input:
             x = self.input_norm(x)
-        # # comment out for now
-        # if self.normalize_input:
-        #     x = self.input_layernorm(x)
+        else:
+            # Edward2 parity: support lengthscale for custom features by scaling inputs
+            if isinstance(self.feature_layer, nn.Linear) and hasattr(self.feature_layer, "weight"):
+                # if you store the kernel scale in the RFF module instead, read it there
+                if hasattr(self.feature_layer, "kernel_scale") and self.feature_layer.kernel_scale is not None:
+                    ell = float(self.feature_layer.kernel_scale)
+                    if ell > 0:
+                        x = x / math.sqrt(ell)
 
-        # # remove the 1/sqrt(ℓ) path; rely on RFF layer to divide weights by ℓ
-        # elif self.use_custom_random_features:
-        #     x = x * self.input_scale
-        if self.use_custom_random_features and not self.normalize_input and self.kernel_scale is not None:
-            x = x / math.sqrt(float(self.kernel_scale))
+        Phi = self.feature_layer(x)
+        if hasattr(self.feature_layer, "out_features") and self.scale_random_features:
+            # Rahimi–Recht scaling
+            # RandomFourierFeatures returns cos(·) and scaling applied here when set
+            num_rand_features = float(self.feature_layer.out_features)
+            Phi = Phi * math.sqrt(2.0 / num_rand_features)
 
-        Phi = self.random_feature_layer(x)
+        logits = self.output_layer(Phi) + self.bias
 
-        if self.scale_random_features:
-            Phi = Phi * self.feature_scale
+        cov_out = self.covariance_layer(Phi, logits) if self.return_covariance else None
+        Phi_out = Phi if self.return_features else None
+        # default to unadjusted return logits
+        output_dict = {"logits": logits.clone(), "logits_raw": logits.clone(), "cov": cov_out, "features": Phi_out}
 
-        logits = self.output_layer(Phi) + self.output_bias
-        covariance = None
-        if self.return_covariance:
-            covariance = self.covariance_layer(Phi, logits).to(Phi.device)
+        if (cov_out is not None) and (not self.training):
+            # Adjust logits using mean-field approximation
+            output_dict["logits"] = mean_field_logits(logits, cov_out)
 
-        # === MEAN-FIELD ADJUSTMENT (TensorFlow parity) ===
-        # at inference, adjust logits: μ / sqrt(1 + (π/8)·σ²)
-        if (not self.training) and (covariance is not None):
-            variances = torch.diagonal(covariance, dim1=-2, dim2=-1)
-            logits_scale = torch.sqrt(1.0 + variances * self.mean_field_factor)
-            if logits_scale.ndim == 1:
-                logits_scale = logits_scale.unsqueeze(-1)
-            logits = logits / logits_scale
-        # =================================================
-
-        if not self.return_dict:
-            res = (logits,)
-            if self.return_covariance:
-                res += (covariance,)
-            if self.return_random_features:
-                res += (Phi,)
-            return res
-
-        model_output = {"logits": logits}
-
-        if self.return_covariance:
-            model_output["covariance"] = covariance
-
-        if self.return_random_features:
-            model_output["random_features"] = Phi
-
-        return model_output
+        return output_dict
 
 
 class LaplaceRandomFeatureCovariance(nn.Module):
@@ -364,9 +308,9 @@ class LaplaceRandomFeatureCovariance(nn.Module):
     def __init__(
         self,
         in_features,
-        momentum=0.999,
-        ridge_penalty=1e-6,
-        likelihood="gaussian",
+        momentum: float =0.999,
+        ridge_penalty: float =1e-6,
+        likelihood: str ="gaussian",
         device=None,
         dtype=None,
     ):
@@ -385,12 +329,11 @@ class LaplaceRandomFeatureCovariance(nn.Module):
         self.device = device
         self.dtype = dtype
 
-        self.init_precision = ridge_penalty * torch.eye(
-            in_features, **self.factory_kwargs
-        )
+        # TF: precision starts at zeros; ridge is injected at inversion.
+        self.init_precision = torch.zeros(in_features, in_features, **self.factory_kwargs)
+        self.register_buffer("_precision", torch.zeros(in_features, in_features, **self.factory_kwargs))
+        self.register_buffer("_covariance", torch.zeros(in_features, in_features, **self.factory_kwargs))
 
-        self.register_buffer("_precision", torch.zeros(in_features, **self.factory_kwargs))
-        self.register_buffer("_covariance", torch.zeros(in_features, **self.factory_kwargs))
         self.covariance_is_cached = False
 
     @property
@@ -405,9 +348,17 @@ class LaplaceRandomFeatureCovariance(nn.Module):
 
     @property
     def covariance(self):
+        # If precision is all zeros or NaN: (s I + 0)^(-1) = (1/s) I
+        if not self._precision.any() or torch.isnan(self._precision).all():
+            eye = torch.eye(self.in_features, **self.factory_kwargs)
+            return eye / self.ridge_penalty
+
         if not self.covariance_is_cached:
-            self._covariance = torch.linalg.inv(self._precision)
-            self.covariance_is_cached = True
+            # TF parity: invert (ridge * I + precision)
+            eye = torch.eye(self.in_features, device=self._precision.device, dtype=self._precision.dtype)
+            self._covariance = torch.linalg.inv(self.ridge_penalty * eye + self._precision)
+
+        self.covariance_is_cached = True
         return self._covariance
 
     @covariance.setter
@@ -442,6 +393,9 @@ class LaplaceRandomFeatureCovariance(nn.Module):
                 prob_multiplier = prob_multiplier.mean(dim=-1, keepdim=True)
 
         elif self.likelihood == "multiclass_logistic":
+            # Note: this is experimental and may not work well
+            logger.warning("Multiclass likelihood is experimental; use with caution.")
+
             # Approximate curvature upper bound: max_k p_k(1-p_k)
             probs = torch.softmax(logits, dim=-1)
             # prob_multiplier, _ = torch.max(probs * (1.0 - probs), dim=-1, keepdim=True)
@@ -454,19 +408,21 @@ class LaplaceRandomFeatureCovariance(nn.Module):
         else:
             raise ValueError(f"Invalid likelihood entered: {self.likelihood}")
 
-        Phi = torch.sqrt(prob_multiplier) * Phi
-        batch_precision = torch.transpose(Phi, -2, -1) @ Phi
+        # Shape-robust multiplier: (B, 1) broadcast over features
+        Phi = torch.sqrt(prob_multiplier).reshape(-1, 1) * Phi
+        batch_precision = Phi.transpose(-2, -1) @ Phi
 
         # Update the non-batch (i.e. all data) precision matrix.
+        dev = self._precision.device
         if self.momentum > 0:
             batch_precision = batch_precision / batch_size
-            self.precision += (self.momentum - 1) * self.precision + (
-                1 - self.momentum
-            ) * batch_precision.to(self.device)
+            # IMPORTANT: assign to trigger setter (cache invalidation)
+            new_precision = self.momentum * self.precision + (1 - self.momentum) * batch_precision.to(dev)
+            self.precision = new_precision
         else:
             # Compute exact population-wise covariance without momentum.
             # If use this option, make sure to pass through data only once.
-            self.precision += batch_precision.to(self.device)
+            self.precision = self.precision + batch_precision.to(dev)
         return self
 
     def reset_precision(self):
@@ -501,16 +457,9 @@ class LaplaceRandomFeatureCovariance(nn.Module):
         Returns:
             (torch.tensor) Predictive covariance matrix, shape (batch_size, batch_size).
         """
-        # Cov_train = (ΦᵀΦ + λI)^(-1)
-        # Cov_test  = Φ Cov_train Φᵀ
-        return Phi @ self.covariance.to(Phi.device) @ Phi.transpose(-2, -1)
-
-        # return (
-        #     self.ridge_penalty
-        #     * Phi
-        #     @ self.covariance.to(Phi.device)
-        #     @ torch.transpose(Phi, -2, -1)
-        # )
+        # Cov_test = s * Φ_test @ (s I + ΦᵀΦ)^(-1) @ Φ_testᵀ
+        # TODO: check when to use self.ridge_penalty - Should be okay
+        return self.ridge_penalty * (Phi @ self.covariance.to(Phi.device) @ Phi.transpose(-2, -1))
 
     def forward(self, Phi, logits=None):
         """Minibatch updates the GP's posterior precision matrix estimate.
@@ -568,6 +517,6 @@ def mean_field_logits(logits, covariance_matrix=None, mean_field_factor=math.pi 
 
     if len(logits.shape) > 1:
         # Cast logits_scale to compatible dimension.
-        logits_scale = torch.unsqueeze(logits_scale, axis=-1)
+        logits_scale = torch.unsqueeze(logits_scale, dim=-1)
 
     return logits / logits_scale
