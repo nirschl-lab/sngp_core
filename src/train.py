@@ -4,6 +4,8 @@ import hydra
 import lightning as L
 import rootutils
 import torch
+import cv2
+
 from lightning import Callback, LightningDataModule, LightningModule, Trainer
 from lightning.pytorch.loggers import Logger
 from omegaconf import DictConfig
@@ -38,6 +40,9 @@ from src.utils import (
 
 log = RankedLogger(__name__, rank_zero_only=True)
 
+# OpenCV performance tweaks for albumentations
+cv2.setNumThreads(0)
+cv2.setUseOptimized(True)
 
 @task_wrapper
 def train(cfg: DictConfig) -> Tuple[Dict[str, Any], Dict[str, Any]]:
