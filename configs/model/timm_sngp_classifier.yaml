@@ -32,3 +32,5 @@ test_name: "test_predictions.csv"
 log_csv: false
 
 use_mean_field_logits: false
+
+log_test_metrics: true

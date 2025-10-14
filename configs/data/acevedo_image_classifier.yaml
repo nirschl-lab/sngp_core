@@ -7,6 +7,6 @@ datamodule:
   dataset_name: nirschl-lab/acevedo_et_al_2020
   num_classes: 8
   batch_size: 64
-  num_workers: 16
+  num_workers: 32
   pin_memory: True
   test_all_folds: False

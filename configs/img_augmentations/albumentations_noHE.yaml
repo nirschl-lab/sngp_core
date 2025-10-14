@@ -1,0 +1,165 @@
+# configs/img_augmentation/albumentations.yaml
+# Train/eval transforms defined as Hydra-instantiable objects
+# Using Albumentations and AlbumentationsX for microscopy augmentation
+
+train:
+  _target_: albumentations.Compose
+  transforms:
+    - _target_: albumentations.RandomSizedCrop
+      min_max_height: [224, 256]
+      size: [224, 224]
+      w2h_ratio: 1
+      interpolation: 1 # cv2.INTER_LINEAR
+      mask_interpolation: 0 #cv2.INTER_NEAREST
+      p: 0.5
+
+    - _target_: albumentations.Resize
+      height: 224
+      width: 224
+      p: 1.0
+
+    - _target_: albumentations.D4
+      p: 1.0
+
+    - _target_: albumentations.RandomRotate90
+      p: 1.0
+
+    # Color/Stain/Illumination augmentation common in histopathology
+    - _target_: albumentations.OneOf
+      p: 0.8
+      transforms:
+        # combine stain and illumination changes
+        - _target_: albumentations.Compose
+          transforms:
+            - _target_: albumentations.Illumination
+              mode: "linear"
+              intensity_range: [0.01, 0.2]
+              effect_type: "both"
+              angle_range: [0, 360]
+              center_range: [0.1, 0.9]
+              sigma_range: [0.2, 1.0]
+              p: 1.0
+        - _target_: albumentations.Illumination
+          mode: "linear"
+          intensity_range: [ 0.01, 0.2 ]
+          effect_type: "both"
+          angle_range: [ 0, 360 ]
+          center_range: [ 0.1, 0.9 ]
+          sigma_range: [ 0.2, 1.0 ]
+          p: 1.0
+        - _target_: albumentations.RandomBrightnessContrast
+          brightness_limit: [-0.2, 0.2]
+          contrast_limit: [-0.2, 0.2]
+          brightness_by_max: True
+          ensure_safe_range: True
+          p: 1.0
+#        - _target_: albumentations.RGBShift
+#          r_shift_limit: [-20, 20]
+#          g_shift_limit: [-20, 20]
+#          b_shift_limit: [-20, 20]
+#          p: 0.5
+#        - _target_: albumentations.PlanckianJitter
+#          mode: "blackbody"
+#          temperature_limit: [4000, 15000]
+#          sampling_method: "uniform"
+#          p: 0.5
+        - _target_: albumentations.ToGray
+          method: "weighted_average"
+          p: 0.5
+        - _target_: albumentations.NoOp
+
+    # blur and compression
+    - _target_: albumentations.OneOf
+      p: 0.5
+      transforms:
+        - _target_: albumentations.GaussianBlur
+          blur_limit: 0
+          sigma_limit: [0.5, 3.0]
+          p: 1.0
+        - _target_: albumentations.MedianBlur
+          blur_limit: [9, 13]
+          p: 1.0
+        - _target_: albumentations.AdvancedBlur
+          blur_limit: [3, 7]
+          sigma_x_limit: [0.2, 1]
+          sigma_y_limit: [0.2, 1]
+          rotate_limit: [-90, 90]
+          beta_limit: [0.5, 8]
+          noise_limit: [0.9, 1.1]
+          p: 1.0
+        - _target_: albumentations.ImageCompression
+          compression_type: "jpeg"
+          quality_range: [30, 70]
+          p: 1.0
+        - _target_: albumentations.Downscale
+          scale_range: [0.25, 0.25]
+          interpolation_pair: {"upscale":0, "downscale":3} # 0 =cv2.INTER_NEAREST , 1=cv2.INTER_LINEAR, 2 = cv2.INTER_CUBIC, 3=cv2.INTER_AREA, 4=cv2.INTER_LANCZOS4
+          p: 1.0
+        - _target_: albumentations.NoOp
+
+    # noise
+    - _target_: albumentations.OneOf
+      p: 0.5
+      transforms:
+        - _target_: albumentations.GaussNoise
+          std_range: [0.1, 0.2]
+          mean_range: [0, 0]
+          per_channel: true
+          noise_scale_factor: 1
+          p: 1.0
+        - _target_: albumentations.MultiplicativeNoise
+          multiplier: [0.8, 1.2]
+          per_channel: false
+          elementwise: true
+          p: 1.0
+        - _target_: albumentations.ShotNoise
+          scale_range: [0.01, 0.05]
+          p: 1.0
+        - _target_: albumentations.NoOp
+
+    - _target_: albumentations.OneOf
+      p: 0.5
+      transforms:
+        - _target_: albumentations.ElasticTransform
+          alpha: 300
+          sigma: 10
+          interpolation: 1
+          approximate: false
+          same_dxdy: true
+          mask_interpolation: 0
+          noise_distribution: "gaussian"
+          keypoint_remapping_method: "mask"
+          border_mode: 0
+          fill: 0
+          fill_mask: 0
+          p: 1.0
+        - _target_: albumentations.NoOp
+
+    - _target_: albumentations.Normalize
+      mean: [0.485, 0.456, 0.406]
+      std:  [0.229, 0.224, 0.225]
+      max_pixel_value: 255.0
+
+    - _target_: albumentations.pytorch.transforms.ToTensorV2
+      p: 1.0
+
+test:
+  _target_: albumentations.Compose
+  transforms:
+    - _target_: albumentations.Resize
+      height: 256
+      width: 256
+      p: 1.0
+
+    - _target_: albumentations.CenterCrop
+      height: 224
+      width: 224
+      p: 1.0
+
+    - _target_: albumentations.Normalize
+      mean: [0.485, 0.456, 0.406]
+      std:  [0.229, 0.224, 0.225]
+      max_pixel_value: 255.0
+
+    - _target_: albumentations.pytorch.transforms.ToTensorV2
+      p: 1.0

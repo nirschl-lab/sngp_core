@@ -34,3 +34,5 @@ log_csv: false
 #mc for testing/inference
 use_mc: false
 mc_passes: 10
+
+log_test_metrics: true

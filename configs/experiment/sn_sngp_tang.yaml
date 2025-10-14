@@ -5,14 +5,14 @@
 
 defaults:
   - override /data: acevedo_image_classifier
-  - override /model: timm_basic_classifier
+  - override /model: timm_sngp_classifier
   - override /callbacks: default
   - override /trainer: default
 
 # all parameters below will be merged with parameters from default configurations set above
 # this allows you to overwrite only specified parameters
 
-tags: ["tang", "baseline", "paper_exp1"]
+tags: ["tang_et_al_2019", "SNGP", 'training']
 
 seed: 12345
 
@@ -40,14 +40,14 @@ logger:
   wandb:
     tags: ${tags}
     group: "paper_exp1"
-    name: "Baseline Tang"
+    name: "Training: Tang_sngp"
     log_model: True
   aim:
     experiment: ""
 
 callbacks:
   early_stopping:
-    monitor: "val/los"
+    monitor: "val/loss"
     patience: 10
     mode: "min"
     min_delta: 0.005

@@ -12,7 +12,7 @@ defaults:
 # all parameters below will be merged with parameters from default configurations set above
 # this allows you to overwrite only specified parameters
 
-tags: ["wong", "MC", "paper_exp1"]
+tags: ["wong_et_al_2022", "MC", "drop_rate0.2"]
 
 seed: 12345
 
@@ -24,7 +24,7 @@ trainer:
 
 model:
   optimizer:
-    lr: 0.001
+    lr: 0.0001
   hist_bins: 10
   net:
     drop_rate: 0.2
@@ -33,7 +33,7 @@ model:
 
 data:
   datamodule:
-    dataset_name: 'nirschl-lab/wong_et_al_2022'
+    dataset_name: "nirschl-lab/wong_et_al_2022"
     num_classes: 4
     batch_size: 256
 
@@ -41,12 +41,14 @@ logger:
   wandb:
     tags: ${tags}
     group: "paper_exp1"
-    name: "MC Wong"
+    name: "Training: Wong_drop0.2"
     log_model: True
   aim:
     experiment: ""
 
 callbacks:
   early_stopping:
-    monitor: "val/f1"
-    patience: 5
+    monitor: "val/loss"
+    patience: 10
+    mode: "min"
+    min_delta: 0.005

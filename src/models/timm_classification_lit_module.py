@@ -41,7 +41,8 @@ class TimmClassificationLitModule(LightningModule):
         log_metrics_per_class = False,
         use_mc = False,
         mc_passes = 25,
-        use_mean_field_logits = False
+        use_mean_field_logits = False,
+        log_test_metrics = True,
     ) -> None:
         """Initialize a `MNISTLitModule`.
 
@@ -68,6 +69,7 @@ class TimmClassificationLitModule(LightningModule):
 
         # for calculating ece
         self.test_ece = MulticlassCalibrationError(num_classes=self.num_classes, n_bins=10, norm='l1')
+        self.val_ece = MulticlassCalibrationError(num_classes=self.num_classes, n_bins=10, norm='l1')
 
         # Add precision, recall, and F1 metrics
         self.test_precision = MulticlassPrecision(num_classes=self.num_classes, average='macro')
@@ -117,6 +119,7 @@ class TimmClassificationLitModule(LightningModule):
         # csv name
         self.test_name = test_name
         self.log_csv = log_csv
+        self.log_test_metrics = log_test_metrics
         self.log_metrics_per_class = log_metrics_per_class
 
         #montae carlo
@@ -213,7 +216,11 @@ class TimmClassificationLitModule(LightningModule):
             probs = torch.softmax(logits, dim=1)
             
         preds = torch.argmax(probs, dim=1)
-        loss = self.criterion(logits, y)
+        if self.log_test_metrics==False: # when dim mismatch dont calculate loss only for tesing purpose
+            loss = None
+        else:
+            loss = self.criterion(logits, y)
+            
 
         return img_ids, loss, probs, preds, y, fold
 
@@ -264,6 +271,7 @@ class TimmClassificationLitModule(LightningModule):
         self.val_loss(loss)
         self.val_nll(nll_loss)
         self.val_acc(preds, targets)
+        self.val_ece(probs, targets)
         self.val_precision(preds, targets)
         self.val_recall(preds, targets)
         self.val_f1(preds, targets)
@@ -271,6 +279,7 @@ class TimmClassificationLitModule(LightningModule):
         self.log("val/loss", self.val_loss, on_step=False, on_epoch=True, prog_bar=True)
         self.log("val/nll", self.val_nll, on_step=False, on_epoch=True, prog_bar=True)
         self.log("val/acc", self.val_acc, on_step=False, on_epoch=True, prog_bar=True)
+        self.log("val/ece", self.val_ece, on_step=False, on_epoch=True, prog_bar=True)
         self.log("val/precision", self.val_precision, on_step=False, on_epoch=True, prog_bar=True)
         self.log("val/recall", self.val_recall, on_step=False, on_epoch=True, prog_bar=True)
         self.log("val/f1", self.val_f1, on_step=False, on_epoch=True, prog_bar=True)
@@ -313,27 +322,29 @@ class TimmClassificationLitModule(LightningModule):
         :param batch_idx: The index of the current batch.
         """
         
+        # pdb.set_trace()
         img_ids, loss, probs, preds, targets, fold = self.model_step(batch)
 
-        # Calculate NLL loss
-        log_probs = torch.log(probs + 1e-8)  # Add small epsilon to avoid log(0)
-        nll_loss = F.nll_loss(log_probs, targets)
-
+        
         # update and log metrics
         self._test_probs.append(probs.detach().cpu())
         self._test_targets.append(targets.detach().cpu())
         self._test_image_ids.extend(img_ids)  # Assuming img_ids is a list of strings
         self._test_fold.extend(fold)  # Assuming fold is a list of strings
 
-        self.test_loss(loss)
-        self.test_nll(nll_loss)
-        self.test_acc(preds, targets)
-        self.test_ece(probs, targets)
+        if self.log_test_metrics:
+            # Calculate NLL loss
+            log_probs = torch.log(probs + 1e-8)  # Add small epsilon to avoid log(0)
+            nll_loss = F.nll_loss(log_probs, targets)
+            self.test_loss(loss)
+            self.test_nll(nll_loss)
+            self.test_acc(preds, targets)
+            self.test_ece(probs, targets)
 
-        # Update precision, recall, and F1 metrics
-        self.test_precision(preds, targets)
-        self.test_recall(preds, targets)
-        self.test_f1(preds, targets)
+            # Update precision, recall, and F1 metrics
+            self.test_precision(preds, targets)
+            self.test_recall(preds, targets)
+            self.test_f1(preds, targets)
 
         # self.test_precision_per_class(preds, targets)
         # self.test_recall_per_class(preds, targets)
@@ -351,44 +362,44 @@ class TimmClassificationLitModule(LightningModule):
         """Lightning hook that is called when a test epoch ends."""
         probs_all = torch.cat(self._test_probs).numpy() # n x C
         targets = torch.cat(self._test_targets).numpy() # N x 1 (0-C)
-        # pdb.set_trace()
         prediction_prob_score = np.max(probs_all, axis=1)
         prediction = np.argmax(probs_all, axis=-1)
         true_bin_label = (np.argmax(probs_all, axis=-1) == targets)*1
+        if self.log_test_metrics:
 
-        # Compute final metrics
-        precision_macro = self.test_precision.compute()
-        recall_macro = self.test_recall.compute()
-        f1_macro = self.test_f1.compute()
-        loss = self.test_loss.compute()
-        nll = self.test_nll.compute()
-        acc = self.test_acc.compute()
-        ece = self.test_ece.compute()
+            # Compute final metrics
+            precision_macro = self.test_precision.compute()
+            recall_macro = self.test_recall.compute()
+            f1_macro = self.test_f1.compute()
+            loss = self.test_loss.compute()
+            nll = self.test_nll.compute()
+            acc = self.test_acc.compute()
+            ece = self.test_ece.compute()
 
-        # Log macro-averaged metrics
-        self.log("test/precision_final", precision_macro, prog_bar=True)
-        self.log("test/recall_final", recall_macro, prog_bar=True)
-        self.log("test/f1_final", f1_macro, prog_bar=True)
-        self.log("test/loss_final", loss, on_step=False, on_epoch=True, prog_bar=True)
-        self.log("test/nll_final", nll, on_step=False, on_epoch=True, prog_bar=True)
-        self.log("test/acc_final", acc, on_step=False, on_epoch=True, prog_bar=True)
-        self.log("test/ece_final", ece, on_step=False, on_epoch=True, prog_bar=True)
+            # Log macro-averaged metrics
+            self.log("test/precision_final", precision_macro, prog_bar=True)
+            self.log("test/recall_final", recall_macro, prog_bar=True)
+            self.log("test/f1_final", f1_macro, prog_bar=True)
+            self.log("test/loss_final", loss, on_step=False, on_epoch=True, prog_bar=True)
+            self.log("test/nll_final", nll, on_step=False, on_epoch=True, prog_bar=True)
+            self.log("test/acc_final", acc, on_step=False, on_epoch=True, prog_bar=True)
+            self.log("test/ece_final", ece, on_step=False, on_epoch=True, prog_bar=True)
 
-        # Log per-class metrics
-        if self.log_metrics_per_class:
-            precision_per_class = self.test_precision_per_class.compute()
-            recall_per_class = self.test_recall_per_class.compute()
-            f1_per_class = self.test_f1_per_class.compute()
-            if hasattr(self, 'test_idx_to_classes') and self.test_idx_to_classes:
-                for i, class_name in self.test_idx_to_classes.items():
-                    self.log(f"test/precision_{class_name}", precision_per_class[i])
-                    self.log(f"test/recall_{class_name}", recall_per_class[i])
-                    self.log(f"test/f1_{class_name}", f1_per_class[i])
-            else:
-                for i in range(self.num_classes):
-                    self.log(f"test/precision_class_{i}", precision_per_class[i])
-                    self.log(f"test/recall_class_{i}", recall_per_class[i])
-                    self.log(f"test/f1_class_{i}", f1_per_class[i])
+            # Log per-class metrics
+            if self.log_metrics_per_class:
+                precision_per_class = self.test_precision_per_class.compute()
+                recall_per_class = self.test_recall_per_class.compute()
+                f1_per_class = self.test_f1_per_class.compute()
+                if hasattr(self, 'test_idx_to_classes') and self.test_idx_to_classes:
+                    for i, class_name in self.test_idx_to_classes.items():
+                        self.log(f"test/precision_{class_name}", precision_per_class[i])
+                        self.log(f"test/recall_{class_name}", recall_per_class[i])
+                        self.log(f"test/f1_{class_name}", f1_per_class[i])
+                else:
+                    for i in range(self.num_classes):
+                        self.log(f"test/precision_class_{i}", precision_per_class[i])
+                        self.log(f"test/recall_class_{i}", recall_per_class[i])
+                        self.log(f"test/f1_class_{i}", f1_per_class[i])
 
 
         if self.log_csv:
