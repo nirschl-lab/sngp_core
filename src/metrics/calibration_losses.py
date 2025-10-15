@@ -260,8 +260,10 @@ class CalibrationLossConfig:
 
     # ---- new: CLUE ----
     clue_weight: float = 0.0              # λ_CLUE
+    clue_alpha: float = 0.5
     clue_kind: str = "pearson"            # {"pearson", "spearman_approx"}
     clue_uncertainty: str = "entropy"     # {"entropy", "gp_var"}
+    clue_normalize_entropy: bool = False  # optional
     clue_detach_uncertainty: bool = True  # match paper’s "stop-grad u"
 
     # ---- new: BSCE-GRA ----
@@ -323,23 +325,24 @@ def calibration_losses(
 
     # ----- CLUE -----
     if cfg.clue_weight > 0:
-        # choose uncertainty source
-        if cfg.clue_uncertainty == "entropy":
-            uncertainty = _entropy_from_probs(probs)
-        elif cfg.clue_uncertainty == "gp_var" and hasattr(logits, "covariance"):
-            uncertainty = torch.diagonal(logits.covariance, dim1=-2, dim2=-1)
+        if cfg.clue_uncertainty == "gp_var" and hasattr(logits, "covariance"):
+            u = torch.diagonal(logits.covariance, dim1=-2, dim2=-1)
         else:
-            # default fallback to entropy
-            uncertainty = _entropy_from_probs(probs)
+            # default to entropy
+            u = _entropy_from_probs(probs)
+            # Optional: for entropy source, consider normalizing by log(C) for comparability to CE magnitudes (not necessary)
+            # the CLUE paper notes only that  u u and  Le L e  ​   should be “on comparable scales.”
+            if u.max() > 1.0 and cfg.clue_normalize_entropy:  # entropy in [0, log(C)]
+                u = u / math.log(logits.size(-1))
 
-        clue = clue_loss(
-            logits,
-            labels,
-            uncertainty,
-            kind=cfg.clue_kind,
+        if cfg.clue_detach_uncertainty:
+            u = u.detach()
+
+        clue_val = clue_loss(
+            logits, labels, u, alpha=cfg.clue_alpha,
         )
-        terms["clue"] = clue
-        total = total + cfg.clue_weight * clue
+        terms["clue"] = clue_val
+        total = total + cfg.clue_weight * clue_val
 
     # ----- BSCE-GRA -----
     if cfg.bsce_gra_weight > 0:
@@ -362,33 +365,24 @@ def calibration_losses(
 def clue_loss(
     logits: torch.Tensor,
     targets: torch.Tensor,
-    uncertainty: torch.Tensor,  # e.g., predictive entropy or diag(cov)
-    kind: str = "pearson",  # "pearson" | "spearman_approx"
+    uncertainty: torch.Tensor,
+    alpha: float = 0.5,
+    detach_uncertainty: bool = True,
     eps: float = 1e-8,
 ) -> torch.Tensor:
     """
-    Align higher uncertainty with higher error via correlation on mini-batches.
-    uncertainty: [B] non-negative (stop_grad recommended)
+    Faithful implementation of CLUE (Eq. 8, arXiv:2505.22803):
+        L = α * L_e + (1 - α) * (L_e - u)^2
+    where L_e is the per-example task loss (CE for classification).
     """
-    with torch.no_grad():
-        u = uncertainty.detach()  # stabilize
-        u = (u - u.mean()) / (u.std() + eps)
+    le = F.cross_entropy(logits, targets, reduction="none")  # [B]
+    u = uncertainty.clamp_min(eps)
+    if detach_uncertainty:
+        u = u.detach()
 
-    # error proxy: per-example CE (no reduction)
-    ce_i = F.cross_entropy(logits, targets, reduction="none")
-    e = (ce_i - ce_i.mean()) / (ce_i.std() + eps)
+    loss = alpha * le + (1.0 - alpha) * (le - u) ** 2
 
-    if kind == "pearson":
-        return (u * e).mean()  # minimize correlation -> alignment improves
-    elif kind == "spearman_approx":
-        # rank via sigmoid-tempered sorting proxy (cheap monotone transform)
-        u_rank = torch.argsort(torch.argsort(u)).float()
-        e_rank = torch.argsort(torch.argsort(e)).float()
-        u_rank = (u_rank - u_rank.mean()) / (u_rank.std() + eps)
-        e_rank = (e_rank - e_rank.mean()) / (e_rank.std() + eps)
-        return (u_rank * e_rank).mean()
-    else:
-        raise ValueError(kind)
+    return loss.mean()
 
 
 # ----- BSCE GRA loss (new) -----

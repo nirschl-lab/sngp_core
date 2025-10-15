@@ -54,7 +54,7 @@ class_freq:
 # --- Calibration loss configuration (NEW) ---
 calibration_cfg:
   _target_: src.metrics.calibration_losses.CalibrationLossConfig
-  # SB-ECE
+  # Soft-Binned ECE
   sb_ece_label_weight: 0.1
   sb_ece_label_bins: 15
   sb_ece_label_temp: 1e-2
@@ -65,9 +65,10 @@ calibration_cfg:
   soft_avuc_temp: 1.0
   soft_avuc_theta: 0.5
   # CLUE
-  clue_weight: 0.02 # 0.01–0.05
-  clue_kind: "pearson"
-  clue_uncertainty: "entropy"
+  clue_weight: 0.1 # not used when set to 0
+  clue_alpha: 0.5           # trade-off α in Eq. 8
+  clue_uncertainty: "entropy" # {"entropy", "gp_var"}
+  clue_detach_uncertainty: True
   # BSCE-GRA
   bsce_gra_weight: 0.1 # 0.1–1.0
   bsce_gra_beta: 2.0

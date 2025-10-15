@@ -223,7 +223,7 @@ class TimmClassificationLitModule(LightningModule):
         return mean_logits, mean_probs
 
     def model_step(
-        self, batch: Tuple[torch.Tensor, torch.Tensor]
+            self, batch: Tuple[torch.Tensor, torch.Tensor]
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Perform a single model step on a batch of data.
 
@@ -236,50 +236,58 @@ class TimmClassificationLitModule(LightningModule):
         """
         img_ids, x, y, fold = batch
 
+        # ---- Forward Pass ----
         if self.use_mc:
-            self.log_.info('using monate carlo for {} passes'.format(self.mc_passes))
+            self.log_.info(f'using Monte Carlo with {self.mc_passes} passes')
             mean_logits, mean_probs = self._mc_forward(x, T=self.mc_passes)
-            logits = mean_logits
-            probs = mean_probs
+            logits, probs = mean_logits, mean_probs
         else:
             logits = self.forward(x)
-            if len(logits.shape) > 2: # for sngp output is B, L, Cov_matrix
+            if len(logits.shape) > 2:  # for SNGP, output is (B, L, Cov_matrix)
                 logits, cov = logits
                 if self.use_mean_field_logits:
-                    self.log_.info('using mean field logits')
+                    self.log_.info('using mean-field logits')
                     logits = mean_field_logits(logits, cov)
-                # logits = logits[:1]
             probs = torch.softmax(logits, dim=1)
-            
+
         preds = torch.argmax(probs, dim=1)
-        # ---- LOSS COMPUTATION (primary + calibration) ----
-        if self.log_test_metrics==False:  # when dim mismatch dont calculate loss only for testing purpose
+
+        # ---- LOSS COMPUTATION (primary CE loss + secondary calibration) ----
+        if not self.log_test_metrics: # when dim mismatch dont calculate loss only for testing purpose
             loss = None
         else:
-            ce = self.criterion(logits, y)  # primary classification loss
+            ce = self.criterion(logits, y)  # Cross-entropy classification loss
             cal_penalty = logits.new_tensor(0.0)
             cal_terms = {}
 
-            # apply calibration only during training (default), optional on val
-            if (self.training and self.cal_cfg) or (self.compute_cal_on_val and (not self.training) and self.cal_cfg):
+            # Apply calibration losses if enabled
+            if ((self.training and self.cal_cfg) or
+                    (self.compute_cal_on_val and (not self.training) and self.cal_cfg)):
                 cal_penalty, cal_terms = calibration_losses(logits, y, self.cal_cfg)
 
+            # Total combined loss
             loss = ce + cal_penalty
 
-            # logging (per-step aggregates are fine; Lightning will reduce)
-            if self.training:
-                self.log("train/ce", ce, on_step=False, on_epoch=True, prog_bar=False)
-                if self.cal_cfg and self.log_calibration_terms:
-                    self.log("train/cal_total", cal_penalty, on_step=False, on_epoch=True, prog_bar=True)
-                    for k, v in cal_terms.items():
-                        self.log(f"train/{k}", v, on_step=False, on_epoch=True, prog_bar=False)
+            # ---- LOGGING ----
+            mode = "train" if self.training else "val"
 
-            elif self.compute_cal_on_val:
-                self.log("val/ce", ce, on_step=False, on_epoch=True, prog_bar=False)
-                if self.cal_cfg and self.log_calibration_terms:
-                    self.log("val/cal_total", cal_penalty, on_step=False, on_epoch=True, prog_bar=False)
-                    for k, v in cal_terms.items():
-                        self.log(f"val/{k}", v, on_step=False, on_epoch=True, prog_bar=False)
+            # 1. Always log CE (both train and val)
+            self.log(f"{mode}/ce", ce, on_step=False, on_epoch=True, prog_bar=True)
+
+            # 2. Log calibration loss and sub-terms (train and val and enabled)
+            if self.cal_cfg and self.log_calibration_terms:
+                self.log(f"{mode}/cal_total", cal_penalty, on_step=False, on_epoch=True, prog_bar=True)
+
+                for k, v in cal_terms.items():
+                    self.log(f"{mode}/{k}", v, on_step=False, on_epoch=True, prog_bar=False)
+
+                # 3. Log CE-to-Calibration ratio (monitor dominance)
+                ratio = ce / (cal_penalty + 1e-8)
+                self.log(f"{mode}/ce_to_cal_ratio", ratio, on_step=False, on_epoch=True, prog_bar=False)
+
+                # Optional sanity check: calibration relative magnitude (%)
+                cal_rel = (cal_penalty / (ce + 1e-8)) * 100
+                self.log(f"{mode}/calibration_pct_of_ce", cal_rel, on_step=False, on_epoch=True, prog_bar=False)
 
         return img_ids, loss, probs, preds, y, fold
 
