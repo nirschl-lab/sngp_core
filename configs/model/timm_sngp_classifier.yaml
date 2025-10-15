@@ -41,15 +41,7 @@ test_name: "test_predictions.csv" # test csv name
 log_csv: false
 use_mean_field_logits: false # only use mean field logits for evaluation
 log_test_metrics: true
-class_freq:
-    basophil: 0.071
-    eosinophil: 0.182
-    erythroblast: 0.091
-    immature_granulocyte: 0.169
-    lymphocyte: 0.071
-    monocyte: 0.083
-    neutrophil: 0.195
-    platelet: 0.137
+class_freq: null
 
 # --- Calibration loss configuration (NEW) ---
 calibration_cfg:
