@@ -1,3 +1,4 @@
+"""run_sh_command.py in tests/helpers."""
 from typing import List
 
 import pytest

@@ -1,3 +1,4 @@
+"""test_sweeps.py in tests."""
 from pathlib import Path
 
 import pytest

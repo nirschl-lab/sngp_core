@@ -1,4 +1,7 @@
+"""test_configs.py in tests."""
+
 import hydra
+import pytest
 from hydra.core.hydra_config import HydraConfig
 from omegaconf import DictConfig
 

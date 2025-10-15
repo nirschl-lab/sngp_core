@@ -1,5 +1,6 @@
-"""Adapted from:
+"""run_if.py in tests/helpers.
 
+Adapted from:
 https://github.com/PyTorchLightning/pytorch-lightning/blob/master/tests/helpers/runif.py
 """
 

@@ -1,3 +1,4 @@
+"""test_train.py in tests."""
 import os
 from pathlib import Path
 
@@ -21,6 +22,7 @@ def test_train_fast_dev_run(cfg_train: DictConfig) -> None:
     train(cfg_train)
 
 
+@pytest.mark.slow()
 @RunIf(min_gpus=1)
 def test_train_fast_dev_run_gpu(cfg_train: DictConfig) -> None:
     """Run for 1 train, val and test step on GPU.
@@ -31,6 +33,7 @@ def test_train_fast_dev_run_gpu(cfg_train: DictConfig) -> None:
     with open_dict(cfg_train):
         cfg_train.trainer.fast_dev_run = True
         cfg_train.trainer.accelerator = "gpu"
+
     train(cfg_train)
 
 

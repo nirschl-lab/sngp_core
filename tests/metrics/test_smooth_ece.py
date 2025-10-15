@@ -1,10 +1,21 @@
-#!/usr/bin/env python3
 """test_smooth_ece.py in tests/metrics.
 
 Tests for Smoothed Expected Calibration Error (Błasiok & Nakkiran 2023).
 """
+
+import json
+from pathlib import Path
+
+# Disable plotting for tests
+import matplotlib
 import numpy as np
+import pandas as pd
 import pytest
+
+from src.metrics.smooth_ece import smECE_fast_compat
+from src.metrics.utils import _bootstrap_ci_width
+
+matplotlib.use("Agg")
 
 from src.metrics.smooth_ece import (_gaussian_kernel_1d, _reflected_convolve,
                                     _smooth_round_to_grid)
@@ -158,3 +169,62 @@ def test_reflected_convolve_errors(values, ker, expected_exception, id):
     # Act & Assert
     with pytest.raises(expected_exception):
         _reflected_convolve(np.array(values, dtype=float), np.array(ker, dtype=float))
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize(
+    "dataset",
+    [
+        "pop3",
+        "densenetblur121d",
+        "efficientnet_b1",
+        "efficientnet_b3a",
+        "ese_vovnet19b_dw",
+        "gluon_senet154",
+        "mixnet_m",
+        "mobilenetv3_large_100",
+        "resnet34",
+        "resnext50_32x4d",
+    ],
+)
+def test_smooth_ece_and_ci_width(dataset):
+    # Arrange
+
+    # Load sample_data.json from the same directory as this test file
+    sample_data_filepath = Path(__file__).parent.joinpath("sample_data.json")
+    with open(sample_data_filepath, "r") as f:
+        sample_data = json.load(f)
+
+    # Act
+    # Load data from URL
+    url = sample_data[dataset]["url"]
+    df = pd.read_csv(url)
+    dataset_name = sample_data[dataset]["dataset_name"]
+
+    if "pop3" in dataset_name.lower():
+        df = pd.read_csv(url, sep="\s+", header=0)
+        obs = df["obs(mm)"]
+        df = df.loc[obs.abs() < 100]
+        df = df.loc[(df["p24_cat0"] >= 0) & (df["p24_cat0"] <= 1)]
+        f = 1.0 - df["p24_cat0"].to_numpy()
+        y = (df["obs(mm)"] > 0.2).to_numpy() * 1.0
+    elif "solar" in dataset_name.lower():
+        f = df["DAFFS"].to_numpy().copy()
+        y = df["rlz.C1"].to_numpy().copy()
+    elif "imagenet" in dataset_name.lower():
+        f = df["confidence"].to_numpy()
+        y = (df["true_label"] == df["pred_label"]).to_numpy() * 1.0
+    else:
+        raise ValueError(f"Unknown dataset format for {dataset_name}")
+
+    # Compute smECE and CI width
+    ece_val = smECE_fast_compat(f, y)
+    ece_ci_width = _bootstrap_ci_width(f, y, smECE_fast_compat, confidence=0.999)
+
+    # Assert
+    assert np.isclose(
+        ece_val, sample_data[dataset]["ece_expected"], atol=1e-2
+    ), f"ECE mismatch for {dataset}"
+    assert np.isclose(
+        ece_ci_width, sample_data[dataset]["ece_ci_width"], atol=1e-2
+    ), f"CI width mismatch for {dataset}"

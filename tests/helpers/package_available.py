@@ -1,3 +1,4 @@
+"""package_available.py in tests/helpers."""
 import platform
 
 import pkg_resources

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""ece_sample_data.py in tests/metrics."""
+"""demo_smooth_ece.py in tests/metrics."""
 
 import json
 from pathlib import Path
@@ -7,20 +7,27 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import relplot
 from loguru import logger
 
 from src.metrics.smooth_ece import smECE_fast_compat
 from src.metrics.utils import _bootstrap_ci_width
-from src.visualization.reliability import (rel_diagram_binned,
-                                           rel_diagram_smoothed)
+from src.visualization.reliability import rel_diagram_binned, rel_diagram_smoothed
+
+# set vars
+n_bootstrap = 100
+confidence = 0.999
+atol = 1e-2
+nbins = 10
+sigma = 0.1
 
 # read sample_data.json in the same directory
-sample_data_filepath = Path("./sample_data.json")
+sample_data_filepath = (
+    Path(__file__).parents[2].joinpath("tests", "metrics", "sample_data.json")
+)
 if not sample_data_filepath.is_file():
     raise FileNotFoundError(f"File {sample_data_filepath} not found.")
 
-with open("./sample_data.json", "r") as f:
+with open(sample_data_filepath, "r") as f:
     sample_data = json.load(f)
 
 
@@ -82,12 +89,12 @@ for dataset in sample_data.keys():
 
     # compute smECE (global ECE)
     ece_val = smECE_fast_compat(f, y)
-    ece_ci_width = _bootstrap_ci_width(f, y, smECE_fast_compat, confidence=0.999)
+    ece_ci_width = _bootstrap_ci_width(f, y, smECE_fast_compat, confidence=confidence)
 
     # assert
-    assert np.isclose(ece_val, ece_expected, atol=1e-2), f"ECE mismatch for {dataset}"
+    assert np.isclose(ece_val, ece_expected, atol=atol), f"ECE mismatch for {dataset}"
     assert np.isclose(
-        ece_ci_width, ci_width, atol=1e-2
+        ece_ci_width, ci_width, atol=atol
     ), f"CI width mismatch for {dataset}"
     print(
         f"{dataset}: smECE = {ece_val:.6f}, expected ECE = {sample_data[dataset]['ece_expected']:.6f}"
@@ -97,13 +104,13 @@ for dataset in sample_data.keys():
     )
 
     #
-    fig, ax = rel_diagram_binned(f, y, nbins=10)
-    plt.title(f"Custom implementation")
+    fig, ax = rel_diagram_binned(f, y, nbins=nbins)
+    plt.title(f"{dataset}: ECE{nbins}")
     plt.show()
 
     # test plot reliability diagram
-    fig, ax = rel_diagram_smoothed(f, y, sigma=0.1, n_bootstrap=100)
-    plt.title(f"Custom implementation")
+    fig, ax = rel_diagram_smoothed(f, y, sigma=sigma, n_bootstrap=n_bootstrap)
+    plt.title(f"{dataset}: smECE w/bootstrap {n_bootstrap}")
     plt.show()
 
 #

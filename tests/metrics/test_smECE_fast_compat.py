@@ -4,8 +4,11 @@
 import numpy as np
 import pytest
 
-from src.metrics.smooth_ece import (_smooth_ece_interpolated,
-                                    _smooth_round_to_grid, smECE_fast_compat)
+from src.metrics.smooth_ece import (
+    _smooth_ece_interpolated,
+    _smooth_round_to_grid,
+    smECE_fast_compat,
+)
 
 
 # Dummy implementations for dependencies (for isolated testing)

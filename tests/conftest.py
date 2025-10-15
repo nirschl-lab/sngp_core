@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """This file prepares config fixtures for other tests."""
 
+
+import os
 from pathlib import Path
 
 import pytest
@@ -9,6 +11,8 @@ from hydra import compose, initialize
 from hydra.core.global_hydra import GlobalHydra
 from omegaconf import DictConfig, open_dict
 
+# set wandb offline
+os.environ["WANDB_MODE"] = "offline" # not strictly necessary since we disable log/ckpt in tests
 
 @pytest.fixture(scope="package")
 def cfg_train_global() -> DictConfig:
