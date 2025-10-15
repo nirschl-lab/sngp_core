@@ -1,18 +1,6 @@
 _target_: src.models.timm_classification_lit_module.TimmClassificationLitModule
 
-optimizer:
-  _target_: torch.optim.Adam
-  _partial_: true
-  lr: 0.001
-  weight_decay: 0.0
-
-scheduler:
-  _target_: torch.optim.lr_scheduler.ReduceLROnPlateau
-  _partial_: true
-  mode: min
-  factor: 0.1
-  patience: 10
-
+# backbone
 net:
   _target_: src.models.timm_classification_models.TimmSNGPClassifier
   model_name: resnet50
@@ -31,16 +19,49 @@ net:
   scale_random_features: False # kwarg for SNGP <-- change to False to mirror Edward2
   trainable_kernel_scale: True # kwarg for SNGP
 
-# compile model for faster training with pytorch 2.0
-compile: false
+# optimizer and scheduler
+optimizer:
+  _target_: torch.optim.Adam
+  _partial_: true
+  lr: 0.001
+  weight_decay: 0.0
 
-#no of bins for drawing histogram at the end of training on testset
-hist_bins: 25
+scheduler:
+  _target_: torch.optim.lr_scheduler.ReduceLROnPlateau
+  _partial_: true
+  mode: min
+  factor: 0.1
+  patience: 10
 
-#test csv name
-test_name: "test_predictions.csv"
+# --- Training setup ---
+compile: false # compile model for faster training with pytorch 2.0
+num_classes: 8
+hist_bins: 25 # no of bins for drawing histogram at the end of training on testset
+test_name: "test_predictions.csv" # test csv name
 log_csv: false
-
-use_mean_field_logits: false
-
+use_mean_field_logits: false # only use mean field logits for evaluation
 log_test_metrics: true
+class_freq:
+    basophil: 0.071
+    eosinophil: 0.182
+    erythroblast: 0.091
+    immature_granulocyte: 0.169
+    lymphocyte: 0.071
+    monocyte: 0.083
+    neutrophil: 0.195
+    platelet: 0.137
+
+# --- Calibration loss configuration (NEW) ---
+calibration_cfg:
+  _target_: src.metrics.calibration_losses.CalibrationLossConfig
+  sb_ece_label_weight: 0.1
+  sb_ece_label_bins: 15
+  sb_ece_label_temp: 1e-2
+  sb_ece_conf_weight: 0.0
+  avuc_weight: 0.0
+  soft_avuc_weight: 0.05
+  soft_avuc_temp: 1.0
+  soft_avuc_theta: 0.5
+
+log_calibration_terms: true
+compute_calibration_on_val: true

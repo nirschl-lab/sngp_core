@@ -1,9 +1,11 @@
 import os
-from typing import Any, Dict, Tuple, List
+from typing import Any, Dict, Tuple, List, Optional
 
 import torch
 from lightning import LightningModule
 from torchmetrics import MaxMetric, MeanMetric
+from src.metrics.calibration_losses import CalibrationLossConfig, calibration_losses
+
 import torch.nn.functional as F
 from torchmetrics.classification.accuracy import Accuracy 
 from torchmetrics.classification import \
@@ -32,18 +34,25 @@ class TimmClassificationLitModule(LightningModule):
         net: torch.nn.Module,
         optimizer: torch.optim.Optimizer,
         scheduler: torch.optim.lr_scheduler,
+        calibration_cfg: Optional[CalibrationLossConfig],
         compile: bool,
         num_classes: int = 8,
-        hist_bins = 10, #for histogram plotting
-        calibration_curve_bins=10, #for ece plot
-        reset_sngp_precision=False,
-        test_name = "test_predictions",
-        log_csv = False,
-        log_metrics_per_class = False,
-        use_mc = False,
-        mc_passes = 25,
-        use_mean_field_logits = False,
-        log_test_metrics = True,
+        hist_bins: int = 10, #for histogram plotting
+        calibration_curve_bins: int =10, #for ece plot
+        reset_sngp_precision: bool =False,
+        test_name: str = "test_predictions",
+        log_csv: bool = False,
+        log_metrics_per_class: bool = False,
+        use_mc: bool = False,
+        mc_passes: int = 25,
+        use_mean_field_logits: bool = False,
+        log_test_metrics: bool = True,
+        log_calibration_terms: bool = True,
+        compute_calibration_on_val: bool = False,
+        class_freq: Optional[dict] = None,
+        class_weights: Optional[List[float]] = None,
+        label_smoothing: float = 0.0, # recommend avoiding with SNGP and calibration losses, if needed set alpha low [0.01, 0.05].
+        **kwargs
     ) -> None:
         """Initialize a `MNISTLitModule`.
 
@@ -60,8 +69,34 @@ class TimmClassificationLitModule(LightningModule):
         self.net = net
         self.num_classes = self.net.num_classes
 
-        # loss function
-        self.criterion = torch.nn.CrossEntropyLoss()
+        # set class weights, if provided
+        if class_weights and len(class_weights) == num_classes:
+            self.class_weights = class_weights
+        elif class_freq  and len(class_freq) == num_classes:
+            weights = torch.tensor([1.0 / class_freq[k] for k in class_freq], dtype=torch.float32)
+            self.class_weights = weights / weights.sum()
+        else:
+            self.class_weights = None
+
+        # set criterion with class weights if provided and optional label smoothing
+        if self.class_weights is not None:
+            # Ensure weights are a PyTorch tensor and on the correct device if necessary
+            self.criterion = torch.nn.CrossEntropyLoss(weight=self.class_weights)
+            class_weights_tensor = torch.tensor(self.class_weights, dtype=torch.float32)
+            self.criterion = torch.nn.CrossEntropyLoss(weight=class_weights_tensor, label_smoothing=label_smoothing)
+        else:
+            self.criterion = torch.nn.CrossEntropyLoss(label_smoothing=label_smoothing)
+
+        # secondary losses
+        if calibration_cfg is None:
+            calibration_cfg = CalibrationLossConfig(
+                sb_ece_label_weight=0.0,  # start disabled unless you enable
+                soft_avuc_weight=0.0,
+            )
+
+        self.cal_cfg = calibration_cfg
+        self.log_calibration_terms = log_calibration_terms
+        self.compute_cal_on_val = compute_calibration_on_val
 
         # metric objects for calculating and averaging accuracy across batches
         self.train_acc = Accuracy(task="multiclass", num_classes=self.num_classes)
@@ -217,11 +252,34 @@ class TimmClassificationLitModule(LightningModule):
             probs = torch.softmax(logits, dim=1)
             
         preds = torch.argmax(probs, dim=1)
-        if self.log_test_metrics==False: # when dim mismatch dont calculate loss only for tesing purpose
+        # ---- LOSS COMPUTATION (primary + calibration) ----
+        if self.log_test_metrics==False:  # when dim mismatch dont calculate loss only for testing purpose
             loss = None
         else:
-            loss = self.criterion(logits, y)
-            
+            ce = self.criterion(logits, y)  # primary classification loss
+            cal_penalty = logits.new_tensor(0.0)
+            cal_terms = {}
+
+            # apply calibration only during training (default), optional on val
+            if (self.training and self.cal_cfg) or (self.compute_cal_on_val and (not self.training) and self.cal_cfg):
+                cal_penalty, cal_terms = calibration_losses(logits, y, self.cal_cfg)
+
+            loss = ce + cal_penalty
+
+            # logging (per-step aggregates are fine; Lightning will reduce)
+            if self.training:
+                self.log("train/ce", ce, on_step=False, on_epoch=True, prog_bar=False)
+                if self.cal_cfg and self.log_calibration_terms:
+                    self.log("train/cal_total", cal_penalty, on_step=False, on_epoch=True, prog_bar=True)
+                    for k, v in cal_terms.items():
+                        self.log(f"train/{k}", v, on_step=False, on_epoch=True, prog_bar=False)
+
+            elif self.compute_cal_on_val:
+                self.log("val/ce", ce, on_step=False, on_epoch=True, prog_bar=False)
+                if self.cal_cfg and self.log_calibration_terms:
+                    self.log("val/cal_total", cal_penalty, on_step=False, on_epoch=True, prog_bar=False)
+                    for k, v in cal_terms.items():
+                        self.log(f"val/{k}", v, on_step=False, on_epoch=True, prog_bar=False)
 
         return img_ids, loss, probs, preds, y, fold
 
