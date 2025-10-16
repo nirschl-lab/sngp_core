@@ -92,21 +92,28 @@ class RandomFourierFeatures(nn.Module):
             self.register_buffer("kernel_scale", torch.tensor(kernel_scale, dtype=torch.float32))
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """Computes φ(x) = cos((x / ℓ)W + b), unscaled."""
+        """Computes φ(x) = cos(x·(W/ℓ) + b), unscaled."""
         if self.use_softplus:
             kernel_scale = torch.nn.functional.softplus(self.kernel_scale) + 1e-6
         else:
             kernel_scale = torch.nn.functional.relu(self.kernel_scale) + 1e-6
 
-        # ✅ Scale input by 1 / kernel_scale (Edward2-style)
-        x_scaled = x / kernel_scale
+        # ✅ Scale frequencies, not inputs
+        weight_scaled = self.weight / kernel_scale
 
-        features = torch.cos(x_scaled @ self.weight + self.bias)
+        if x.device != weight_scaled.device:
+            weight_scaled = weight_scaled.to(x.device)
+            bias = self.bias.to(x.device)
+        else:
+            bias = self.bias
+
+        features = torch.cos(x @ weight_scaled + bias)
 
         if self.verbose:
             logger.debug(
                 f"RFF.forward: x.shape={x.shape}, W.shape={self.weight.shape}, "
-                f"out.shape={features.shape}, kernel_scale={kernel_scale.item():.4f}"
+                f"ℓ={kernel_scale.item():.3f}, out.shape={features.shape}"
             )
 
         return features
+

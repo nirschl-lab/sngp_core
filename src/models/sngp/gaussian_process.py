@@ -125,7 +125,7 @@ class RandomFeatureGaussianProcess(nn.Module):
         covariance_momentum: float = 0.999,
         covariance_ridge_penalty: float = 1e-6,
         init_stdev: float = 1e-2,
-        kernel_scale: Optional[float] = 1.0, # set based on kernel_type if None
+        kernel_scale: Optional[float] = None, # set based on kernel_type if None
         kernel_type: str = "gaussian",  #
         normalize_input: bool = True,
         output_bias_trainable: bool = False,
@@ -264,9 +264,8 @@ class RandomFeatureGaussianProcess(nn.Module):
         if self.normalize_input:
             x = self.input_norm(x)
         else:
-            # Edward2 parity: support lengthscale for custom features by scaling inputs
-            if isinstance(self.feature_layer, nn.Linear) and hasattr(self.feature_layer, "weight"):
-                # if you store the kernel scale in the RFF module instead, read it there
+            # Edward2 parity: scale inputs only for simple linear/custom features, not RFF
+            if isinstance(self.feature_layer, nn.Linear) and not isinstance(self.feature_layer, RandomFourierFeatures):
                 if hasattr(self.feature_layer, "kernel_scale") and self.feature_layer.kernel_scale is not None:
                     ell = float(self.feature_layer.kernel_scale)
                     if ell > 0:
