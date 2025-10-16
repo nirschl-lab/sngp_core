@@ -15,7 +15,6 @@ import torch.nn.functional as F
 from torch import nn
 from torch.utils.data import DataLoader, Dataset
 
-
 from src.models.sngp.sngp_classification_layer import SNGP
 
 
@@ -50,10 +49,11 @@ class MoonsConfig:
     # plotting
     x_range: Tuple[float, float] = (-3.5, 3.5)
     y_range: Tuple[float, float] = (-2.5, 2.5)
-    n_grid: int = 200  # finer grid looks nicer
+    n_grid: int = 250
+    use_gp_uncertainty: bool = False  # True => use GP variance instead of p(1-p)
 
 
-# ------------- Data ------------- #
+# define dataset
 class NumpyDataset(Dataset):
     def __init__(self, X: np.ndarray, y: np.ndarray):
         self.X = X.astype(np.float32)
@@ -78,12 +78,10 @@ class MoonsDataModule(L.LightningDataModule):
         torch.manual_seed(self.cfg.seed)
 
         X, y = make_moons(n_samples=2 * self.cfg.train_size_per_class, noise=0.1)
-        # small positional tweak (as in TF notebook)
         X[y == 0] += [-0.1, 0.2]
         X[y == 1] += [0.1, -0.2]
         self.train_ds = NumpyDataset(X, y)
 
-        # mesh grid for evaluation
         x = np.linspace(*self.cfg.x_range, self.cfg.n_grid)
         yv = np.linspace(*self.cfg.y_range, self.cfg.n_grid)
         xv, yv = np.meshgrid(x, yv)
@@ -126,7 +124,7 @@ class TinyBackbone(nn.Module):
         self.act = nn.ReLU(inplace=True)
 
     def forward(self, x):
-        x = x @ self.input_W + self.input_b  # fixed lift
+        x = x @ self.input_W + self.input_b
         z = self.act(self.fc1(x))
         x = x + z
         z = self.act(self.fc2(x))
@@ -142,7 +140,6 @@ class LitSNGP(L.LightningModule):
 
         self.backbone = TinyBackbone(cfg.in_dim, cfg.up_projection_dim)
 
-        # Your SNGP head. Important knobs:
         # - normalize_input=True => RFGP will default ℓ=1.0 (good for normalized features)
         # - scale_random_features=True => apply √(2/m) scaling once (inside GP layer)
         self.sngp = SNGP(
@@ -195,7 +192,7 @@ class LitSNGP(L.LightningModule):
     def predict_grid(self, XY: np.ndarray, batch_size: int = 256):
         self.eval()
         device = self.device
-        probs, unc = [], []
+        probs, unc, cov_diags = [], [], []
         N = XY.shape[0]
         for i in range(0, N, batch_size):
             xb = torch.from_numpy(XY[i : i + batch_size]).to(device)
@@ -203,25 +200,28 @@ class LitSNGP(L.LightningModule):
 
             # In eval(), your RFGP should already apply mean-field if cov is returned.
             # We still read back the covariance to visualize uncertainty from logits.
-            logits = out[
-                "logits"
-            ]  # [B, C], already mean-field adjusted per your implementation
+            logits = out["logits"]  # already mean-field adjusted "logits_raw" are raw
             cov = out["cov"]  # [B, B], predictive covariance for the batch
 
             p = F.softmax(logits, dim=-1)[..., 0].detach().cpu().numpy()  # class-0 prob
             probs.append(p)
 
-            # cheap binary uncertainty proxy from probabilities:
-            # (you can also use diag(cov) if you prefer GP variance).
+            # approx uncertainty from probabilities
             u = p * (1.0 - p)
             unc.append(u)
 
+            # store diag(cov) for sanity
+            cov_diag = torch.diagonal(cov).detach().cpu().numpy()
+            cov_diags.append(cov_diag)
+
         probs = np.concatenate(probs, axis=0)
         unc = np.concatenate(unc, axis=0)
+        cov_diags = np.concatenate(cov_diags, axis=0)
+        print(f"[Sanity Check] Mean diag(cov) across test grid: {cov_diags.mean():.4f}")
         return probs, unc
 
 
-# ------------- Run ------------- #
+# train + eval
 def main():
     cfg = MoonsConfig()
     L.seed_everything(cfg.seed, workers=True)
@@ -243,13 +243,17 @@ def main():
 
     # ---- Evaluate on grid and plot surfaces ----
     probs, unc = model.predict_grid(dm.test_grid, batch_size=512)
-    plot_surfaces(
-        cfg,
-        dm,
-        probs=probs,
-        unc=unc,
-        title_suffix=f"(D={cfg.random_features}, ℓ={'auto' if cfg.kernel_scale is None else cfg.kernel_scale})",
-    )
+
+    # Quick single-batch sanity check
+    with torch.no_grad():
+        xb = torch.from_numpy(dm.test_grid[:256]).to(model.device)
+        out = model(xb)
+        mean_diag = torch.diagonal(out["cov"]).mean().item()
+        print(f"[Sanity Check] Mean diag(cov) for 1 eval batch: {mean_diag:.4f}")
+
+    # title text
+    title_text = f"(D={cfg.random_features}, ℓ={'auto' if cfg.kernel_scale is None else cfg.kernel_scale})"
+    plot_surfaces(cfg, dm, probs=probs, unc=unc, title_suffix=title_text)
 
 
 # ------------- Plotting ------------- #
