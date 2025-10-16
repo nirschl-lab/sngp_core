@@ -194,30 +194,46 @@ class LitSNGP(L.LightningModule):
         device = self.device
         probs, unc, cov_diags = [], [], []
         N = XY.shape[0]
+
         for i in range(0, N, batch_size):
             xb = torch.from_numpy(XY[i : i + batch_size]).to(device)
             out = self(xb)
+            logits = out["logits"]
+            cov = out["cov"]  # predictive covariance [B, B]
 
-            # In eval(), your RFGP should already apply mean-field if cov is returned.
-            # We still read back the covariance to visualize uncertainty from logits.
-            logits = out["logits"]  # already mean-field adjusted "logits_raw" are raw
-            cov = out["cov"]  # [B, B], predictive covariance for the batch
-
-            p = F.softmax(logits, dim=-1)[..., 0].detach().cpu().numpy()  # class-0 prob
+            # Class probability (softmax)
+            p = F.softmax(logits, dim=-1)[..., 0].detach().cpu().numpy()
             probs.append(p)
 
-            # approx uncertainty from probabilities
-            u = p * (1.0 - p)
+            # --- Uncertainty choice ---
+            if self.cfg.use_gp_uncertainty:
+                # GP epistemic uncertainty from predictive covariance
+                cov_diag = torch.diagonal(cov).detach().cpu().numpy()
+                u = cov_diag
+            else:
+                # Heuristic: aleatoric-like uncertainty from p(1-p)
+                u = p * (1.0 - p)
+
             unc.append(u)
 
-            # store diag(cov) for sanity
+            # store for sanity checks
             cov_diag = torch.diagonal(cov).detach().cpu().numpy()
             cov_diags.append(cov_diag)
 
         probs = np.concatenate(probs, axis=0)
         unc = np.concatenate(unc, axis=0)
         cov_diags = np.concatenate(cov_diags, axis=0)
-        print(f"[Sanity Check] Mean diag(cov) across test grid: {cov_diags.mean():.4f}")
+
+        mean_diag = cov_diags.mean()
+        print(f"[Sanity Check] Mean diag(cov) across test grid: {mean_diag:.4f}")
+
+        if self.cfg.use_gp_uncertainty:
+            print("[Info] Using GP predictive variance as uncertainty surface.")
+            # Normalize GP variance for better visualization scale
+            unc = unc / (unc.max() + 1e-12)
+        else:
+            print("[Info] Using heuristic p(1-p) uncertainty surface.")
+
         return probs, unc
 
 
