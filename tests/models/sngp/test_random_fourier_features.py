@@ -10,10 +10,8 @@ import numpy as np
 import pytest
 import torch
 
-from src.models.sngp.gaussian_process import (
-    LaplaceRandomFeatureCovariance,
-    RandomFeatureGaussianProcess,
-)
+from src.models.sngp.gaussian_process import (LaplaceRandomFeatureCovariance,
+                                              RandomFeatureGaussianProcess)
 from src.models.sngp.random_fourier_features import RandomFourierFeatures
 
 
@@ -42,7 +40,9 @@ def test_rff_scaled_features_have_unit_variance(sample_input):
     not 1.0. The sum over features approximates a unit-norm kernel mapping.
     """
     import math
+
     import numpy as np
+
     from src.models.sngp.random_fourier_features import RandomFourierFeatures
 
     m = 512
@@ -73,14 +73,15 @@ def test_rff_scaled_features_have_unit_variance(sample_input):
 
 def test_rff_scaled_feature_norm_is_one_on_average(sample_input):
     import math
+
     from src.models.sngp.random_fourier_features import RandomFourierFeatures
 
     m = 512
     rff = RandomFourierFeatures(in_features=16, out_features=m, kernel_scale=1.0)
     with torch.no_grad():
         phi = rff(sample_input)
-        z = phi * math.sqrt(2.0 / m)               # [B, m]
-        norms_sq = (z * z).sum(dim=1)               # ||z(x)||^2 per sample
+        z = phi * math.sqrt(2.0 / m)  # [B, m]
+        norms_sq = (z * z).sum(dim=1)  # ||z(x)||^2 per sample
 
     # Expectation over random (W,b) gives ~1; with one draw of (W,b) and finite B,
     # stay generous with bounds but near 1.
@@ -113,6 +114,7 @@ def test_rff_scaled_features_have_unit_kernel_norm(sample_input):
             f"Rahimi–Recht scaled features should yield unit expected kernel norm; got {mean_norm:.4f}."
         ),
     )
+
 
 # TODO: fix
 # @pytest.mark.parametrize("kernel_scale", [0.5, 1.0, 2.0])
@@ -308,6 +310,7 @@ def test_laplace_covariance_minibatch_converges():
 #     corr = np.corrcoef(k_emp.flatten(), k_true.flatten())[0, 1]
 #     assert corr > 0.95
 #
+
 
 def test_rfgp_posterior_kernel_matches_gp_posterior():
     torch.manual_seed(0)
