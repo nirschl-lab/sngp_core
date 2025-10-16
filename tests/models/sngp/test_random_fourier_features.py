@@ -10,8 +10,10 @@ import numpy as np
 import pytest
 import torch
 
-from src.models.sngp.gaussian_process import (LaplaceRandomFeatureCovariance,
-                                              RandomFeatureGaussianProcess)
+from src.models.sngp.gaussian_process import (
+    LaplaceRandomFeatureCovariance,
+    RandomFeatureGaussianProcess,
+)
 from src.models.sngp.random_fourier_features import RandomFourierFeatures
 
 

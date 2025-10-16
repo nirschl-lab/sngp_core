@@ -279,7 +279,9 @@ class RandomFeatureGaussianProcess(nn.Module):
 
         logits = self.output_layer(Phi) + self.bias
 
-        cov_out = self.covariance_layer(Phi, logits) if self.return_covariance else None
+        return_covariance = self.return_covariance if self.training else True
+
+        cov_out = self.covariance_layer(Phi, logits) if return_covariance else None
         Phi_out = Phi if self.return_features else None
         # default to unadjusted return logits
         output_dict = {
