@@ -33,7 +33,7 @@ task_name: "train"
 # tags to help you identify your experiments
 # you can overwrite this in experiment configs
 # overwrite from command line with `python train.py tags="[first_tag, second_tag]"`
-tags: ["dev"]
+tags: ["sngp_10-16", "jjn_multirun"]
 
 # set False to skip model training
 train: True
@@ -54,6 +54,13 @@ precision: "medium"
 # multirun config
 hydra:
   mode: MULTIRUN
+  sweep: # name each multirun job by config values
+    dir: multirun/${now:%Y-%m-%d_%H-%M-%S}
+    subdir: ${model}_${net.trainable_kernel_scale}_${seed}
+  run:
+    dir: runs/${model}_${net.trainable_kernel_scale}_seed${seed}_${now:%H-%M-%S}
+
+  # param sweep
   sweeper:
     params:
       model: timm_sngp_classifier,timm_basic_classifier
