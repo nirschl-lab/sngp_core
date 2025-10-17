@@ -3,6 +3,8 @@
 
 Adapted from:
 https://github.com/Jmkernes/Spectral-Normalized-Gaussian-Process/blob/main/gaussian_process.py
+https://github.com/google/edward2/blob/main/edward2/tensorflow/layers/gaussian_process.py
+https://github.com/google/edward2/blob/main/edward2/tensorflow/layers/random_feature.py
 """
 
 
@@ -123,13 +125,13 @@ class RandomFeatureGaussianProcess(nn.Module):
         covariance_momentum: float = 0.999,
         covariance_ridge_penalty: float = 1e-6,
         init_stdev: float = 1e-2,
-        kernel_scale: Optional[float] = None,
+        kernel_scale: Optional[float] = None, # set based on kernel_type if None
         kernel_type: str = "gaussian",  #
         normalize_input: bool = True,
         output_bias_trainable: bool = False,
         return_covariance: bool = True,
         return_features: bool = False,
-        scale_random_features=True, # Edward2 defaults to True and applies √(2/M) in the GP layer
+        scale_random_features=False, # double check the default value in TF/Edward2
         trainable_kernel_scale: bool = False,
         use_custom_features: bool = False,
         verbose: bool = False,
@@ -167,12 +169,22 @@ class RandomFeatureGaussianProcess(nn.Module):
         self.out_features = out_features # number of classes
         self.random_features = random_features
 
+        # set kernel type and scale
+        self.kernel_type = kernel_type.lower()
         if kernel_type.lower() not in ("gaussian", "laplacian", "linear"):
             raise ValueError(f"Unsupported kernel_type: {kernel_type}")
-        self.kernel_type = kernel_type.lower()
+
+        if kernel_scale is None:
+            if kernel_type.lower() == "gaussian" and not normalize_input:
+                # The length-scale parameter of the shift-invariant kernel function.
+                # Heuristic: scale by sqrt(d/2) when inputs are unnormalized
+                kernel_scale = math.sqrt(in_features / 2.0)
+            else:
+                # Edward2 default: 1.0 when inputs are normalized
+                kernel_scale = 1.0
 
         self.normalize_input = normalize_input
-        self.return_covariance = return_covariance
+        self.return_covariance = return_covariance or not self.training # always return cov if in eval mode
         self.return_features = return_features
         self.scale_random_features = scale_random_features
 
@@ -252,9 +264,8 @@ class RandomFeatureGaussianProcess(nn.Module):
         if self.normalize_input:
             x = self.input_norm(x)
         else:
-            # Edward2 parity: support lengthscale for custom features by scaling inputs
-            if isinstance(self.feature_layer, nn.Linear) and hasattr(self.feature_layer, "weight"):
-                # if you store the kernel scale in the RFF module instead, read it there
+            # Edward2 parity: scale inputs only for simple linear/custom features, not RFF
+            if isinstance(self.feature_layer, nn.Linear) and not isinstance(self.feature_layer, RandomFourierFeatures):
                 if hasattr(self.feature_layer, "kernel_scale") and self.feature_layer.kernel_scale is not None:
                     ell = float(self.feature_layer.kernel_scale)
                     if ell > 0:
@@ -262,21 +273,29 @@ class RandomFeatureGaussianProcess(nn.Module):
 
         Phi = self.feature_layer(x)
         if hasattr(self.feature_layer, "out_features") and self.scale_random_features:
-            # Rahimi–Recht scaling
-            # RandomFourierFeatures returns cos(·) and scaling applied here when set
+            # Apply Rahimi–Recht scaling only once (Edward2 parity)
             num_rand_features = float(self.feature_layer.out_features)
             Phi = Phi * math.sqrt(2.0 / num_rand_features)
 
         logits = self.output_layer(Phi) + self.bias
 
-        cov_out = self.covariance_layer(Phi, logits) if self.return_covariance else None
+        return_covariance = self.return_covariance if self.training else True
+
+        cov_out = self.covariance_layer(Phi, logits) if return_covariance else None
         Phi_out = Phi if self.return_features else None
         # default to unadjusted return logits
-        output_dict = {"logits": logits.clone(), "logits_raw": logits.clone(), "cov": cov_out, "features": Phi_out}
+        output_dict = {
+            "logits": logits.clone(),
+            "logits_raw": logits.clone(),
+            "cov": cov_out,
+            "features": Phi_out,
+            "mean_field_applied": None,
+            }
 
         if (cov_out is not None) and (not self.training):
             # Adjust logits using mean-field approximation
-            output_dict["logits"] = mean_field_logits(logits, cov_out)
+            output_dict["logits"] = mean_field_logits(logits=logits, covariance=cov_out)
+            output_dict["mean_field_applied"] = True
 
         return output_dict
 
@@ -459,7 +478,8 @@ class LaplaceRandomFeatureCovariance(nn.Module):
         """
         # Cov_test = s * Φ_test @ (s I + ΦᵀΦ)^(-1) @ Φ_testᵀ
         # TODO: check when to use self.ridge_penalty - Should be okay
-        return self.ridge_penalty * (Phi @ self.covariance.to(Phi.device) @ Phi.transpose(-2, -1))
+        # DO NOT multiply by ridge_penalty here
+        return Phi @ self.covariance.to(Phi.device) @ Phi.transpose(-2, -1)
 
     def forward(self, Phi, logits=None):
         """Minibatch updates the GP's posterior precision matrix estimate.
@@ -480,43 +500,56 @@ class LaplaceRandomFeatureCovariance(nn.Module):
         if self.training:
             self.update_precision(Phi=Phi, logits=logits)
             return torch.eye(batch_size, device=Phi.device)
+
         return self.compute_predictive_covariance(Phi=Phi)
 
 
 # Note: I believe the orig impl used mean_field_factor math.pi/8
-def mean_field_logits(logits, covariance_matrix=None, mean_field_factor=math.pi / 8):
-    """Adjust the model logits so its softmax approximates the posterior mean [1].
+@torch.no_grad()
+def mean_field_logits(
+    logits: torch.Tensor,
+    covariance: torch.Tensor | None = None,
+    mean_field_factor: float = math.pi / 8.0,
+) -> torch.Tensor:
+    """
+    Mean-field correction for SNGP logits:
+      logits_mf = logits / sqrt(1 + mean_field_factor * v)
+    where v is per-example predictive variance.
 
-    [1]: Zhiyun Lu, Eugene Ie, Fei Sha. Uncertainty Estimation with Infinitesimal
-             Jackknife.    _arXiv preprint arXiv:2006.07584_, 2020.
-             https://arxiv.org/abs/2006.07584
-
-    Arguments:
-        logits: A float tensor of shape (batch_size, num_classes).
-        covariance_matrix: The covariance matrix of shape (batch_size, batch_size).
-            If None then it assumes the covariance_matrix is an identity matrix.
-        mean_field_factor: The scale factor for mean-field approximation, used to
-            adjust the influence of posterior variance in posterior mean
-            approximation. If covariance_matrix=None then it is used as the
-            temperature parameter for temperature scaling.
-
-    Returns:
-        Tensor of adjusted logits, shape (batch_size, num_classes).
+    Accepts covariance as:
+      - None          -> v = 1.0 (acts like temperature scaling with sqrt(1+π/8))
+      - [B]           -> v = covariance
+      - [B, B]        -> v = diag(covariance)
+      - [B, C]        -> (discouraged) reduce to scalar per example via mean across classes
     """
     if mean_field_factor is None or mean_field_factor < 0:
         return logits
 
-    # Compute standard deviation.
-    if covariance_matrix is None:
-        variances = torch.ones(1, device=logits.device) * 1.0
+    if not isinstance(logits, torch.Tensor):
+        logger.warning(f"Expected logits to be a torch.Tensor but got {type(logits)}. Returning unmodified logits.")
+        raise ValueError(f"Expected logits to be a torch.Tensor but got {type(logits)}")
+
+    B = logits.shape[0]
+
+    if covariance is None:
+        # when covariance is None, set v=1.0 (acts like temperature scaling with sqrt(1+π/8))
+        v = torch.ones(B, device=logits.device, dtype=logits.dtype)
     else:
-        variances = torch.diag(covariance_matrix)
+        if covariance.dim() == 1 and covariance.shape[0] == B:
+            # predictive variance per example
+            v = covariance
+        elif covariance.dim() == 2 and covariance.shape[0] == covariance.shape[1] == B:
+            # batch predictive covariance -> take diagonal
+            v = torch.diagonal(covariance, dim1=-2, dim2=-1)
+        elif covariance.dim() == 2 and covariance.shape[0] == B and covariance.shape[1] == logits.shape[1]:
+            # per-class variances returned (not standard for SNGP); reduce to scalar
+            v = covariance.mean(dim=1)
+        else:
+            raise ValueError(
+                f"Unsupported covariance shape {tuple(covariance.shape)} for mean-field logits."
+            )
 
-    # Compute scaling coefficient for mean-field approximation.
-    logits_scale = torch.sqrt(1.0 + variances * mean_field_factor)
-
-    if len(logits.shape) > 1:
-        # Cast logits_scale to compatible dimension.
-        logits_scale = torch.unsqueeze(logits_scale, dim=-1)
-
-    return logits / logits_scale
+    # ensure non-negative variance
+    v = v.clamp_min(1e-12)
+    scale = torch.sqrt(1.0 + mean_field_factor * v).unsqueeze(-1)  # [B, 1]
+    return logits / scale

@@ -242,12 +242,10 @@ class TimmClassificationLitModule(LightningModule):
             mean_logits, mean_probs = self._mc_forward(x, T=self.mc_passes)
             logits, probs = mean_logits, mean_probs
         else:
+            # Mean field logits adjustment is applied in RandomFeatureGaussianProcess GP head at inference
+            # returns dict with logits_adj, logits_raw, cov, features, and a flag for mean_field_applied
             logits = self.forward(x)
-            if len(logits.shape) > 2:  # for SNGP, output is (B, L, Cov_matrix)
-                logits, cov = logits
-                if self.use_mean_field_logits:
-                    self.log_.info('using mean-field logits')
-                    logits = mean_field_logits(logits, cov)
+
             probs = torch.softmax(logits, dim=1)
 
         preds = torch.argmax(probs, dim=1)

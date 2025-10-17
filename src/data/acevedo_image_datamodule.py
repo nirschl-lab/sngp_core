@@ -13,6 +13,7 @@ import hydra
 import datasets
 import ast
 import numpy as np
+from loguru import logger
 
 # Custom Dataset wrapper
 class HFDataset(Dataset):
@@ -86,10 +87,11 @@ class AcevedoImageDataModule(LightningDataModule):
         self.num_classes = num_classes
 
         if train_augmentations:
-                # It's a config, instantiate it
-                self.train_transform = train_augmentations
+            # It's a config, instantiate it
+            self.train_transform = train_augmentations
         else:
             # Default fallback
+            logger.warning("No train augmentations provided, using default ToTensor + Normalize.")
             self.train_transform = transforms.Compose([
                 transforms.ToTensor(),
                 transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
@@ -101,6 +103,7 @@ class AcevedoImageDataModule(LightningDataModule):
                 self.val_transform = val_augmentations
         else:
             # Default fallback
+            logger.warning("No train augmentations provided, using default ToTensor + Normalize.")
             self.val_transform = transforms.Compose([
                 transforms.ToTensor(),
                 transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),

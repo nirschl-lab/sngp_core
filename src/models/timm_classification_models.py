@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """TIMM classifier models with Spectral-normalized Gaussian Process head."""
 import os
-from typing import Iterable, Optional
+from typing import Iterable, Optional, Tuple
 
 import timm
 import torch
@@ -178,7 +178,7 @@ class TimmSNGPClassifier(nn.Module):
             **kwargs,
         )
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, return_covariance: bool = False) -> Tuple[torch.Tensor, torch.Tensor] | torch.Tensor:
         x = self.backbone.forward_features(x)
         # Handle all-NaN input by replacing with small stddev random normal values
         if torch.isnan(x).all():
@@ -193,8 +193,15 @@ class TimmSNGPClassifier(nn.Module):
 
         x = self.pool(x).flatten(1)
         x = self.reduce_dim(x)
-        outputs =  self.sngp_classifier(x) # returns dict with logits, cov, features
-        return outputs.get("logits")
+        outputs =  self.sngp_classifier(x) # returns dict with logits, logits_raw, cov, features
+        if not self.training and return_covariance:
+            # always return both logits and covariance at eval/test time for mean-field scaling
+            return outputs.get("logits"), outputs.get("covariance")
+        else:
+            # only return logits during training
+            return outputs.get("logits")
+
+            
 
 
 if __name__ == "__main__":

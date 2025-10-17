@@ -3,7 +3,6 @@
 # specify here default configuration
 # order of defaults determines the order in which configs override each other
 defaults:
-  - _self_
   - data: acevedo_image_classifier #mnist #acevedo # override img_augmentations in data config if needed
   - model: timm_sngp_classifier #mnist #acevedo_baseline
   - callbacks: default
@@ -12,6 +11,7 @@ defaults:
   - paths: default
   - extras: default
   - hydra: default
+  - _self_
 
   # experiment configs allow for version control of specific hyperparameters
   # e.g. best hyperparameters for given model and datamodule
@@ -33,7 +33,7 @@ task_name: "train"
 # tags to help you identify your experiments
 # you can overwrite this in experiment configs
 # overwrite from command line with `python train.py tags="[first_tag, second_tag]"`
-tags: ["dev"]
+tags: ["sngp_10-16", "jjn_multirun"]
 
 # set False to skip model training
 train: True
@@ -50,3 +50,20 @@ seed: null
 
 # flag for torch precision: 'medium', 'high' or 'highest'
 precision: "medium"
+
+# multirun config
+hydra:
+  mode: MULTIRUN
+  sweep:
+    dir: ${paths.root_dir}/multirun/${now:%Y-%m-%d_%H-%M-%S}
+    subdir: ${model.name}_${net.trainable_kernel_scale}_${seed}
+  run:
+    dir: ${paths.root_dir}/runs/${model.name}_${net.trainable_kernel_scale}_seed-${seed}_${now:%H-%M-%S}
+
+  # param sweep combinations
+  sweeper:
+    params:
+      model: timm_sngp_classifier,timm_basic_classifier
+      +net.trainable_kernel_scale: true,false # keep '+' to prevent hydra config error for models that don't have this param
+      +net.scale_random_features: true,false # keep '+' to prevent hydra config error for models that don't have this param
+      seed: 0,1,1234,380843,42 # https://blog.semicolonsoftware.de/the-most-popular-random-seeds/
