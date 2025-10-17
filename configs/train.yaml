@@ -3,7 +3,6 @@
 # specify here default configuration
 # order of defaults determines the order in which configs override each other
 defaults:
-  - _self_
   - data: acevedo_image_classifier #mnist #acevedo # override img_augmentations in data config if needed
   - model: timm_sngp_classifier #mnist #acevedo_baseline
   - callbacks: default
@@ -12,6 +11,7 @@ defaults:
   - paths: default
   - extras: default
   - hydra: default
+  - _self_
 
   # experiment configs allow for version control of specific hyperparameters
   # e.g. best hyperparameters for given model and datamodule
