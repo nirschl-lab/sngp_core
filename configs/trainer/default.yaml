@@ -7,6 +7,7 @@ max_epochs: 50 # maximum number of training epochs
 
 accelerator: gpu
 devices: 1
+strategy: auto
 
 # mixed precision for extra speed-up
 # precision: 16

@@ -80,6 +80,7 @@ class TimmBasicClassifier(nn.Module):
         in_chans: int = 3,
     ):
         super().__init__()
+        self.num_classes = num_classes
         self.model = timm.create_model(
             model_name,
             pretrained=pretrained,
