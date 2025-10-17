@@ -1,5 +1,6 @@
 _target_: src.models.timm_classification_lit_module.TimmClassificationLitModule
 
+name: timm_sngp
 # backbone
 net:
   _target_: src.models.timm_classification_models.TimmSNGPClassifier
@@ -44,6 +45,40 @@ log_test_metrics: true
 class_freq: null
 
 # --- Calibration loss configuration (NEW) ---
+#| Loss                         | Mechanism                                                                          | Primary Focus                            | Sensitivity                        | Typical Weight Range |
+#| ---------------------------- | ---------------------------------------------------------------------------------- | ---------------------------------------- | ---------------------------------- | -------------------- |
+#| **SB-ECE (Soft-Binned ECE)** | Penalizes deviation between confidence and empirical accuracy (differentiable ECE) | Post-hoc calibration mimic               | Very mild regularizer              | **0.05–0.2**         |
+#| **Soft-AvUC**                | Encourages alignment between accuracy and uncertainty via entropy-based gating     | Balances over/under-confidence           | Moderate, nonlinear                | **0.02–0.1**         |
+#| **CLUE**                     | Matches per-example task loss with predicted uncertainty via squared error         | Magnitude alignment (loss ≈ uncertainty) | Can dominate if scaled too high    | **0.05–0.2**         |
+#| **BSCE-GRA**                 | Scales gradient by generalized Brier score to reduce overconfident gradients       | Gradient-level calibration               | Strong effect on learning dynamics | **0.05–0.5**         |
+#
+#---
+#
+#### 🧠 How They Interact
+#
+#* **SB-ECE** and **Soft-AvUC** both focus on *distributional calibration* (ECE-type, confidence alignment).
+#  → Good to **combine**; they target slightly different facets (bin-based vs. entropy-weighted).
+#* **CLUE** operates on the **scale of per-sample losses**, aligning loss with uncertainty magnitudes.
+#  → Best used as a **low-weight auxiliary term** (too high can dampen discriminative gradients).
+#* **BSCE-GRA** modifies gradients directly; it effectively *replaces* rather than *adds* to CE in strength.
+#  → If used together with other losses, keep it at a **lower coefficient (0.05–0.1)** to avoid overpowering CE.
+#
+#Thus, you can think of them as acting on **different levels**:
+#
+#* SB-ECE / Soft-AvUC → Output-space calibration
+#* CLUE → Uncertainty-error alignment
+#* BSCE-GRA → Gradient-space smoothing
+
+#| Strategy                 | Losses Used             | Rationale                                      | Recommended Weights    |
+#| ------------------------ | ----------------------- | ---------------------------------------------- | ---------------------- |
+#| **Baseline Calibration** | CE + SB-ECE + Soft-AvUC | Standard uncertainty calibration               | 0.1, 0.05              |
+#| **Magnitude-aware**      | + CLUE                  | Align uncertainty with loss magnitude          | +0.05–0.1              |
+#| **Gradient-aware**       | + BSCE-GRA              | Smooth gradients, reduce overconfident updates | +0.05–0.1              |
+#| **Full Hybrid**          | All four                | Max calibration robustness (requires tuning)   | 0.1 / 0.05 / 0.1 / 0.1 |
+#
+#---
+#For your **SNGP + CE** training, begin with:
+#> `SB-ECE: 0.1, Soft-AvUC: 0.05, CLUE: 0.1, BSCE-GRA: 0.1`
 calibration_cfg:
   _target_: src.metrics.calibration_losses.CalibrationLossConfig
   # Soft-Binned ECE

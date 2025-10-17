@@ -1,5 +1,6 @@
 _target_: src.models.timm_classification_lit_module.TimmClassificationLitModule
 
+name: timm_MC-baseline
 optimizer:
   _target_: torch.optim.Adam
   _partial_: true

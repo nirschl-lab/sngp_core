@@ -56,9 +56,9 @@ hydra:
   mode: MULTIRUN
   sweep:
     dir: ${paths.root_dir}/multirun/${now:%Y-%m-%d_%H-%M-%S}
-    subdir: ${model}_${net.trainable_kernel_scale}_${seed}
+    subdir: ${model.name}_${net.trainable_kernel_scale}_${seed}
   run:
-    dir: ${paths.root_dir}/runs/${model}_${net.trainable_kernel_scale}_seed-${seed}_${now:%H-%M-%S}
+    dir: ${paths.root_dir}/runs/${model.name}_${net.trainable_kernel_scale}_seed-${seed}_${now:%H-%M-%S}
 
   # param sweep combinations
   sweeper:
