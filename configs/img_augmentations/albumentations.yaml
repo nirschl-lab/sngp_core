@@ -33,10 +33,10 @@ train:
           transforms:
             - _target_: albumentations.HEStain
               method: "random_preset"
-              intensity_scale_range: [0.7, 1.3]
-              intensity_shift_range: [-0.2, 0.2]
+              intensity_scale_range: [0.8, 1.2]
+              intensity_shift_range: [-0.1, 0.1]
               augment_background: false
-              p: 1.0
+              p: 0.5
             - _target_: albumentations.Illumination
               mode: "linear"
               intensity_range: [0.01, 0.2]
@@ -44,11 +44,11 @@ train:
               angle_range: [0, 360]
               center_range: [0.1, 0.9]
               sigma_range: [0.2, 1.0]
-              p: 1.0
+              p: 0.5
         - _target_: albumentations.HEStain
           method: "random_preset"
-          intensity_scale_range: [ 0.7, 1.3 ]
-          intensity_shift_range: [ -0.2, 0.2 ]
+          intensity_scale_range: [ 0.8, 1.2 ]
+          intensity_shift_range: [ -0.1, 0.1 ]
           augment_background: false
           p: 1.0
         - _target_: albumentations.Illumination
@@ -80,9 +80,9 @@ train:
           p: 0.5
         - _target_: albumentations.NoOp
 
-    # blur and compression
+    # blur/compression/downscale
     - _target_: albumentations.OneOf
-      p: 0.5
+      p: 0.8
       transforms:
         - _target_: albumentations.GaussianBlur
           blur_limit: 0
@@ -101,7 +101,7 @@ train:
           p: 1.0
         - _target_: albumentations.ImageCompression
           compression_type: "jpeg"
-          quality_range: [30, 70]
+          quality_range: [25, 70]
           p: 1.0
         - _target_: albumentations.Downscale
           scale_range: [0.25, 0.25]
@@ -111,13 +111,19 @@ train:
 
     # noise
     - _target_: albumentations.OneOf
-      p: 0.5
+      p: 0.8
       transforms:
         - _target_: albumentations.GaussNoise
           std_range: [0.1, 0.2]
           mean_range: [0, 0]
           per_channel: true
           noise_scale_factor: 1
+          p: 1.0
+        - _target_: albumentation.AdditiveNoise
+          noise_type: "gaussian"
+          spatial_mode: "shared"
+          noise_params: {"mean_range": [0,0], "std_range": [0.05, 0.15]}
+          approximation: 1
           p: 1.0
         - _target_: albumentations.MultiplicativeNoise
           multiplier: [0.8, 1.2]
@@ -127,15 +133,36 @@ train:
         - _target_: albumentations.ShotNoise
           scale_range: [0.01, 0.05]
           p: 1.0
+        - _target_: albumentations.SaltAndPepper
+          amount: [0.01, 0.06]
+          salt_vs_pepper: [0.4, 0.6]
         - _target_: albumentations.NoOp
 
+    # dropout
+    - _target_: albumentations.OneOf
+      p: 0.5
+      transforms:
+        - _target_: albumentations.CoarseDropout
+          num_holes_range: [1, 2]
+          hole_height_range: [0.05, 0.15]
+          hole_width_range: [0.05, 0.15]
+          fill_value: 0
+          p: 1.0
+        - _target: albumentations.PixelDropout
+          dropout_prob: 0.1
+          per_channel: False
+          drop_value: 0
+          p: 1.0
+        - _target_: albumentations.NoOp
+
+    # deformations/distortions
     - _target_: albumentations.OneOf
       p: 0.5
       transforms:
         - _target_: albumentations.ElasticTransform
           alpha: 300
           sigma: 10
-          interpolation: 1
+          interpolation: 1 # cv2.INTER_LINEAR
           approximate: false
           same_dxdy: true
           mask_interpolation: 0
@@ -145,6 +172,15 @@ train:
           fill: 0
           fill_mask: 0
           p: 1.0
+        - _target_: albumentations.OpticalDistortion
+          distort_limit: [0.5, 0.5]
+          interpolation: 1 # cv2.INTER_LINEAR
+          mask_interpolation: 0 #cv2.INTER_NEAREST
+          mode: "camera"
+          keypoint_remapping_method: "mask"
+          border_mode: 0 # 0 = cv2.BORDER_CONSTANT, 1 = cv2.BORDER_REPLICATE, 2 = cv2.BORDER_REFLECT, 3 = cv2.BORDER_WRAP, 4 = cv2.BORDER_REFLECT_101
+          fill: 0
+          fill_mask: 0
         - _target_: albumentations.NoOp
 
     - _target_: albumentations.Normalize
