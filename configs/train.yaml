@@ -54,13 +54,17 @@ precision: "medium"
 # multirun config
 hydra:
   mode: MULTIRUN
-  sweep: # name each multirun job by config values
-    dir: multirun/${now:%Y-%m-%d_%H-%M-%S}
+  sweep:
+    dir: ${paths.root_dir}/multirun/${now:%Y-%m-%d_%H-%M-%S}
     subdir: ${model}_${net.trainable_kernel_scale}_${seed}
   run:
-    dir: runs/${model}_${net.trainable_kernel_scale}_seed${seed}_${now:%H-%M-%S}
+    dir: ${paths.root_dir}/runs/${model}_${net.trainable_kernel_scale}_seed-${seed}_${now:%H-%M-%S}
 
-  # param sweep
+  # avoid Hydra putting everything under ./logs/train/
+  output_subdir: null
+  output_dir: null
+
+  # param sweep combinations
   sweeper:
     params:
       model: timm_sngp_classifier,timm_basic_classifier
