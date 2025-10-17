@@ -26,7 +26,7 @@ train:
 
     # Color/Stain/Illumination augmentation common in histopathology
     - _target_: albumentations.OneOf
-      p: 0.8
+      p: 0.5
       transforms:
         # combine stain and illumination changes
         - _target_: albumentations.Compose
@@ -82,7 +82,7 @@ train:
 
     # blur/compression/downscale
     - _target_: albumentations.OneOf
-      p: 0.8
+      p: 0.5
       transforms:
         - _target_: albumentations.GaussianBlur
           blur_limit: 0
@@ -111,7 +111,7 @@ train:
 
     # noise
     - _target_: albumentations.OneOf
-      p: 0.8
+      p: 0.5
       transforms:
         - _target_: albumentations.GaussNoise
           std_range: [0.1, 0.2]
@@ -136,11 +136,12 @@ train:
         - _target_: albumentations.SaltAndPepper
           amount: [0.01, 0.06]
           salt_vs_pepper: [0.4, 0.6]
+          p: 1.0
         - _target_: albumentations.NoOp
 
     # dropout
     - _target_: albumentations.OneOf
-      p: 0.5
+      p: 0.1
       transforms:
         - _target_: albumentations.CoarseDropout
           num_holes_range: [1, 2]
@@ -148,14 +149,13 @@ train:
           hole_width_range: [0.05, 0.15]
           fill_value: 0
           p: 1.0
-        - _target: albumentations.PixelDropout
+        - _target_: albumentations.PixelDropout
           dropout_prob: 0.1
           per_channel: False
           drop_value: 0
           p: 1.0
         - _target_: albumentations.NoOp
 
-    # deformations/distortions
     - _target_: albumentations.OneOf
       p: 0.5
       transforms:
@@ -181,6 +181,7 @@ train:
           border_mode: 0 # 0 = cv2.BORDER_CONSTANT, 1 = cv2.BORDER_REPLICATE, 2 = cv2.BORDER_REFLECT, 3 = cv2.BORDER_WRAP, 4 = cv2.BORDER_REFLECT_101
           fill: 0
           fill_mask: 0
+          p: 1.0
         - _target_: albumentations.NoOp
 
     - _target_: albumentations.Normalize
