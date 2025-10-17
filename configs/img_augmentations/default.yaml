@@ -119,7 +119,7 @@ train:
           per_channel: true
           noise_scale_factor: 1
           p: 1.0
-        - _target_: albumentation.AdditiveNoise
+        - _target_: albumentations.AdditiveNoise
           noise_type: "gaussian"
           spatial_mode: "shared"
           noise_params: {"mean_range": [0,0], "std_range": [0.05, 0.15]}
