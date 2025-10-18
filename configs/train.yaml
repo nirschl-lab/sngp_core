@@ -70,12 +70,13 @@ hydra:
   sweeper:
     params:
       model: timm_sngp_classifier
-      # nested overrides: Hydra only applies '+' overrides when the key does not exist in the main/base config.
+      # nested overrides: Hydra only applies '+' overrides when the key does not exist in the main/base/subtree config.
+      # nested overrides: Hydra applies '++' to force override keys that do exist in the main/base/subtree config.
       # overrides need to be applied to the correct subtree
-      +model.net.normalize_input: true
-      +model.net.trainable_kernel_scale: true
-      +model.net.scale_random_features: false
-      +model.net.random_features: 1024,2048,4096
-      +model.net.output_bias_trainable: false
+      ++model.net.normalize_input: true
+      ++model.net.trainable_kernel_scale: true
+      ++model.net.scale_random_features: false
+      ++model.net.random_features: 1024,2048,4096
+      ++model.net.output_bias_trainable: false
       seed: 0,1,1234,380843,42
       # most popular random seeds: https://blog.semicolonsoftware.de/the-most-popular-random-seeds/

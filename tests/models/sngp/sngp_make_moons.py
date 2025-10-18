@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # sngp_make_moons.py in tests/models/sngp
 
+import itertools
 import math
 import os
 from dataclasses import dataclass
@@ -12,18 +13,23 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import torch.nn.functional as F
+from sklearn.datasets import make_moons
 from torch import nn
 from torch.utils.data import DataLoader, Dataset
 
 from src.models.sngp.sngp_classification_layer import SNGP
+
+# torch.set_float32_matmul_precision('medium')
 
 
 # Two moons dataclass
 @dataclass
 class MoonsConfig:
     seed: int = 0
-    train_size_per_class: int = 500
-    batch_size: int = 64
+    train_size_per_class: int = 1000
+    ood_size: int = 500
+    noise: float = 0.1
+    batch_size: int = 256
     max_epochs: int = 150
 
     # backbone dims
@@ -33,12 +39,15 @@ class MoonsConfig:
     # SNGP head
     num_classes: int = 2
     normalize_input: bool = True
-    scale_random_features: bool = True
     covariance_momentum: float = 0.999
     covariance_ridge: float = 1e-6
-    kernel_type: str = "gaussian"
     kernel_scale: Optional[float] = None
+    kernel_type: str = "gaussian"
+    output_bias_trainable: bool = False
     random_features: int = 1024
+    scale_random_features: bool = (
+        True  # default false in main code, but True seems to perform better
+    )
     trainable_kernel_scale: bool = True
 
     # lightning
@@ -72,12 +81,10 @@ class MoonsDataModule(L.LightningDataModule):
         self.cfg = cfg
 
     def setup(self, stage=None):
-        from sklearn.datasets import make_moons
-
         np.random.seed(self.cfg.seed)
         torch.manual_seed(self.cfg.seed)
 
-        X, y = make_moons(n_samples=2 * self.cfg.train_size_per_class, noise=0.1)
+        X, y = make_moons(n_samples=2 * self.cfg.train_size_per_class, noise=cfg.noise)
         X[y == 0] += [-0.1, 0.2]
         X[y == 1] += [0.1, -0.2]
         self.train_ds = NumpyDataset(X, y)
@@ -91,7 +98,7 @@ class MoonsDataModule(L.LightningDataModule):
 
         # simple ood cloud for overlay (optional, not used by loaders)
         self.ood = np.random.multivariate_normal(
-            mean=(2.5, -1.75), cov=np.diag((0.01, 0.01)), size=500
+            mean=(2.5, -1.75), cov=np.diag((0.01, 0.01)), size=cfg.ood_size
         ).astype(np.float32)
 
         self.train_points = X.astype(np.float32)
@@ -238,8 +245,10 @@ class LitSNGP(L.LightningModule):
 
 
 # train + eval
-def main():
-    cfg = MoonsConfig()
+def main(cfg: MoonsConfig = None):
+    if cfg is None:
+        cfg = MoonsConfig()
+
     L.seed_everything(cfg.seed, workers=True)
 
     dm = MoonsDataModule(cfg)
@@ -327,6 +336,44 @@ def plot_surfaces(
 
 
 if __name__ == "__main__":
-    main()
+    # create trainable kernel scale experiments
+    train_kscale = [True]
+    # create scale features experiments
+    scale_feats = [True]
+    # random features
+    rand_feats = [1024, 2048, 4096]
+    # create seed list:
+    seed_list = [0, 1, 1234, 380843, 42]
+
+    # run cross product of all experiments (run through seeds first)
+    for num_feats, tr_kernel_scale, scale_features, seed in itertools.product(
+        rand_feats, train_kscale, scale_feats, seed_list
+    ):
+        print(
+            f"\n\n=== Running experiment: seed={seed}, "
+            f"random_features={num_feats}, "
+            f"trainable_kernel_scale={tr_kernel_scale}, "
+            f"scale_random_features={scale_features} ==="
+        )
+        if not tr_kernel_scale:
+            print(
+                "Note: Using fixed kernel scale may lead to suboptimal performance if not tuned."
+            )
+
+        if not scale_features:
+            print(
+                "Note: Not scaling random features may lead to suboptimal performance."
+            )
+
+        cfg = MoonsConfig(
+            normalize_input=True,
+            random_features=num_feats,
+            scale_random_features=scale_features,
+            trainable_kernel_scale=tr_kernel_scale,
+            output_bias_trainable=False,
+            seed=seed,
+        )
+        main(cfg=cfg)
+
     # to save the figure, uncomment:
     plt.savefig("sngp_moons.png", dpi=300)
