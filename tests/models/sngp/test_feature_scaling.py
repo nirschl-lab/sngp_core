@@ -52,7 +52,7 @@ def test_combined_scaling_consistency(sample_input, normalize_input):
         random_features=512,
         normalize_input=normalize_input,
         scale_random_features=True,
-        kernel_scale=1.0 if not normalize_input else None,
+        kernel_scale=None if normalize_input else 1.0,
     )
 
 

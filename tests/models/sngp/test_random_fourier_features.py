@@ -234,23 +234,27 @@ def test_rff_backward_pass_works(sample_input):
     assert rff.kernel_scale.grad is not None
 
 
-def test_covariance_momentum_smoothing():
+@pytest.mark.parametrize("momentum", [0.0, 0.9, 0.999])
+def test_covariance_momentum_smoothing(momentum):
     dim, n = 10, 256
     x = torch.randn(n, dim)
-    for momentum in [0.0, 0.9, 0.999]:
-        cov = LaplaceRandomFeatureCovariance(in_features=dim, momentum=momentum)
-        cov.train()
-        for _ in range(20):
-            cov(x)
-        print(f"momentum={momentum} → precision mean={cov.precision.mean():.6f}")
+    cov = LaplaceRandomFeatureCovariance(in_features=dim, momentum=momentum)
+    cov.train()
+    for _ in range(20):
+        cov(x)
+    print(f"momentum={momentum} → precision mean={cov.precision.mean():.6f}")
 
 
-def test_laplace_covariance_minibatch_converges():
+@pytest.mark.parametrize(
+    "dim,n,momentum,num_updates",
+    [
+        (10, 512, 0.999, 200),
+        (8, 256, 0.9, 100),
+        (16, 1024, 0.99, 150),
+    ]
+)
+def test_laplace_covariance_minibatch_converges(dim, n, momentum, num_updates):
     torch.manual_seed(0)
-    dim, n = 10, 512
-    momentum = 0.999
-    num_updates = 200
-
     x_data = torch.randn(n, dim)
     cov_estimator = LaplaceRandomFeatureCovariance(
         in_features=dim,
