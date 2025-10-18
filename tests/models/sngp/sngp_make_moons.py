@@ -2,6 +2,7 @@
 # sngp_make_moons.py in tests/models/sngp
 
 import itertools
+from pathlib import Path
 import math
 import os
 from dataclasses import dataclass
@@ -288,9 +289,12 @@ def plot_surfaces(
     probs: np.ndarray,
     unc: np.ndarray,
     title_suffix="",
+    **kwargs,
 ):
     DEFAULT_CMAP = colors.ListedColormap(["#377eb8", "#ff7f00"])
-    DEFAULT_NORM = colors.Normalize(vmin=0.5, vmax=1)
+    DEFAULT_NORM = colors.Normalize(vmin=kwargs.get("vmin", 0.5), vmax=kwargs.get("vmax", 1.0))
+
+    surface_cmap = kwargs.get("surface_cmap", "viridis")
 
     def _show_field(ax, field, title, show_data=True):
         field = field / (field.max() + 1e-12)
@@ -300,7 +304,7 @@ def plot_surfaces(
 
         pcm = ax.imshow(
             field.reshape(cfg.n_grid, cfg.n_grid),
-            cmap="viridis",
+            cmap=surface_cmap,
             origin="lower",
             extent=cfg.x_range + cfg.y_range,
             vmin=DEFAULT_NORM.vmin,
@@ -341,7 +345,7 @@ if __name__ == "__main__":
     # create scale features experiments
     scale_feats = [True]
     # random features
-    rand_feats = [1024, 2048, 4096]
+    rand_feats = [1024] #, 2048, 4096]
     # create seed list:
     seed_list = [0, 1, 1234, 380843, 42]
 
@@ -375,5 +379,7 @@ if __name__ == "__main__":
         )
         main(cfg=cfg)
 
-    # to save the figure, uncomment:
-    plt.savefig("sngp_moons.png", dpi=300)
+    print("\nAll experiments completed.")
+    print("=" * 80)
+    ## to save the figure, uncomment:
+    # plt.savefig("sngp_moons.png", dpi=300)
