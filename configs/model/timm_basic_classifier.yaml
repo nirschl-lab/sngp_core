@@ -1,6 +1,14 @@
 _target_: src.models.timm_classification_lit_module.TimmClassificationLitModule
 
 name: timm_baseline
+# backbone
+net:
+  _target_: src.models.timm_classification_models.TimmDropOutBasicClassifier
+  model_name: resnet50
+  num_classes: 8
+  pretrained: True
+  in_chans: 3
+
 optimizer:
   _target_: torch.optim.Adam
   _partial_: true
@@ -14,21 +22,46 @@ scheduler:
   factor: 0.1
   patience: 10
 
-net:
-  _target_: src.models.timm_classification_models.TimmBasicClassifier
-  model_name: resnet50
-  num_classes: 8
-  pretrained: True
-  in_chans: 3
-
-# compile model for faster training with pytorch 2.0
-compile: false
-
-#no of bins for drawing histogram at the end of training on testset
-hist_bins: 10
-
-#test csv name
-test_name: "test_predictions.csv"
+# --- Training setup ---
+compile: false # compile model for faster training with pytorch 2.0
+num_classes: 8
+hist_bins: 25 # no of bins for drawing histogram at the end of training on testset
+test_name: "test_predictions.csv" # test csv name
 log_csv: false
+log_test_metrics: true
+class_freq: null
 
-#
+# --- Calibration loss configuration (NEW) ---
+#| Loss                         | Mechanism                                                                          | Primary Focus                            | Sensitivity                        | Typical Weight Range |
+#| ---------------------------- | ---------------------------------------------------------------------------------- | ---------------------------------------- | ---------------------------------- | -------------------- |
+#| **SB-ECE (Soft-Binned ECE)** | Penalizes deviation between confidence and empirical accuracy (differentiable ECE) | Post-hoc calibration mimic               | Very mild regularizer              | **0.05–0.2**         |
+#| **Soft-AvUC**                | Encourages alignment between accuracy and uncertainty via entropy-based gating     | Balances over/under-confidence           | Moderate, nonlinear                | **0.02–0.1**         |
+#| **CLUE**                     | Matches per-example task loss with predicted uncertainty via squared error         | Magnitude alignment (loss ≈ uncertainty) | Can dominate if scaled too high    | **0.05–0.2**         |
+#| **BSCE-GRA**                 | Scales gradient by generalized Brier score to reduce overconfident gradients       | Gradient-level calibration               | Strong effect on learning dynamics | **0.05–0.5**         |
+#---
+#For your **SNGP + CE** training, begin with:
+#> `SB-ECE: 0.1, Soft-AvUC: 0.05, CLUE: 0.1, BSCE-GRA: 0.1`
+calibration_cfg:
+  _target_: src.metrics.calibration_losses.CalibrationLossConfig
+  # Soft-Binned ECE
+  sb_ece_label_weight: 0.1
+  sb_ece_label_bins: 15
+  sb_ece_label_temp: 1e-2
+  sb_ece_conf_weight: 0.0 # not used when set to 0
+  # AvUC/SoftAvUC
+  avuc_weight: 0.0 # not used when set to 0
+  soft_avuc_weight: 0.05
+  soft_avuc_temp: 1.0
+  soft_avuc_theta: 0.5
+  # CLUE
+  clue_weight: 0.1 # not used when set to 0
+  clue_alpha: 0.5           # trade-off α in Eq. 8
+  clue_uncertainty: "entropy" # {"entropy", "gp_var"}
+  clue_detach_uncertainty: True
+  # BSCE-GRA
+  bsce_gra_weight: 0.1 # 0.1–1.0
+  bsce_gra_beta: 2.0
+  bsce_gra_gamma: 2.0
+
+log_calibration_terms: true
+compute_calibration_on_val: true

@@ -10,8 +10,6 @@ defaults:
   - trainer: default
   - paths: default
   - extras: default
-  - hydra: default
-  - _self_
 
   # experiment configs allow for version control of specific hyperparameters
   # e.g. best hyperparameters for given model and datamodule
@@ -26,6 +24,13 @@ defaults:
 
   # debugging config (enable through command line, e.g. `python train.py debug=default)
   - debug: null
+
+  - hydra: default
+
+  # overrides after others but before _self_
+  - override /hydra/launcher: submitit_slurm
+
+  - _self_
 
 # task name, determines output directory path
 task_name: "train"
