@@ -263,13 +263,12 @@ class RandomFeatureGaussianProcess(nn.Module):
         """
         if self.normalize_input:
             x = self.input_norm(x)
-        else:
+        elif isinstance(self.feature_layer, nn.Linear) and not isinstance(self.feature_layer, RandomFourierFeatures):
             # Edward2 parity: scale inputs only for simple linear/custom features, not RFF
-            if isinstance(self.feature_layer, nn.Linear) and not isinstance(self.feature_layer, RandomFourierFeatures):
-                if hasattr(self.feature_layer, "kernel_scale") and self.feature_layer.kernel_scale is not None:
-                    ell = float(self.feature_layer.kernel_scale)
-                    if ell > 0:
-                        x = x / math.sqrt(ell)
+            if hasattr(self.feature_layer, "kernel_scale") and self.feature_layer.kernel_scale is not None:
+                ell = float(self.feature_layer.kernel_scale)
+                if ell > 0:
+                    x = x / math.sqrt(ell)
 
         Phi = self.feature_layer(x)
         if hasattr(self.feature_layer, "out_features") and self.scale_random_features:
@@ -390,16 +389,10 @@ class LaplaceRandomFeatureCovariance(nn.Module):
         Given the current forward pass yielding random features Phi, update the covariance matrix
         for the entire set of input data.
         """
-        if self.likelihood != "gaussian":
-            if logits is None:
-                raise ValueError(
-                    f'"logits" cannot be None when likelihood={self.likelihood}'
-                )
-            # if logits.shape[-1] != 1:
-            #     raise ValueError(
-            #         f"likelihood={self.likelihood} only supports univariate logits."
-            #         f"Got logits dimension: {logits.shape[-1]}"
-            #     )
+        if self.likelihood != "gaussian" and logits is None:
+            raise ValueError(
+                f'"logits" cannot be None when likelihood={self.likelihood}'
+            )
 
         batch_size = Phi.shape[0]
 
@@ -496,9 +489,9 @@ class LaplaceRandomFeatureCovariance(nn.Module):
             gp_stddev (tf.Tensor): GP posterior predictive variance,
                 shape (batch_size, batch_size).
         """
-        batch_size = Phi.shape[0]
         if self.training:
             self.update_precision(Phi=Phi, logits=logits)
+            batch_size = Phi.shape[0]
             return torch.eye(batch_size, device=Phi.device)
 
         return self.compute_predictive_covariance(Phi=Phi)
@@ -534,20 +527,19 @@ def mean_field_logits(
     if covariance is None:
         # when covariance is None, set v=1.0 (acts like temperature scaling with sqrt(1+π/8))
         v = torch.ones(B, device=logits.device, dtype=logits.dtype)
+    elif covariance.dim() == 1 and covariance.shape[0] == B:
+        # predictive variance per example
+        v = covariance
+    elif covariance.dim() == 2 and covariance.shape[0] == covariance.shape[1] == B:
+        # batch predictive covariance -> take diagonal
+        v = torch.diagonal(covariance, dim1=-2, dim2=-1)
+    elif covariance.dim() == 2 and covariance.shape[0] == B and covariance.shape[1] == logits.shape[1]:
+        # per-class variances returned (not standard for SNGP); reduce to scalar
+        v = covariance.mean(dim=1)
     else:
-        if covariance.dim() == 1 and covariance.shape[0] == B:
-            # predictive variance per example
-            v = covariance
-        elif covariance.dim() == 2 and covariance.shape[0] == covariance.shape[1] == B:
-            # batch predictive covariance -> take diagonal
-            v = torch.diagonal(covariance, dim1=-2, dim2=-1)
-        elif covariance.dim() == 2 and covariance.shape[0] == B and covariance.shape[1] == logits.shape[1]:
-            # per-class variances returned (not standard for SNGP); reduce to scalar
-            v = covariance.mean(dim=1)
-        else:
-            raise ValueError(
-                f"Unsupported covariance shape {tuple(covariance.shape)} for mean-field logits."
-            )
+        raise ValueError(
+            f"Unsupported covariance shape {tuple(covariance.shape)} for mean-field logits."
+        )
 
     # ensure non-negative variance
     v = v.clamp_min(1e-12)
