@@ -61,9 +61,9 @@ hydra:
   mode: MULTIRUN
   sweep:
     dir: ${paths.root_dir}/multirun/${now:%Y-%m-%d_%H-%M-%S}
-    subdir: ${model.name}_${net.trainable_kernel_scale}_${seed}
+    subdir: ${model.name}_${model.net.trainable_kernel_scale}_${seed}
   run:
-    dir: ${paths.root_dir}/runs/${model.name}_${net.trainable_kernel_scale}_seed-${seed}_${now:%H-%M-%S}
+    dir: ${paths.root_dir}/runs/${model.name}_${model.net.trainable_kernel_scale}_seed-${seed}_${now:%H-%M-%S}
 
   # param sweep combinations
   # Note: Sweeper params apply to the final composed config, not to subtrees that are replaced later
