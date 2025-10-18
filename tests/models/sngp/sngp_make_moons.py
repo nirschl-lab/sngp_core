@@ -165,6 +165,11 @@ class LitSNGP(L.LightningModule):
             random_features=cfg.random_features,
             trainable_kernel_scale=cfg.trainable_kernel_scale,
         )
+        #
+        # if calibration_cfg is None:
+        #     calibration_cfg = CalibrationLossConfig() # default: all weights 0.0 (no calibration)
+
+        self.cal_cfg = calibration_cfg
 
         self.criterion = nn.CrossEntropyLoss(reduction="mean")
 
@@ -191,8 +196,23 @@ class LitSNGP(L.LightningModule):
         x, y = batch
         out = self(x)
         logits = out["logits"]
-        loss = self.criterion(logits, y)
+        ce = self.criterion(logits, y)
+
+        # Apply calibration losses if enabled
+        cal_penalty = logits.new_tensor(0.0)
+        if self.training and self.cal_cfg is not None:
+            cal_penalty, _cal_terms = calibration_losses(logits, y, self.cal_cfg)
+
+        # Total combined loss
+        loss = ce + cal_penalty
+
         self.log("train/loss", loss, prog_bar=True, on_epoch=True, on_step=False)
+        self.log("train/ce", ce, prog_bar=False, on_epoch=True, on_step=False)
+        if cal_penalty.item() > 0.0:
+            self.log(
+                "train/cal_penalty", cal_penalty, prog_bar=False, on_epoch=True, on_step=False
+            )
+
         return loss
 
     # ---- helpers for evaluation/plotting ----
@@ -246,7 +266,7 @@ class LitSNGP(L.LightningModule):
 
 
 # train + eval
-def main(cfg: MoonsConfig = None):
+def main(cfg: MoonsConfig = None, calibration_cfg: Optional[CalibrationLossConfig]=None):
     if cfg is None:
         cfg = MoonsConfig()
 
@@ -255,7 +275,7 @@ def main(cfg: MoonsConfig = None):
     dm = MoonsDataModule(cfg)
     dm.setup()
 
-    model = LitSNGP(cfg)
+    model = LitSNGP(cfg, calibration_cfg=calibration_cfg)
     trainer = L.Trainer(
         max_epochs=cfg.max_epochs,
         log_every_n_steps=10,
@@ -280,6 +300,8 @@ def main(cfg: MoonsConfig = None):
     # title text
     title_text = f"(D={cfg.random_features}, ℓ={'auto' if cfg.kernel_scale is None else cfg.kernel_scale})"
     plot_surfaces(cfg, dm, probs=probs, unc=unc, title_suffix=title_text)
+    title_text = f"(D={cfg.random_features}, ℓ={'auto' if kscale_str is None else cfg.kernel_scale})"
+    plot_surfaces(cfg, dm, probs=probs, unc=unc, title_suffix=f"{kscale_str} {title_text}", rescale="none")
 
 
 # ------------- Plotting ------------- #
@@ -291,13 +313,41 @@ def plot_surfaces(
     title_suffix="",
     **kwargs,
 ):
-    DEFAULT_CMAP = colors.ListedColormap(["#377eb8", "#ff7f00"])
-    DEFAULT_NORM = colors.Normalize(vmin=kwargs.get("vmin", 0.5), vmax=kwargs.get("vmax", 1.0))
+    rescale = kwargs.get("rescale", "auto")
 
     surface_cmap = kwargs.get("surface_cmap", "viridis")
 
-    def _show_field(ax, field, title, show_data=True):
-        field = field / (field.max() + 1e-12)
+    def _show_field(ax, field, title, show_data=True, rescale="max"):
+        if rescale.lower() == "max":
+            field = field / (field.max() + 1e-12)
+            vmin = kwargs.get("vmin", 0.0)
+            vmax = kwargs.get("vmax", 1.0)
+            title_suffix=" (max rescaled)"
+        elif rescale.lower() in {"log", "logarithmic"}:
+            title_suffix=" (log scale)"
+            field = np.log1p(field - field.min() + 1e-12)
+            vmin = kwargs.get("vmin", 0.0)
+            vmax = kwargs.get("vmax", field.max())
+        elif rescale.lower() in {"none"}:
+            title_suffix=" (no rescaling)"
+            vmin = kwargs.get("vmin", field.min())
+            vmax = kwargs.get("vmax", field.max())
+        elif rescale.lower() == "auto":
+            # linear rescale [-1, 1]
+            title_suffix=" (auto rescaled)"
+            field_min = field.min()
+            field_max = field.max()
+            field = 2.0 * (field - field_min) / (field_max - field_min + 1e-12) - 1.0
+            vmin = -1.0
+            vmax = 1.0
+        else:
+            raise ValueError(f"Unknown rescale option: {rescale}")
+
+        #
+        DEFAULT_CMAP = colors.ListedColormap(["#377eb8", "#ff7f00"])
+        DEFAULT_NORM = colors.Normalize(vmin=vmin, vmax=vmax)
+
+        title = title + title_suffix
         ax.set_xlim(cfg.x_range)
         ax.set_ylim(cfg.y_range)
         ax.set_title(title)
@@ -326,12 +376,12 @@ def plot_surfaces(
 
     fig, axs = plt.subplots(1, 2, figsize=(13, 5.2))
     pcm0 = _show_field(
-        axs[0], probs, f"Class Probability {title_suffix}", show_data=True
+        axs[0], probs, f"Class Probability {title_suffix}", show_data=True, rescale=rescale
     )
     plt.colorbar(pcm0, ax=axs[0])
 
     pcm1 = _show_field(
-        axs[1], unc, f"Predictive Uncertainty {title_suffix}", show_data=False
+        axs[1], unc, f"Predictive Uncertainty {title_suffix}", show_data=False, rescale=rescale
     )
     plt.colorbar(pcm1, ax=axs[1])
 
@@ -377,7 +427,17 @@ if __name__ == "__main__":
             output_bias_trainable=False,
             seed=seed,
         )
-        main(cfg=cfg)
+
+        # calibration_cfg = CalibrationLossConfig(
+        #     sb_ece_label_weight=0.01,
+        #     sb_ece_conf_weight=0.0,
+        #     soft_avuc_weight=0.05,
+        #     clue_weight=0.1,
+        #     bsce_gra_weight=0.1,
+        # )
+        calibration_cfg = None
+
+        main(cfg=cfg, calibration_cfg=calibration_cfg)
 
     print("\nAll experiments completed.")
     print("=" * 80)

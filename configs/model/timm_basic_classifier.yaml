@@ -6,8 +6,10 @@ net:
   _target_: src.models.timm_classification_models.TimmDropOutBasicClassifier
   model_name: resnet50
   num_classes: 8
-  pretrained: True
+  pretrained: true
   in_chans: 3
+  drop_rate: 0.2
+
 
 optimizer:
   _target_: torch.optim.Adam
@@ -30,6 +32,8 @@ test_name: "test_predictions.csv" # test csv name
 log_csv: false
 log_test_metrics: true
 class_freq: null
+use_mc: false # double check
+mc_passes: 0
 
 # --- Calibration loss configuration (NEW) ---
 #| Loss                         | Mechanism                                                                          | Primary Focus                            | Sensitivity                        | Typical Weight Range |
