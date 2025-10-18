@@ -33,7 +33,7 @@ task_name: "train"
 # tags to help you identify your experiments
 # you can overwrite this in experiment configs
 # overwrite from command line with `python train.py tags="[first_tag, second_tag]"`
-tags: ["sngp_10-16", "jjn_multirun"]
+tags: ["sngp_10-17", "jjn_multirun", "sngp_param_sweep"]
 
 # set False to skip model training
 train: True
@@ -61,9 +61,16 @@ hydra:
     dir: ${paths.root_dir}/runs/${model.name}_${net.trainable_kernel_scale}_seed-${seed}_${now:%H-%M-%S}
 
   # param sweep combinations
+  # Note: Sweeper params apply to the final composed config, not to subtrees that are replaced later
   sweeper:
     params:
-      model: timm_sngp_classifier,timm_basic_classifier
-      +net.trainable_kernel_scale: true,false # keep '+' to prevent hydra config error for models that don't have this param
-      +net.scale_random_features: true,false # keep '+' to prevent hydra config error for models that don't have this param
-      seed: 0,1,1234,380843,42 # https://blog.semicolonsoftware.de/the-most-popular-random-seeds/
+      model: timm_sngp_classifier
+      # nested overrides: Hydra only applies '+' overrides when the key does not exist in the main/base config.
+      # overrides need to be applied to the correct subtree
+      +model.net.normalize_input: true
+      +model.net.trainable_kernel_scale: true
+      +model.net.scale_random_features: false
+      +model.net.num_random_features: 1024,2048,4096
+      +model.net.output_bias_trainable: false
+      seed: 0,1,1234,380843,42
+      # most popular random seeds: https://blog.semicolonsoftware.de/the-most-popular-random-seeds/

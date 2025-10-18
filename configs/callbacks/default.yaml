@@ -7,8 +7,8 @@ defaults:
 
 model_checkpoint:
   dirpath: ${paths.output_dir}/checkpoints
-  filename: "epoch_{epoch}_step_{step}_val_acc={val/acc:.2f}"
-  monitor: "val/acc"
+  filename: "best.ckpt"
+  monitor: "val/f1"
   mode: "max"
   save_last: True
   auto_insert_metric_name: False
