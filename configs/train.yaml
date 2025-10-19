@@ -73,11 +73,11 @@ hydra:
       # nested overrides: Hydra only applies '+' overrides when the key does not exist in the main/base/subtree config.
       # nested overrides: Hydra applies '++' to force override keys that do exist in the main/base/subtree config.
       # overrides need to be applied to the correct subtree
-      ++model.net.normalize_input: true
-      ++model.net.trainable_kernel_scale: true # better performance when True
-      ++model.net.scale_random_features: false # better performance when False, paired with trainable_kernel_scale=True
-      ++model.net.random_features: 1024,2048,4096
-      ++model.net.output_bias_trainable: false
+      ++model.net.normalize_input: True
+      ++model.net.trainable_kernel_scale: True # better performance when True
+      ++model.net.scale_random_features: False # better performance when False, paired with trainable_kernel_scale=True
+      ++model.net.random_features: 1024
+      ++model.net.output_bias_trainable: False
       ++logger.wandb.project: "sngp_sweep" # project name in wandb
       seed: 0,1,1234,380843,42
       # most popular random seeds: https://blog.semicolonsoftware.de/the-most-popular-random-seeds/
