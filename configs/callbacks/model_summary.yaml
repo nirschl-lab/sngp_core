@@ -1,3 +1,4 @@
+# configs/callbacks/model_summary.yaml
 # https://lightning.ai/docs/pytorch/stable/api/lightning.pytorch.callbacks.RichModelSummary.html
 
 model_summary:
