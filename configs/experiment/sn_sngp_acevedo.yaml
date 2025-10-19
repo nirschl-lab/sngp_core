@@ -11,8 +11,8 @@ defaults:
 
 # all parameters below will be merged with parameters from default configurations set above
 # this allows you to overwrite only specified parameters
-
-tags: ["acevedo_et_al_2020", "sngp", "spectral_norm", "val/ece", "50_epochs"]
+name: "acevedo_sngp"
+tags: ["acevedo_et_al_2020", "SNGP", "training", "paper_exp1"]
 
 seed: 12345
 
@@ -39,15 +39,15 @@ data:
 logger:
   wandb:
     tags: ${tags}
-    group: "spectral_norm"
-    name: "SNGP Acevedo"
+    group: "paper_exp1"
+    name: "Training: Acevedo_sngp"
     log_model: True
   aim:
     experiment: ""
 
 callbacks:
   early_stopping:
-    monitor: "val/ece"  # Expected Calibration Error
-    patience: 10
+    monitor: "val/loss"
+    patience: 20
     mode: "min"
     min_delta: 0.005

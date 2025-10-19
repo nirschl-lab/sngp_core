@@ -11,8 +11,8 @@ defaults:
 
 # all parameters below will be merged with parameters from default configurations set above
 # this allows you to overwrite only specified parameters
-
-tags: ["wong_et_al_2022", "SNGP", 'training']
+name: "wong_sngp"
+tags: ["wong_et_al_2022", "SNGP", "training", "paper_exp1"]
 
 seed: 12345
 
@@ -48,6 +48,6 @@ logger:
 callbacks:
   early_stopping:
     monitor: "val/loss"
-    patience: 10
+    patience: 20
     mode: "min"
     min_delta: 0.005
