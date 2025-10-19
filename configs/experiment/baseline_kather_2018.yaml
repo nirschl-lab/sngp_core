@@ -27,6 +27,7 @@ model:
     lr: 0.001
   hist_bins: 10
   net:
+    drop_rate: 0.2  # TODO: check how baseline vs. mc-baseline differ
     num_classes: 9
   compile: false
 

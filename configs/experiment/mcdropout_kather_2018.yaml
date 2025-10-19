@@ -11,14 +11,14 @@ defaults:
 
 # all parameters below will be merged with parameters from default configurations set above
 # this allows you to overwrite only specified parameters
-
-tags: ["kather_et_al_2018", "MC", "paper_exp1"]
+name: "kather2018_mc-base"
+tags: ["kather_et_al_2018", "MCDropout", "training",  "paper_exp1"]
 
 seed: 12345
 
 trainer:
   min_epochs: 5
-  max_epochs: 100
+  max_epochs: 50
   accelerator: "gpu"
 
 
@@ -33,7 +33,7 @@ model:
 
 data:
   datamodule:
-    dataset_name: 'nirschl-lab/kather_et_al_2018'
+    dataset_name: "nirschl-lab/kather_et_al_2018"
     num_classes: 9
     batch_size: 256
 
@@ -41,7 +41,7 @@ logger:
   wandb:
     tags: ${tags}
     group: "paper_exp1"
-    name: "MC kather2018"
+    name: "Training: Kather2018_mc-baseline"
     log_model: True
   aim:
     experiment: ""
@@ -51,3 +51,4 @@ callbacks:
     monitor: "val/loss"
     patience: 20
     mode: "min"
+    min_delta: 0.005

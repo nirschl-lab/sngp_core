@@ -11,9 +11,9 @@ defaults:
   - paths: default
   - extras: default
 
-  # experiment configs allow for version control of specific hyperparameters
-  # e.g. best hyperparameters for given model and datamodule
-  - experiment: null
+#  # experiment configs allow for version control of specific hyperparameters
+#  # e.g. best hyperparameters for given model and datamodule
+#  - experiment: null
 
   # config for hyperparameter optimization
   - hparams_search: null
@@ -61,23 +61,19 @@ hydra:
   mode: MULTIRUN
   sweep:
     dir: ${paths.root_dir}/multirun/${now:%Y-%m-%d_%H-%M-%S}
-    subdir: ${model.name}_${model.net.trainable_kernel_scale}_${seed}
+    subdir: ${name}_${seed}
   run:
-    dir: ${paths.root_dir}/runs/${model.name}_${model.net.trainable_kernel_scale}_seed-${seed}_${now:%H-%M-%S}
+    dir: ${paths.root_dir}/runs/${name}_seed-${seed}_${now:%H-%M-%S}
 
   # param sweep combinations
   # Note: Sweeper params apply to the final composed config, not to subtrees that are replaced later
   sweeper:
     params:
-      model: timm_sngp_classifier
+      ## Notes
       # nested overrides: Hydra only applies '+' overrides when the key does not exist in the main/base/subtree config.
       # nested overrides: Hydra applies '++' to force override keys that do exist in the main/base/subtree config.
       # overrides need to be applied to the correct subtree
-      ++model.net.normalize_input: True
-      ++model.net.trainable_kernel_scale: True # better performance when True
-      ++model.net.scale_random_features: False # better performance when False, paired with trainable_kernel_scale=True
-      ++model.net.random_features: 1024
-      ++model.net.output_bias_trainable: False
-      ++logger.wandb.project: "sngp_sweep" # project name in wandb
-      seed: 0,1,1234,380843,42
+      +experiment: ["baseline_acevedo","sn_sngp_acevedo"] #,"baseline_tang","sn_sngp_tang"]#,"baseline_wong","sn_sngp_wong"] #,"baseline_kather_2016","sn_sngp_kather_2016","baseline_kather_2018","sn_sngp_kather_2018"]
+      ++logger.wandb.project: "baseline_vs_sngp" # project name in wandb
+      seed:  0,1,1234,380843,42
       # most popular random seeds: https://blog.semicolonsoftware.de/the-most-popular-random-seeds/
