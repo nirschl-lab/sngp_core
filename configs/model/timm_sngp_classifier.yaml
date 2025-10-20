@@ -17,7 +17,7 @@ net:
   normalize_input: True # better performance when True
   output_bias_trainable: False # kwarg for SNGP
   random_features: 1024 # kwarg for SNGP
-  scale_random_features: False # better performance when False, paired with trainable_kernel_scale=True
+  scale_random_features: True # kwarg for SNGP
   trainable_kernel_scale: True # set True for tighter distribution around train data (based on make_moons tests); need to test ECE/OOD performance
 
 # optimizer and scheduler

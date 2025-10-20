@@ -5,6 +5,7 @@ import torch
 from lightning import LightningModule
 from torchmetrics import MaxMetric, MeanMetric
 from src.metrics.calibration_losses import CalibrationLossConfig, calibration_losses
+from src.models.sngp.sngp_diagnostic_mixin import SNGPDiagnosticsMixin
 
 import torch.nn.functional as F
 from torchmetrics.classification.accuracy import Accuracy 
@@ -27,7 +28,7 @@ import pandas as pd
 from torch.nn.modules.dropout import _DropoutNd
 from src.models.sngp.gaussian_process import mean_field_logits
 
-class TimmClassificationLitModule(LightningModule):
+class TimmClassificationLitModule(SNGPDiagnosticsMixin, LightningModule):
     
     def __init__(
         self,
@@ -365,6 +366,10 @@ class TimmClassificationLitModule(LightningModule):
         loss = self.val_loss.compute()
         nll = self.val_nll.compute()
         
+
+        # log additional sngp diagnostics
+        if not hasattr(self.net, "sngp_classifier"):
+            self.log_sngp_diagnostics()
 
         # self.val_acc_best(acc)  # update best so far val acc
         # self.val_precision_best(precision)  # update best so far val precision

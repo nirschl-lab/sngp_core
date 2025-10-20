@@ -131,8 +131,8 @@ class RandomFeatureGaussianProcess(nn.Module):
         output_bias_trainable: bool = False,
         return_covariance: bool = True,
         return_features: bool = False,
-        scale_random_features=False, # double check the default value in TF/Edward2
-        trainable_kernel_scale: bool = False,
+        scale_random_features: bool =True, # double check the default value in TF/Edward2
+        trainable_kernel_scale: bool = True, # double check the default value in TF/Edward2
         use_custom_features: bool = False,
         verbose: bool = False,
     ):
@@ -187,6 +187,8 @@ class RandomFeatureGaussianProcess(nn.Module):
         self.return_covariance = return_covariance or not self.training # always return cov if in eval mode
         self.return_features = return_features
         self.scale_random_features = scale_random_features
+        if not scale_random_features:
+            logger.warning(f"scale_random_features is set to False, which may affect performance")
 
         logger.debug("Initializing RandomFeatureGaussianProcess layer") if self.verbose else None
         logger.debug(f"Input features: {in_features}") if self.verbose else None
@@ -366,7 +368,7 @@ class LaplaceRandomFeatureCovariance(nn.Module):
 
     @property
     def covariance(self):
-        # If precision is all zeros or NaN: (s I + 0)^(-1) = (1/s) I
+        # If precision is all zeros or NaN: (λ I + 0)^(-1) = (1/λ) I
         if not self._precision.any() or torch.isnan(self._precision).all():
             eye = torch.eye(self.in_features, **self.factory_kwargs)
             return eye / self.ridge_penalty
@@ -374,9 +376,12 @@ class LaplaceRandomFeatureCovariance(nn.Module):
         if not self.covariance_is_cached:
             # TF parity: invert (ridge * I + precision)
             eye = torch.eye(self.in_features, device=self._precision.device, dtype=self._precision.dtype)
-            self._covariance = torch.linalg.inv(self.ridge_penalty * eye + self._precision)
+            A = self.ridge_penalty * eye + self._precision
+            A = A + 1e-12 * eye  # optional jitter
+            with torch.no_grad():
+                self._covariance = torch.linalg.inv(A)
+            self.covariance_is_cached = True
 
-        self.covariance_is_cached = True
         return self._covariance
 
     @covariance.setter
@@ -470,9 +475,8 @@ class LaplaceRandomFeatureCovariance(nn.Module):
             (torch.tensor) Predictive covariance matrix, shape (batch_size, batch_size).
         """
         # Cov_test = s * Φ_test @ (s I + ΦᵀΦ)^(-1) @ Φ_testᵀ
-        # TODO: check when to use self.ridge_penalty - Should be okay
-        # DO NOT multiply by ridge_penalty here
-        return Phi @ self.covariance.to(Phi.device) @ Phi.transpose(-2, -1)
+        # TODO: check when to use self.ridge_penalty
+        return self.ridge_penalty * (Phi @ self.covariance.to(Phi.device) @ Phi.transpose(-2, -1))
 
     def forward(self, Phi, logits=None):
         """Minibatch updates the GP's posterior precision matrix estimate.
@@ -543,5 +547,12 @@ def mean_field_logits(
 
     # ensure non-negative variance
     v = v.clamp_min(1e-12)
+
+    if v.mean().isnan() or v.mean().isinf():
+        raise ValueError("NaN/Inf values found in covariance diagonal for mean-field logits.")
+    elif v.mean() > 1e3:
+        logger.warning("Large values found in covariance diagonal for mean-field logits.")
+        v = v.clamp_max(1e3)
+
     scale = torch.sqrt(1.0 + mean_field_factor * v).unsqueeze(-1)  # [B, 1]
     return logits / scale
