@@ -1,3 +1,4 @@
+# configs/callbacks/default.yaml
 defaults:
   - model_checkpoint
   - early_stopping
@@ -7,9 +8,9 @@ defaults:
 
 model_checkpoint:
   dirpath: ${paths.output_dir}/checkpoints
-  filename: "epoch_{epoch}_step_{step}_val_acc={val/acc:.2f}"
-  monitor: "val/acc"
-  mode: "max"
+  filename: "best.ckpt"
+  monitor: "val/loss"
+  mode: "min"
   save_last: True
   auto_insert_metric_name: False
 

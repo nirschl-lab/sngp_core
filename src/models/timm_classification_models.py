@@ -78,8 +78,10 @@ class TimmBasicClassifier(nn.Module):
         num_classes: int,
         pretrained: bool = True,
         in_chans: int = 3,
+        **kwargs,
     ):
         super().__init__()
+        self.num_classes = num_classes
         self.model = timm.create_model(
             model_name,
             pretrained=pretrained,
@@ -101,6 +103,7 @@ class TimmDropOutBasicClassifier(nn.Module):
         pretrained: bool = True,
         in_chans: int = 3,
         drop_rate: float = 0.2,
+        **kwargs,
     ):
         super().__init__()
         self.num_classes = num_classes

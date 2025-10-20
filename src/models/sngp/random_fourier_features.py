@@ -39,7 +39,7 @@ class RandomFourierFeatures(nn.Module):
         out_features: Number of random Fourier features (num_inducing in GP).
         kernel_type: Either 'gaussian' or 'laplacian'.
         kernel_scale: Length-scale parameter ℓ of the kernel.
-        kernel_scale_trainable: Whether ℓ is a trainable parameter.
+        trainable_kernel_scale: Whether ℓ is a trainable parameter.
         use_softplus: Ensures positive length-scale via softplus (optional).
         verbose: Enables debug logging.
     """
@@ -50,7 +50,7 @@ class RandomFourierFeatures(nn.Module):
         out_features: int,
         kernel_type: str = "gaussian",
         kernel_scale: float = 1.0,
-        kernel_scale_trainable: bool = False,
+        trainable_kernel_scale: bool = False,
         use_softplus: bool = False,
         verbose: bool = False,
     ):
@@ -86,7 +86,7 @@ class RandomFourierFeatures(nn.Module):
         self.register_buffer("bias", torch.rand(out_features) * 2 * math.pi)
 
         # === Kernel scale (lengthscale) ===
-        if kernel_scale_trainable:
+        if trainable_kernel_scale:
             self.kernel_scale = nn.Parameter(torch.tensor(kernel_scale, dtype=torch.float32))
         else:
             self.register_buffer("kernel_scale", torch.tensor(kernel_scale, dtype=torch.float32))

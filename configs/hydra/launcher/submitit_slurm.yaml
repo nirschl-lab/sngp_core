@@ -1,20 +1,36 @@
-defaults:
-  - submitit_slurm
+# configs/hydra/launcher/submitit_slurm.yaml
+# @package hydra.launcher
 
-partition: shared
+_target_: hydra_plugins.hydra_submitit_launcher.submitit_launcher.SlurmLauncher
+
+# Where submitit stores per-job metadata
+submitit_folder: ${hydra.sweep.dir}/submitit/%j
+
+# SLURM resources
+timeout_min: 2880          # 48h
 nodes: 1
 tasks_per_node: 1
-cpus_per_task: 8
-mem_gb: 32
-timeout_min: 120
-name: optuna_baseline_tang
+cpus_per_task: 24
+mem_gb: 64
+gpus_per_node: 1
+gres: "gpu:1"
 
-# Request 1 NVIDIA L40S per trial (use ONLY one of gres or gpus_per_node)
-gpus_per_node: null
-gres: "gpu:nvidia_l40s:3"
+# SLURM specifics (adjust to your cluster)
+#partition: gpu
+qos: normal
+# account: your_account_here   # uncomment if required
 
-# If your site needs these, uncomment:
-# account: your_account
-# qos: your_qos
-# sbatch_args:
-#   # constraint: "nvidia_l40s"  # usually not needed since you already specify the GPU type in gres
+# Job naming & retries
+name: ${hydra.job.name}
+array_parallelism: 4
+max_num_timeout: 3
+
+# Optional cluster setup
+setup:
+  - echo "Starting job on $(hostname)"
+  # - module load cuda
+
+# Optional requeue behavior
+additional_parameters:
+  signal: SIGUSR1@90
+  requeue: true

@@ -5,6 +5,7 @@ import torch
 from lightning import LightningModule
 from torchmetrics import MaxMetric, MeanMetric
 from src.metrics.calibration_losses import CalibrationLossConfig, calibration_losses
+from src.models.sngp.sngp_diagnostic_mixin import SNGPDiagnosticsMixin
 
 import torch.nn.functional as F
 from torchmetrics.classification.accuracy import Accuracy 
@@ -27,7 +28,7 @@ import pandas as pd
 from torch.nn.modules.dropout import _DropoutNd
 from src.models.sngp.gaussian_process import mean_field_logits
 
-class TimmClassificationLitModule(LightningModule):
+class TimmClassificationLitModule(SNGPDiagnosticsMixin, LightningModule):
     
     def __init__(
         self,
@@ -276,16 +277,18 @@ class TimmClassificationLitModule(LightningModule):
             if self.cal_cfg and self.log_calibration_terms:
                 self.log(f"{mode}/cal_total", cal_penalty, on_step=False, on_epoch=True, prog_bar=True)
 
-                for k, v in cal_terms.items():
-                    self.log(f"{mode}/{k}", v, on_step=False, on_epoch=True, prog_bar=False)
+                # no need to log all sub-terms unless debugging
+                if os.getenv("DEBUG", "0") == "1":
+                    for k, v in cal_terms.items():
+                        self.log(f"{mode}/{k}", v, on_step=False, on_epoch=True, prog_bar=False)
 
                 # 3. Log CE-to-Calibration ratio (monitor dominance)
                 ratio = ce / (cal_penalty + 1e-8)
                 self.log(f"{mode}/ce_to_cal_ratio", ratio, on_step=False, on_epoch=True, prog_bar=False)
 
-                # Optional sanity check: calibration relative magnitude (%)
-                cal_rel = (cal_penalty / (ce + 1e-8)) * 100
-                self.log(f"{mode}/calibration_pct_of_ce", cal_rel, on_step=False, on_epoch=True, prog_bar=False)
+                # # Optional sanity check: calibration relative magnitude (%)
+                # cal_rel = (cal_penalty / (ce + 1e-8)) * 100
+                # self.log(f"{mode}/calibration_pct_of_ce", cal_rel, on_step=False, on_epoch=True, prog_bar=False)
 
         return img_ids, loss, probs, preds, y, fold
 
@@ -363,6 +366,10 @@ class TimmClassificationLitModule(LightningModule):
         loss = self.val_loss.compute()
         nll = self.val_nll.compute()
         
+
+        # log additional sngp diagnostics
+        if not hasattr(self.net, "sngp_classifier"):
+            self.log_sngp_diagnostics()
 
         # self.val_acc_best(acc)  # update best so far val acc
         # self.val_precision_best(precision)  # update best so far val precision

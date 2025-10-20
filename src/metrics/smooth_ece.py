@@ -246,10 +246,7 @@ def smECE_fast_compat(
     # --- Binary classification---
     if f.ndim == 1:
         val, sigma = _smece_binary_core(f, y, eps=eps, m=m)
-        if return_width:
-            return val, sigma
-        return val
-
+        return (val, sigma) if return_width else val
     # --- Multiclass classification ---
     if f.ndim != 2:
         raise ValueError("f must be 1D (binary) or 2D (n, C) for multiclass.")
@@ -277,13 +274,19 @@ def smECE_fast_compat(
         )
         class_weights[c] = float(y_c.mean())  # prevalence
 
-    if average == "macro":
+    if (
+        average != "macro"
+        and average == "weighted"
+        and class_weights.sum() == 0
+        or average == "macro"
+    ):
         value = float(per_class_vals.mean())
-    elif average == "weighted":
-        if class_weights.sum() == 0:
-            value = float(per_class_vals.mean())
-        else:
-            value = float(np.average(per_class_vals, weights=class_weights))
+    elif (
+        average != "macro"
+        and average == "weighted"
+        and class_weights.sum() != 0
+    ):
+        value = float(np.average(per_class_vals, weights=class_weights))
     else:
         raise ValueError("average must be 'macro' or 'weighted'.")
 

@@ -11,8 +11,8 @@ defaults:
 
 # all parameters below will be merged with parameters from default configurations set above
 # this allows you to overwrite only specified parameters
-
-tags: ["tang", "baseline", "paper_exp1"]
+name: "tang_base"
+tags: ["tang_et_al_2019", "baseline", 'training', "paper_exp1"]
 
 seed: 12345
 
@@ -27,6 +27,7 @@ model:
     lr: 0.0001
   hist_bins: 10
   net:
+    drop_rate: 0.2  # TODO: check how baseline vs. mc-baseline differ
     num_classes: 4
   compile: false
 
@@ -40,14 +41,14 @@ logger:
   wandb:
     tags: ${tags}
     group: "paper_exp1"
-    name: "Baseline Tang"
+    name: "Training: Tang_baseline"
     log_model: True
   aim:
     experiment: ""
 
 callbacks:
   early_stopping:
-    monitor: "val/los"
-    patience: 10
+    monitor: "val/loss"
+    patience: 20
     mode: "min"
     min_delta: 0.005

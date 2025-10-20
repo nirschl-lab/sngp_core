@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 # sngp_make_moons.py in tests/models/sngp
 
+import itertools
+from pathlib import Path
 import math
 import os
 from dataclasses import dataclass
@@ -12,18 +14,23 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import torch.nn.functional as F
+from sklearn.datasets import make_moons
 from torch import nn
 from torch.utils.data import DataLoader, Dataset
 
 from src.models.sngp.sngp_classification_layer import SNGP
+
+# torch.set_float32_matmul_precision('medium')
 
 
 # Two moons dataclass
 @dataclass
 class MoonsConfig:
     seed: int = 0
-    train_size_per_class: int = 500
-    batch_size: int = 64
+    train_size_per_class: int = 1000
+    ood_size: int = 500
+    noise: float = 0.1
+    batch_size: int = 256
     max_epochs: int = 150
 
     # backbone dims
@@ -33,12 +40,15 @@ class MoonsConfig:
     # SNGP head
     num_classes: int = 2
     normalize_input: bool = True
-    scale_random_features: bool = True
     covariance_momentum: float = 0.999
     covariance_ridge: float = 1e-6
-    kernel_type: str = "gaussian"
     kernel_scale: Optional[float] = None
+    kernel_type: str = "gaussian"
+    output_bias_trainable: bool = False
     random_features: int = 1024
+    scale_random_features: bool = (
+        True  # default false in main code, but True seems to perform better
+    )
     trainable_kernel_scale: bool = True
 
     # lightning
@@ -72,12 +82,10 @@ class MoonsDataModule(L.LightningDataModule):
         self.cfg = cfg
 
     def setup(self, stage=None):
-        from sklearn.datasets import make_moons
-
         np.random.seed(self.cfg.seed)
         torch.manual_seed(self.cfg.seed)
 
-        X, y = make_moons(n_samples=2 * self.cfg.train_size_per_class, noise=0.1)
+        X, y = make_moons(n_samples=2 * self.cfg.train_size_per_class, noise=cfg.noise)
         X[y == 0] += [-0.1, 0.2]
         X[y == 1] += [0.1, -0.2]
         self.train_ds = NumpyDataset(X, y)
@@ -91,7 +99,7 @@ class MoonsDataModule(L.LightningDataModule):
 
         # simple ood cloud for overlay (optional, not used by loaders)
         self.ood = np.random.multivariate_normal(
-            mean=(2.5, -1.75), cov=np.diag((0.01, 0.01)), size=500
+            mean=(2.5, -1.75), cov=np.diag((0.01, 0.01)), size=cfg.ood_size
         ).astype(np.float32)
 
         self.train_points = X.astype(np.float32)
@@ -157,6 +165,11 @@ class LitSNGP(L.LightningModule):
             random_features=cfg.random_features,
             trainable_kernel_scale=cfg.trainable_kernel_scale,
         )
+        #
+        # if calibration_cfg is None:
+        #     calibration_cfg = CalibrationLossConfig() # default: all weights 0.0 (no calibration)
+
+        self.cal_cfg = calibration_cfg
 
         self.criterion = nn.CrossEntropyLoss(reduction="mean")
 
@@ -183,8 +196,23 @@ class LitSNGP(L.LightningModule):
         x, y = batch
         out = self(x)
         logits = out["logits"]
-        loss = self.criterion(logits, y)
+        ce = self.criterion(logits, y)
+
+        # Apply calibration losses if enabled
+        cal_penalty = logits.new_tensor(0.0)
+        if self.training and self.cal_cfg is not None:
+            cal_penalty, _cal_terms = calibration_losses(logits, y, self.cal_cfg)
+
+        # Total combined loss
+        loss = ce + cal_penalty
+
         self.log("train/loss", loss, prog_bar=True, on_epoch=True, on_step=False)
+        self.log("train/ce", ce, prog_bar=False, on_epoch=True, on_step=False)
+        if cal_penalty.item() > 0.0:
+            self.log(
+                "train/cal_penalty", cal_penalty, prog_bar=False, on_epoch=True, on_step=False
+            )
+
         return loss
 
     # ---- helpers for evaluation/plotting ----
@@ -238,14 +266,16 @@ class LitSNGP(L.LightningModule):
 
 
 # train + eval
-def main():
-    cfg = MoonsConfig()
+def main(cfg: MoonsConfig = None, calibration_cfg: Optional[CalibrationLossConfig]=None):
+    if cfg is None:
+        cfg = MoonsConfig()
+
     L.seed_everything(cfg.seed, workers=True)
 
     dm = MoonsDataModule(cfg)
     dm.setup()
 
-    model = LitSNGP(cfg)
+    model = LitSNGP(cfg, calibration_cfg=calibration_cfg)
     trainer = L.Trainer(
         max_epochs=cfg.max_epochs,
         log_every_n_steps=10,
@@ -270,6 +300,8 @@ def main():
     # title text
     title_text = f"(D={cfg.random_features}, ℓ={'auto' if cfg.kernel_scale is None else cfg.kernel_scale})"
     plot_surfaces(cfg, dm, probs=probs, unc=unc, title_suffix=title_text)
+    title_text = f"(D={cfg.random_features}, ℓ={'auto' if kscale_str is None else cfg.kernel_scale})"
+    plot_surfaces(cfg, dm, probs=probs, unc=unc, title_suffix=f"{kscale_str} {title_text}", rescale="none")
 
 
 # ------------- Plotting ------------- #
@@ -279,19 +311,50 @@ def plot_surfaces(
     probs: np.ndarray,
     unc: np.ndarray,
     title_suffix="",
+    **kwargs,
 ):
-    DEFAULT_CMAP = colors.ListedColormap(["#377eb8", "#ff7f00"])
-    DEFAULT_NORM = colors.Normalize(vmin=0.5, vmax=1)
+    rescale = kwargs.get("rescale", "auto")
 
-    def _show_field(ax, field, title, show_data=True):
-        field = field / (field.max() + 1e-12)
+    surface_cmap = kwargs.get("surface_cmap", "viridis")
+
+    def _show_field(ax, field, title, show_data=True, rescale="max"):
+        if rescale.lower() == "max":
+            field = field / (field.max() + 1e-12)
+            vmin = kwargs.get("vmin", 0.0)
+            vmax = kwargs.get("vmax", 1.0)
+            title_suffix=" (max rescaled)"
+        elif rescale.lower() in {"log", "logarithmic"}:
+            title_suffix=" (log scale)"
+            field = np.log1p(field - field.min() + 1e-12)
+            vmin = kwargs.get("vmin", 0.0)
+            vmax = kwargs.get("vmax", field.max())
+        elif rescale.lower() in {"none"}:
+            title_suffix=" (no rescaling)"
+            vmin = kwargs.get("vmin", field.min())
+            vmax = kwargs.get("vmax", field.max())
+        elif rescale.lower() == "auto":
+            # linear rescale [-1, 1]
+            title_suffix=" (auto rescaled)"
+            field_min = field.min()
+            field_max = field.max()
+            field = 2.0 * (field - field_min) / (field_max - field_min + 1e-12) - 1.0
+            vmin = -1.0
+            vmax = 1.0
+        else:
+            raise ValueError(f"Unknown rescale option: {rescale}")
+
+        #
+        DEFAULT_CMAP = colors.ListedColormap(["#377eb8", "#ff7f00"])
+        DEFAULT_NORM = colors.Normalize(vmin=vmin, vmax=vmax)
+
+        title = title + title_suffix
         ax.set_xlim(cfg.x_range)
         ax.set_ylim(cfg.y_range)
         ax.set_title(title)
 
         pcm = ax.imshow(
             field.reshape(cfg.n_grid, cfg.n_grid),
-            cmap="viridis",
+            cmap=surface_cmap,
             origin="lower",
             extent=cfg.x_range + cfg.y_range,
             vmin=DEFAULT_NORM.vmin,
@@ -313,12 +376,12 @@ def plot_surfaces(
 
     fig, axs = plt.subplots(1, 2, figsize=(13, 5.2))
     pcm0 = _show_field(
-        axs[0], probs, f"Class Probability {title_suffix}", show_data=True
+        axs[0], probs, f"Class Probability {title_suffix}", show_data=True, rescale=rescale
     )
     plt.colorbar(pcm0, ax=axs[0])
 
     pcm1 = _show_field(
-        axs[1], unc, f"Predictive Uncertainty {title_suffix}", show_data=False
+        axs[1], unc, f"Predictive Uncertainty {title_suffix}", show_data=False, rescale=rescale
     )
     plt.colorbar(pcm1, ax=axs[1])
 
@@ -327,6 +390,56 @@ def plot_surfaces(
 
 
 if __name__ == "__main__":
-    main()
-    # to save the figure, uncomment:
-    plt.savefig("sngp_moons.png", dpi=300)
+    # create trainable kernel scale experiments
+    train_kscale = [True]
+    # create scale features experiments
+    scale_feats = [True]
+    # random features
+    rand_feats = [1024] #, 2048, 4096]
+    # create seed list:
+    seed_list = [0, 1, 1234, 380843, 42]
+
+    # run cross product of all experiments (run through seeds first)
+    for num_feats, tr_kernel_scale, scale_features, seed in itertools.product(
+        rand_feats, train_kscale, scale_feats, seed_list
+    ):
+        print(
+            f"\n\n=== Running experiment: seed={seed}, "
+            f"random_features={num_feats}, "
+            f"trainable_kernel_scale={tr_kernel_scale}, "
+            f"scale_random_features={scale_features} ==="
+        )
+        if not tr_kernel_scale:
+            print(
+                "Note: Using fixed kernel scale may lead to suboptimal performance if not tuned."
+            )
+
+        if not scale_features:
+            print(
+                "Note: Not scaling random features may lead to suboptimal performance."
+            )
+
+        cfg = MoonsConfig(
+            normalize_input=True,
+            random_features=num_feats,
+            scale_random_features=scale_features,
+            trainable_kernel_scale=tr_kernel_scale,
+            output_bias_trainable=False,
+            seed=seed,
+        )
+
+        # calibration_cfg = CalibrationLossConfig(
+        #     sb_ece_label_weight=0.01,
+        #     sb_ece_conf_weight=0.0,
+        #     soft_avuc_weight=0.05,
+        #     clue_weight=0.1,
+        #     bsce_gra_weight=0.1,
+        # )
+        calibration_cfg = None
+
+        main(cfg=cfg, calibration_cfg=calibration_cfg)
+
+    print("\nAll experiments completed.")
+    print("=" * 80)
+    ## to save the figure, uncomment:
+    # plt.savefig("sngp_moons.png", dpi=300)

@@ -6,6 +6,8 @@ from lightning import LightningDataModule, LightningModule, Trainer
 from lightning.pytorch.loggers import Logger
 from omegaconf import DictConfig
 import pdb
+import cv2
+
 
 rootutils.setup_root(__file__, indicator=".project-root", pythonpath=True)
 # ------------------------------------------------------------------------------------ #
@@ -35,6 +37,9 @@ from src.utils import (
 
 log = RankedLogger(__name__, rank_zero_only=True)
 
+# OpenCV performance tweaks for albumentations
+cv2.setNumThreads(0)
+cv2.setUseOptimized(True)
 
 @task_wrapper
 def evaluate(cfg: DictConfig) -> Tuple[Dict[str, Any], Dict[str, Any]]:

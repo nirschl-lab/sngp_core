@@ -125,8 +125,7 @@ def soft_binned_ece_confidence(
     bin_weights = (sum_coeffs_for_bin / sum_coeffs_for_bin.sum()).clamp_min(eps)
 
     # L2 distance aggregated with weights; UB returns sqrt of weighted L2
-    ece = torch.sqrt(((conf_bin - acc_bin) ** 2 * bin_weights).sum())
-    return ece
+    return torch.sqrt(((conf_bin - acc_bin) ** 2 * bin_weights).sum())
 
 
 # ---------- 3) AvUC ----------
@@ -142,11 +141,7 @@ def avuc_loss(
     Uses same tanh(entropy) shaping and log(1 + (AU + IC)/(AC + IU)) form.
     """
     N, C = probabilities.shape
-    if stop_prob_gradients:
-        probs = probabilities.detach()
-    else:
-        probs = probabilities
-
+    probs = probabilities.detach() if stop_prob_gradients else probabilities
     conf, pred = probs.max(dim=1)  # [N]
     acc = (pred == labels).float()  # [N]
     ent = _entropy_from_probs(probs, eps=eps)  # [N]
@@ -172,8 +167,9 @@ def avuc_loss(
     nic_diff = nic.sum()
     niu_diff = niu.sum()
 
-    loss = torch.log1p((nau_diff + nic_diff) / (nac_diff + niu_diff).clamp_min(eps))
-    return loss
+    return torch.log1p(
+        (nau_diff + nic_diff) / (nac_diff + niu_diff).clamp_min(eps)
+    )
 
 
 # ---------- 4) Soft-AvUC ----------
@@ -227,8 +223,9 @@ def soft_avuc_loss(
     nic_diff = nic.sum()
     niu_diff = niu.sum()
 
-    loss = torch.log1p((nau_diff + nic_diff) / (nac_diff + niu_diff).clamp_min(eps))
-    return loss
+    return torch.log1p(
+        (nau_diff + nic_diff) / (nac_diff + niu_diff).clamp_min(eps)
+    )
 
 
 # ---------- 5) A small wrapper to combine with CE ----------
@@ -398,7 +395,7 @@ class BSCEGradLoss(nn.Module):
 
     def __init__(self, beta: float = 2.0, gamma: float = 2.0, reduction: str = "mean"):
         super().__init__()
-        assert reduction in ("mean", "sum", "none")
+        assert reduction in {"mean", "sum", "none"}
         self.beta = beta
         self.gamma = gamma
         self.reduction = reduction
