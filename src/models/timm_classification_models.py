@@ -178,6 +178,7 @@ class TimmSNGPClassifier(nn.Module):
         self.sngp_classifier = SNGP(
             in_features=reduction_dim,
             num_classes=num_classes,
+            drop_rate= drop_rate,
             **kwargs,
         )
 

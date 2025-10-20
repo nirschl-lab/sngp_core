@@ -42,7 +42,7 @@ class SNGP(nn.Module):
         in_features,
         num_classes,
         reduction_dim=128,
-        classif_dropout=0.2,
+        drop_rate=0.2,
         activation="Tanh",
         **kwargs,
     ):
@@ -63,7 +63,7 @@ class SNGP(nn.Module):
         self.activation = (
             getattr(nn, activation)() if hasattr(nn, activation) else nn.Tanh()
         )
-        self.dropout = nn.Dropout(p=classif_dropout)
+        self.dropout = nn.Dropout(p=drop_rate)
 
     def forward(self, x):
         # Handle all-NaN input by replacing with small stddev random normal values

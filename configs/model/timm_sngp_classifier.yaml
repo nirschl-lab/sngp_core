@@ -9,6 +9,7 @@ net:
   pretrained: True
   in_chans: 3
   reduction_dim: 512
+  drop_rate: 0.2
   use_spec_norm: True # required for TimmSNGPClassifier
   spec_norm_bound: 0.95 # required for TimmSNGPClassifier
   spec_norm_iteration: 1 # required for TimmSNGPClassifier
