@@ -73,7 +73,7 @@ hydra:
       # nested overrides: Hydra only applies '+' overrides when the key does not exist in the main/base/subtree config.
       # nested overrides: Hydra applies '++' to force override keys that do exist in the main/base/subtree config.
       # overrides need to be applied to the correct subtree
-      +experiment: ["baseline_acevedo","sn_sngp_acevedo"] #,"baseline_tang","sn_sngp_tang"]#,"baseline_wong","sn_sngp_wong"] #,"baseline_kather_2016","sn_sngp_kather_2016","baseline_kather_2018","sn_sngp_kather_2018"]
+      +experiment: ["baseline_acevedo","sn_sngp_acevedo","baseline_tang","sn_sngp_tang","baseline_wong","sn_sngp_wong","baseline_kather_2016","sn_sngp_kather_2016","baseline_kather_2018","sn_sngp_kather_2018"]
       ++logger.wandb.project: "baseline_vs_sngp" # project name in wandb
-      seed:  0,1,1234,380843,42
+      seed:  0 #,1,1234,380843,42
       # most popular random seeds: https://blog.semicolonsoftware.de/the-most-popular-random-seeds/

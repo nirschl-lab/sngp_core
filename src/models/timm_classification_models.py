@@ -140,6 +140,7 @@ class TimmSNGPClassifier(nn.Module):
         use_spec_norm: bool = True,
         spec_norm_bound: float =0.95,
         spec_norm_iteration: int =1,
+        drop_rate: float = 0.2,
         **kwargs,
     ):
         super().__init__()
@@ -178,6 +179,7 @@ class TimmSNGPClassifier(nn.Module):
         self.sngp_classifier = SNGP(
             in_features=reduction_dim,
             num_classes=num_classes,
+            drop_rate= drop_rate,
             **kwargs,
         )
 
