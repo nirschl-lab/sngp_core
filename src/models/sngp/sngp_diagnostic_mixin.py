@@ -5,6 +5,8 @@ import torch
 import math
 from loguru import logger
 
+from src.models.sngp.gaussian_process import mean_field_logits
+
 class SNGPDiagnosticsMixin:
     """A mixin that adds SNGP-specific diagnostics logging during validation epochs.
 
@@ -52,15 +54,28 @@ class SNGPDiagnosticsMixin:
 
     @torch.no_grad()
     def log_mean_field_scale_stats(self, logits: torch.Tensor, cov: torch.Tensor | None):
-        """Logs mean-field scaling statistics to check shrinkage magnitude."""
-        if cov is None or not isinstance(cov, torch.Tensor):
-            logger.debug("No covariance provided for mean-field logging.")
+        """Logs mean-field scaling statistics using actual mean_field_logits() behavior."""
+        if logits is None or cov is None or not isinstance(cov, torch.Tensor):
+            # logger.debug("Missing logits or covariance for mean-field stats.")
             return
 
-        v = torch.diagonal(cov, dim1=-2, dim2=-1)
-        scale = torch.sqrt(1.0 + math.pi / 8.0 * v)
+        # Compute adjusted logits using your actual mean-field correction
+        logits_adjusted = mean_field_logits(logits, cov)
+
+        # Empirical scaling factor applied elementwise
+        # Avoid divide-by-zero errors for zero logits
+        safe_logits = logits.clone()
+        safe_logits[safe_logits == 0] = 1e-8
+        scale = (logits_adjusted / safe_logits).abs()
+
         self.log("val/mean_field_scale_mean", scale.mean().item(), on_epoch=True, sync_dist=True)
         self.log("val/mean_field_scale_std", scale.std().item(), on_epoch=True, sync_dist=True)
+
+        # Optional sanity check: average shrinkage per logit dimension
+        if scale.ndim == 2:
+            per_dim = scale.mean(dim=0)
+            self.log("val/mean_field_scale_max", per_dim.max().item(), on_epoch=True)
+            self.log("val/mean_field_scale_min", per_dim.min().item(), on_epoch=True)
 
     @torch.no_grad()
     def log_uncertainty_metrics(self, probs: torch.Tensor, targets: torch.Tensor):
