@@ -24,7 +24,7 @@ trainer:
 
 model:
   optimizer:
-    lr: 0.001
+    lr: 0.0001
   hist_bins: 10
   net:
     drop_rate: 0.2

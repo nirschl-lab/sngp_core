@@ -64,17 +64,19 @@ def calcluate_fid(dataset1: Dataset, dataset2: Dataset, batch_size: int = 64, nu
     return fid_value
 
 if __name__ == '__main__':
-    datasets = ['nirschl-lab/jung_et_al_2022',
-                    'nirschl-lab/kather_et_al_2016',
-                    'nirschl-lab/nirschl_et_al_2018',
-                    'nirschl-lab/wong_et_al_2022',
-                    'nirschl-lab/tang_et_al_2019',
-                    'nirschl-lab/acevedo_et_al_2020']
+    datasets = [
+        'nirschl-lab/kather_et_al_2018', #0
+        'nirschl-lab/jung_et_al_2022', #1
+        'nirschl-lab/kather_et_al_2016', #2
+        'nirschl-lab/nirschl_et_al_2018', #3
+        'nirschl-lab/wong_et_al_2022', #4
+        'nirschl-lab/tang_et_al_2019', #5
+        'nirschl-lab/acevedo_et_al_2020'] #6
 
     fold = 'test' #train
-    
-    ix1 = 4
-    ix2 = 5
+
+    ix1 = 5
+    ix2 = 6
 
     d1 = load_dataset(datasets[ix1])
     d2 = load_dataset(datasets[ix2])

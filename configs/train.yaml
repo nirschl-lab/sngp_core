@@ -13,7 +13,7 @@ defaults:
 
 #  # experiment configs allow for version control of specific hyperparameters
 #  # e.g. best hyperparameters for given model and datamodule
-#  - experiment: null
+  - experiment: null
 
   # config for hyperparameter optimization
   - hparams_search: null
@@ -28,7 +28,7 @@ defaults:
   - hydra: default
 
   # overrides after others but before _self_
-  - override /hydra/launcher: submitit_slurm
+  # - override /hydra/launcher: submitit_slurm
 
   - _self_
 
@@ -38,7 +38,7 @@ task_name: "train"
 # tags to help you identify your experiments
 # you can overwrite this in experiment configs
 # overwrite from command line with `python train.py tags="[first_tag, second_tag]"`
-tags: ["sngp_10-17", "jjn_multirun", "sngp_param_sweep"]
+# tags: ["sngp_10-17", "jjn_multirun", "sngp_param_sweep"]
 
 # set False to skip model training
 train: True
@@ -56,24 +56,26 @@ seed: null
 # flag for torch precision: 'medium', 'high' or 'highest'
 precision: "medium"
 
-# multirun config
-hydra:
-  mode: MULTIRUN
-  sweep:
-    dir: ${paths.root_dir}/multirun/${now:%Y-%m-%d_%H-%M-%S}
-    subdir: ${name}_${seed}
-  run:
-    dir: ${paths.root_dir}/runs/${name}_seed-${seed}_${now:%H-%M-%S}
+# # multirun config
+# hydra:
+#   mode: MULTIRUN
+#   sweep:
+#     dir: ${paths.root_dir}/multirun/${now:%Y-%m-%d_%H-%M-%S}
+#     subdir: ${name}_${seed}
+#   run:
+#     dir: ${paths.root_dir}/runs/${name}_seed-${seed}_${now:%H-%M-%S}
 
-  # param sweep combinations
-  # Note: Sweeper params apply to the final composed config, not to subtrees that are replaced later
-  sweeper:
-    params:
-      ## Notes
-      # nested overrides: Hydra only applies '+' overrides when the key does not exist in the main/base/subtree config.
-      # nested overrides: Hydra applies '++' to force override keys that do exist in the main/base/subtree config.
-      # overrides need to be applied to the correct subtree
-      +experiment: ["baseline_acevedo","sn_sngp_acevedo","baseline_tang","sn_sngp_tang","baseline_wong","sn_sngp_wong","baseline_kather_2016","sn_sngp_kather_2016","baseline_kather_2018","sn_sngp_kather_2018"]
-      ++logger.wandb.project: "baseline_vs_sngp" # project name in wandb
-      seed:  0 #,1,1234,380843,42
-      # most popular random seeds: https://blog.semicolonsoftware.de/the-most-popular-random-seeds/
+#   # param sweep combinations
+#   # Note: Sweeper params apply to the final composed config, not to subtrees that are replaced later
+#   sweeper:
+#     params:
+#       ## Notes
+#       # nested overrides: Hydra only applies '+' overrides when the key does not exist in the main/base/subtree config.
+#       # nested overrides: Hydra applies '++' to force override keys that do exist in the main/base/subtree config.
+#       # overrides need to be applied to the correct subtree
+#       # +experiment: ['sn_sngp_acevedo', 'sn_sngp_tang', 'sn_sngp_wong', 'sn_sngp_kather_2016'] #'sn_sngp_kather_2018'
+#       # +experiment: ["baseline_acevedo","sn_sngp_acevedo","baseline_tang","sn_sngp_tang","baseline_wong","sn_sngp_wong","baseline_kather_2016","sn_sngp_kather_2016","baseline_kather_2018","sn_sngp_kather_2018"]
+#       +experiment: ["mcdropout_acevedo", "mcdropout_kather_2016", "mcdropout_kather_2018", "mcdropout_tang", "mcdropout_wong"]
+#       ++logger.wandb.project: "baseline_vs_sngp" # project name in wandb
+#       seed:  0,1,1234,380843,42
+#       # most popular random seeds: https://blog.semicolonsoftware.de/the-most-popular-random-seeds/
