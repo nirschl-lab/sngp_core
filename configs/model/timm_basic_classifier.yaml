@@ -3,18 +3,17 @@ _target_: src.models.timm_classification_lit_module.TimmClassificationLitModule
 name: timm_baseline
 # backbone
 net:
-  _target_: src.models.timm_classification_models.TimmDropOutBasicClassifier
+  _target_: src.models.timm_classification_models.TimmBasicClassifier
   model_name: resnet50
   num_classes: 8
   pretrained: true
   in_chans: 3
-  drop_rate: 0.2
 
 
 optimizer:
   _target_: torch.optim.Adam
   _partial_: true
-  lr: 0.001
+  lr: 0.0001
   weight_decay: 0.0
 
 scheduler:
@@ -48,22 +47,22 @@ mc_passes: 0
 calibration_cfg:
   _target_: src.metrics.calibration_losses.CalibrationLossConfig
   # Soft-Binned ECE
-  sb_ece_label_weight: 0.1
+  sb_ece_label_weight: 0.0
   sb_ece_label_bins: 15
   sb_ece_label_temp: 1e-2
   sb_ece_conf_weight: 0.0 # not used when set to 0
   # AvUC/SoftAvUC
   avuc_weight: 0.0 # not used when set to 0
-  soft_avuc_weight: 0.05
+  soft_avuc_weight: 0.0
   soft_avuc_temp: 1.0
   soft_avuc_theta: 0.5
   # CLUE
-  clue_weight: 0.1 # not used when set to 0
+  clue_weight: 0.0 # not used when set to 0
   clue_alpha: 0.5           # trade-off α in Eq. 8
   clue_uncertainty: "entropy" # {"entropy", "gp_var"}
   clue_detach_uncertainty: True
   # BSCE-GRA
-  bsce_gra_weight: 0.1 # 0.1–1.0
+  bsce_gra_weight: 0.0 # 0.1–1.0
   bsce_gra_beta: 2.0
   bsce_gra_gamma: 2.0
 
