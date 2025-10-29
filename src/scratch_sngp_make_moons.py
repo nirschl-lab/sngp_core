@@ -11,6 +11,7 @@ import torch.nn.functional as F
 from torch import nn
 from tqdm import tqdm
 import os
+import pdb
 
 print('torch version - ',torch.__version__)
 
@@ -126,60 +127,62 @@ class Dataset(torch.utils.data.Dataset):
         return self.X[i], self.y[i]
 
 
-class BaselineModel(nn.Module):
-    def __init__(self, D=2, C=2, H=128, p=0.1, n_hidden=4):
-        super().__init__()
-        self.act = nn.ReLU()
-        self.dropout = nn.Dropout(p=p)
-        self.register_buffer("input_W", torch.randn(D, H))
-        self.register_buffer("input_b", torch.randn(H))
-        self.fcs = nn.ModuleList([nn.Linear(H, H) for _ in range(n_hidden)])
-        self.output_layer = nn.Linear(H, C)
+# class BaselineModel(nn.Module):
+#     def __init__(self, D=2, C=2, H=128, p=0.1, n_hidden=4):
+#         super().__init__()
+#         self.act = nn.ReLU()
+#         self.dropout = nn.Dropout(p=p)
+#         self.register_buffer("input_W", torch.randn(D, H))
+#         self.register_buffer("input_b", torch.randn(H))
+#         self.fcs = nn.ModuleList([nn.Linear(H, H) for _ in range(n_hidden)])
+#         self.output_layer = nn.Linear(H, C)
 
-    def forward(self, x, masks=None):
-        x = x @ self.input_W + self.input_b
-        for i in range(len(self.fcs)):
-            if masks is not None:
-                x = x + self.act(self.fcs[i](x)) * masks[i]
-            x = x + self.dropout(self.act(self.fcs[i](x)))
-        return self.output_layer(x)
+#     def forward(self, x, masks=None):
+#         x = x @ self.input_W + self.input_b
+#         for i in range(len(self.fcs)):
+#             if masks is not None:
+#                 x = x + self.act(self.fcs[i](x)) * masks[i]
+#             x = x + self.dropout(self.act(self.fcs[i](x)))
+#         return self.output_layer(x)
 
 
 # Load the train, test and OOD datasets.
-sample_size = 500
+sample_size = 5000
 train_examples, train_labels = make_training_data(sample_size=sample_size)
 test_examples = make_testing_data()
 ood_examples = make_ood_data(sample_size=500)
 
-# Visualize
-pos_examples = train_examples[train_labels == 0]
-neg_examples = train_examples[train_labels == 1]
+# # Visualize
+# pos_examples = train_examples[train_labels == 0]
+# neg_examples = train_examples[train_labels == 1]
 
-plt.figure(figsize=(7, 5.5))
+# plt.figure(figsize=(7, 5.5))
 
-plt.scatter(pos_examples[:, 0], pos_examples[:, 1], c="#377eb8", alpha=0.5)
-plt.scatter(neg_examples[:, 0], neg_examples[:, 1], c="#ff7f00", alpha=0.5)
-plt.scatter(ood_examples[:, 0], ood_examples[:, 1], c="red", alpha=0.1)
+# plt.scatter(pos_examples[:, 0], pos_examples[:, 1], c="#377eb8", alpha=0.5)
+# plt.scatter(neg_examples[:, 0], neg_examples[:, 1], c="#ff7f00", alpha=0.5)
+# plt.scatter(ood_examples[:, 0], ood_examples[:, 1], c="red", alpha=0.1)
 
-plt.legend(["Postive", "Negative", "Out-of-Domain"])
+# plt.legend(["Postive", "Negative", "Out-of-Domain"])
 
-plt.ylim(DEFAULT_Y_RANGE)
-plt.xlim(DEFAULT_X_RANGE)
-plt.title("Make moons dataset")
+# plt.ylim(DEFAULT_Y_RANGE)
+# plt.xlim(DEFAULT_X_RANGE)
+# plt.title("Make moons dataset")
 
-plt.show()
+# plt.show()
 
 
-# model = BaselineModel()
-
-# optim = torch.optim.Adam(model.parameters())
+# model = BaselineModel(D=2, C=2, H=64, p=0.3, n_hidden=2)
+# lr = 0.00001
+# optim = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=1e-5)
+# # pdb.set_trace()
 # loader = torch.utils.data.DataLoader(
 #     Dataset(train_examples, train_labels), batch_size=64
 # )
 # loss_fn = nn.CrossEntropyLoss()
 
 # model.train()
-# for epoch in range(1, 100 + 1):
+# epochs = 50
+# for epoch in range(1, epochs + 1):
 #     c, running_loss = 1, 0
 #     for x, y in loader:
 #         optim.zero_grad()
@@ -194,9 +197,9 @@ plt.show()
 # model.eval()
 
 
-# eval_loader = torch.utils.data.DataLoader(
-#     Dataset(test_examples, test_examples), batch_size=256
-# )
+eval_loader = torch.utils.data.DataLoader(
+    Dataset(test_examples, test_examples), batch_size=256
+)
 # logits = []
 # for x, _ in eval_loader:
 #     with torch.no_grad():
@@ -217,7 +220,9 @@ plt.show()
 # plt.colorbar(pcm, ax=ax)
 # plt.title("Class Probability, Deterministic Model")
 
-# plt.show()
+# # plt.show()
+# save_path = os.path.join(moons_plot_save_dir, f"uncertainity_surface-Samples-{sample_size}-epochs-{epochs}-lr-{str(lr)}.png")
+# plt.savefig(save_path)
 
 
 # ## Monte Carlo Dropout

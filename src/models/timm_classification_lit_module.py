@@ -17,6 +17,7 @@ from torchmetrics.classification import \
 from src.visualization.multi_class_ROC import plot_roc_curve
 from src.visualization.plot_prob_histograms import single_model_probability_histogram
 from src.visualization.plot_ece import plot_calibration_curve
+from src.visualization.dempster_shafer_uncertainity_plot import DempsterShaferUncertaintyPlot
 from src.visualization.reliability import rel_diagram_smoothed, rel_diagram_binned
 import matplotlib.pyplot as plt
 import wandb
@@ -137,6 +138,7 @@ class TimmClassificationLitModule(SNGPDiagnosticsMixin, LightningModule):
         self.val_recall_best = MaxMetric()
         self.val_f1_best = MaxMetric()
 
+        self._test_logits: List[torch.Tensor] = []
         self._test_probs: List[torch.Tensor] = []
         self._test_targets: List[torch.Tensor] = []
         self._test_image_ids: List[str] = []
@@ -235,7 +237,7 @@ class TimmClassificationLitModule(SNGPDiagnosticsMixin, LightningModule):
             - A tensor of predictions.
             - A tensor of target labels.
         """
-        img_ids, x, y, fold = batch
+        img_ids, x, targets, fold = batch
 
         # ---- Forward Pass ----
         if self.use_mc:
@@ -255,14 +257,14 @@ class TimmClassificationLitModule(SNGPDiagnosticsMixin, LightningModule):
         if not self.log_test_metrics: # when dim mismatch dont calculate loss only for testing purpose
             loss = None
         else:
-            ce = self.criterion(logits, y)  # Cross-entropy classification loss
+            ce = self.criterion(logits, targets)  # Cross-entropy classification loss
             cal_penalty = logits.new_tensor(0.0)
             cal_terms = {}
 
             # Apply calibration losses if enabled
             if ((self.training and self.cal_cfg) or
                     (self.compute_cal_on_val and (not self.training) and self.cal_cfg)):
-                cal_penalty, cal_terms = calibration_losses(logits, y, self.cal_cfg)
+                cal_penalty, cal_terms = calibration_losses(logits, targets, self.cal_cfg)
 
             # Total combined loss
             loss = ce + cal_penalty
@@ -290,7 +292,7 @@ class TimmClassificationLitModule(SNGPDiagnosticsMixin, LightningModule):
                 # cal_rel = (cal_penalty / (ce + 1e-8)) * 100
                 # self.log(f"{mode}/calibration_pct_of_ce", cal_rel, on_step=False, on_epoch=True, prog_bar=False)
 
-        return img_ids, loss, probs, preds, y, fold
+        return img_ids, loss, logits, probs, preds, targets, fold
 
     def training_step(
         self, batch: Tuple[torch.Tensor, torch.Tensor], batch_idx: int
@@ -303,7 +305,7 @@ class TimmClassificationLitModule(SNGPDiagnosticsMixin, LightningModule):
         :return: A tensor of losses between model predictions and targets.
         """
         # self.log_.info('------------------->< * * ><-------------')
-        img_ids, loss, probs, preds, targets, _ = self.model_step(batch)
+        img_ids, loss, logits, probs, preds, targets, _ = self.model_step(batch)
 
         # pdb.set_trace()
 
@@ -333,7 +335,7 @@ class TimmClassificationLitModule(SNGPDiagnosticsMixin, LightningModule):
             logger.warning("Skipping validation step for batch 0 in epoch 0")
             return
 
-        img_ids, loss, probs, preds, targets, _ = self.model_step(batch)
+        img_ids, loss, logits, probs, preds, targets, fold = self.model_step(batch)
 
         # Calculate NLL loss
         log_probs = torch.log(probs + 1e-8)  # Add small epsilon to avoid log(0)
@@ -399,10 +401,11 @@ class TimmClassificationLitModule(SNGPDiagnosticsMixin, LightningModule):
         """
         
         # pdb.set_trace()
-        img_ids, loss, probs, preds, targets, fold = self.model_step(batch)
+        img_ids, loss, logits, probs, preds, targets, fold = self.model_step(batch)
 
         
         # update and log metrics
+        self._test_logits.append(logits.detach().cpu())
         self._test_probs.append(probs.detach().cpu())
         self._test_targets.append(targets.detach().cpu())
         self._test_image_ids.extend(img_ids)  # Assuming img_ids is a list of strings
@@ -436,6 +439,8 @@ class TimmClassificationLitModule(SNGPDiagnosticsMixin, LightningModule):
 
     def on_test_epoch_end(self) -> None:
         """Lightning hook that is called when a test epoch ends."""
+
+        logits_all = torch.cat(self._test_logits).numpy() # n x C
         probs_all = torch.cat(self._test_probs).numpy() # n x C
         targets = torch.cat(self._test_targets).numpy() # N x 1 (0-C)
         prediction_prob_score = np.max(probs_all, axis=1)
@@ -486,6 +491,7 @@ class TimmClassificationLitModule(SNGPDiagnosticsMixin, LightningModule):
                 'prediction': prediction,
                 'prediction_prob_score': prediction_prob_score,
                 'true_bin_label': true_bin_label,
+                'class_logits': logits_all.tolist(),
                 'class_probs': probs_all.tolist(),
                 'fold': self._test_fold
             }
@@ -519,6 +525,10 @@ class TimmClassificationLitModule(SNGPDiagnosticsMixin, LightningModule):
         
         fig = single_model_probability_histogram(prediction_prob_score, bins=self.hist_bins)
         self.logger.experiment.log({"test/logits_distribution": wandb.Image(fig)})
+        plt.close(fig)
+
+        fig = DempsterShaferUncertaintyPlot(logits_all)
+        self.logger.experiment.log({"test/dempster_shafer_uncertainty": wandb.Image(fig)})
         plt.close(fig)
 
     def _log_csv_artifact(self, data_dict):
@@ -557,10 +567,10 @@ class TimmClassificationLitModule(SNGPDiagnosticsMixin, LightningModule):
         self.log_.info(f'Trainer initialized - {self._trainer is not None}')
         if self._trainer is not None:
             # self.log_.info('------------------********-------------------')
-            self.train_classes_to_idx = self._trainer.train_classes_to_idx
-            self.train_idx_to_classes = self._trainer.train_idx_to_classes
-            self.val_classes_to_idx = self._trainer.val_classes_to_idx
-            self.val_idx_to_classes = self._trainer.val_idx_to_classes
+            # self.train_classes_to_idx = self._trainer.train_classes_to_idx
+            # self.train_idx_to_classes = self._trainer.train_idx_to_classes
+            # self.val_classes_to_idx = self._trainer.val_classes_to_idx
+            # self.val_idx_to_classes = self._trainer.val_idx_to_classes
             self.test_classes_to_idx = self._trainer.test_classes_to_idx
             self.test_idx_to_classes = self._trainer.test_idx_to_classes
 
@@ -593,7 +603,7 @@ class TimmClassificationLitModule(SNGPDiagnosticsMixin, LightningModule):
         :param batch: A batch of data (a tuple) containing the input tensor and target labels.
         :param batch_idx: The index of the current batch.
         """
-        loss, probs, preds, targets, fold = self.model_step(batch)
+        img_ids, loss, logits, probs, preds, targets, fold = self.model_step(batch)
 
         
         return loss, probs, preds, targets
