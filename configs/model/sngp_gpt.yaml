@@ -1,34 +1,30 @@
-_target_: src.models.timm_classification_lit_module.TimmClassificationLitModule
+_target_: src.models.sngp_gpt_classification_lit_module.SNGPGPTClassificationLitModule
 
-name: timm_mc_baseline
+name: timm_sngp
 # backbone
 net:
-  _target_: src.models.timm_classification_models.TimmDropOutBasicClassifier
-  model_name: resnet50
-  num_classes: 8
-  pretrained: true
-  in_chans: 3
-  drop_rate: 0.2
-
-
+  _target_: src.models.sngp_gpt.SNGPResNet
+  num_classes: 8         # <-- change to your dataset
+  arch: "resnet18"
+  pretrained: True         # ok to start from ImageNet
+  rff_dim: 1024            # 256–1024 is a good range
+  length_scale: 1.0
+  ridge_penalty: 1e-3
+  cov_momentum: 0.999
+  mean_field: True
+  
+# optimizer and scheduler
 optimizer:
   _target_: torch.optim.AdamW
   _partial_: true
-  lr: 0.001
-  weight_decay: 0.0
-
-# scheduler:
-#   _target_: torch.optim.lr_scheduler.ReduceLROnPlateau
-#   _partial_: true
-#   mode: min
-#   factor: 0.1
-#   patience: 10
+  lr: 2e-4
+  weight_decay: 1e-4
 
 scheduler:
-    _target_: torch.optim.lr_scheduler.MultiStepLR
-    _partial_: true
-    milestones: [30, 70, 100]
-    gamma: 0.1
+  _target_: torch.optim.lr_scheduler.MultiStepLR
+  _partial_: true
+  milestones: [30, 70, 100]
+  gamma: 0.1
 
 # --- Training setup ---
 compile: false # compile model for faster training with pytorch 2.0
@@ -36,10 +32,9 @@ num_classes: 8
 hist_bins: 25 # no of bins for drawing histogram at the end of training on testset
 test_name: "test_predictions.csv" # test csv name
 log_csv: false
+use_mean_field_logits: false # only use mean field logits for evaluation
 log_test_metrics: true
 class_freq: null
-use_mc: false # mc for testing/inference (double check)
-mc_passes: 10
 
 # --- Calibration loss configuration (NEW) ---
 #| Loss                         | Mechanism                                                                          | Primary Focus                            | Sensitivity                        | Typical Weight Range |
@@ -48,6 +43,31 @@ mc_passes: 10
 #| **Soft-AvUC**                | Encourages alignment between accuracy and uncertainty via entropy-based gating     | Balances over/under-confidence           | Moderate, nonlinear                | **0.02–0.1**         |
 #| **CLUE**                     | Matches per-example task loss with predicted uncertainty via squared error         | Magnitude alignment (loss ≈ uncertainty) | Can dominate if scaled too high    | **0.05–0.2**         |
 #| **BSCE-GRA**                 | Scales gradient by generalized Brier score to reduce overconfident gradients       | Gradient-level calibration               | Strong effect on learning dynamics | **0.05–0.5**         |
+#
+#---
+#
+#### 🧠 How They Interact
+#
+#* **SB-ECE** and **Soft-AvUC** both focus on *distributional calibration* (ECE-type, confidence alignment).
+#  → Good to **combine**; they target slightly different facets (bin-based vs. entropy-weighted).
+#* **CLUE** operates on the **scale of per-sample losses**, aligning loss with uncertainty magnitudes.
+#  → Best used as a **low-weight auxiliary term** (too high can dampen discriminative gradients).
+#* **BSCE-GRA** modifies gradients directly; it effectively *replaces* rather than *adds* to CE in strength.
+#  → If used together with other losses, keep it at a **lower coefficient (0.05–0.1)** to avoid overpowering CE.
+#
+#Thus, you can think of them as acting on **different levels**:
+#
+#* SB-ECE / Soft-AvUC → Output-space calibration
+#* CLUE → Uncertainty-error alignment
+#* BSCE-GRA → Gradient-space smoothing
+
+#| Strategy                 | Losses Used             | Rationale                                      | Recommended Weights    |
+#| ------------------------ | ----------------------- | ---------------------------------------------- | ---------------------- |
+#| **Baseline Calibration** | CE + SB-ECE + Soft-AvUC | Standard uncertainty calibration               | 0.1, 0.05              |
+#| **Magnitude-aware**      | + CLUE                  | Align uncertainty with loss magnitude          | +0.05–0.1              |
+#| **Gradient-aware**       | + BSCE-GRA              | Smooth gradients, reduce overconfident updates | +0.05–0.1              |
+#| **Full Hybrid**          | All four                | Max calibration robustness (requires tuning)   | 0.1 / 0.05 / 0.1 / 0.1 |
+#
 #---
 #For your **SNGP + CE** training, begin with:
 #> `SB-ECE: 0.1, Soft-AvUC: 0.05, CLUE: 0.1, BSCE-GRA: 0.1`

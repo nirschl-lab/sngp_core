@@ -22,14 +22,14 @@ from src.visualization.reliability import rel_diagram_smoothed, rel_diagram_binn
 import matplotlib.pyplot as plt
 import wandb
 import pdb
+from torch import nn
 from loguru import logger
 import numpy as np
 from src.utils import RankedLogger
 import pandas as pd
 from torch.nn.modules.dropout import _DropoutNd
-from src.models.sngp.gaussian_process import mean_field_logits
 
-class TimmClassificationLitModule(SNGPDiagnosticsMixin, LightningModule):
+class SNGPGPTClassificationLitModule(SNGPDiagnosticsMixin, LightningModule):
     
     def __init__(
         self,
@@ -87,6 +87,7 @@ class TimmClassificationLitModule(SNGPDiagnosticsMixin, LightningModule):
             class_weights_tensor = torch.tensor(self.class_weights, dtype=torch.float32)
             self.criterion = torch.nn.CrossEntropyLoss(weight=class_weights_tensor, label_smoothing=label_smoothing)
         else:
+            logger.info("No class weights provided, using unweighted CrossEntropyLoss and nll")
             self.criterion = torch.nn.CrossEntropyLoss(label_smoothing=label_smoothing)
             self.nll_loss = torch.nn.NLLLoss()
 
@@ -173,7 +174,13 @@ class TimmClassificationLitModule(SNGPDiagnosticsMixin, LightningModule):
         :param x: A tensor of images.
         :return: A tensor of logits.
         """
-        return self.net(x)
+        if self.training:
+            mf_logits, _, _ = self.net(x, update_cov=True)
+        else:
+            # logger.debug('eval mode update cov is false')
+            mf_logits, _, _ = self.net(x, update_cov=False)
+
+        return mf_logits
 
     def on_train_start(self) -> None:
         """Lightning hook that is called when training begins."""
@@ -269,7 +276,7 @@ class TimmClassificationLitModule(SNGPDiagnosticsMixin, LightningModule):
                 cal_penalty, cal_terms = calibration_losses(logits, targets, self.cal_cfg)
 
             # Total combined loss
-            loss = ce + nll_loss 
+            loss = ce + nll_loss + cal_penalty
 
             # ---- LOGGING ----
             mode = "train" if self.training else "val"

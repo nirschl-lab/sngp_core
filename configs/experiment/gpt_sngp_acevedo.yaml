@@ -5,15 +5,15 @@
 
 defaults:
   - override /data: acevedo_image_classifier
-  - override /model: timm_MC_classifier
+  - override /model: sngp_gpt
   - override /callbacks: default
   - override /trainer: default
 
 # all parameters below will be merged with parameters from default configurations set above
 # this allows you to overwrite only specified parameters
-name: "acevedo_baseline_resnet18"
+name: "acevedo_gpt_resnet50_nllloss"
 WANDB_PROJECT: "gpt_sngp_model"
-tags: ["acevedo_et_al_2020", "baseline", "training", "resnet18"]
+tags: ["acevedo_et_al_2020", "SNGP", "training", "resnet50", "pretrained=false", "weight_decay=1e-3", "no_color_jitter", 'batch_size=128']
 
 seed: 12345
 
@@ -29,10 +29,9 @@ model:
     weight_decay: 1e-3
   hist_bins: 10
   net:
-    model_name: resnet18
-    pretrained: false
-    drop_rate: 0.2
+    arch: "resnet50"
     num_classes: 8
+    pretrained: false
   compile: false
   scheduler:
     _target_: torch.optim.lr_scheduler.MultiStepLR

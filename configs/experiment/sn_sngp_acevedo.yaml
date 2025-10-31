@@ -11,8 +11,9 @@ defaults:
 
 # all parameters below will be merged with parameters from default configurations set above
 # this allows you to overwrite only specified parameters
-name: "acevedo_sngp_scratch"
+name: "acevedo_sngp_batch128"
 tags: ["acevedo_et_al_2020", "SNGP", "training"]
+WANDB_PROJECT: "base_augmentations"
 
 seed: 12345
 
@@ -21,24 +22,24 @@ trainer:
   max_epochs: 200
   accelerator: "gpu"
 
-
 model:
   optimizer:
     lr: 0.0001
   hist_bins: 10
   net:
     num_classes: 8
-    pretrained: False
+    pretrained: True
   compile: false
 
 data:
   datamodule:
     dataset_name: "nirschl-lab/acevedo_et_al_2020"
     num_classes: 8
-    batch_size: 256
+    batch_size: 128
 
 logger:
   wandb:
+    project: "${WANDB_PROJECT}"
     tags: ${tags}
     group: "Training"
     name: ${name}
