@@ -3,6 +3,7 @@ import torch
 import torch.nn as nn
 from torch.nn.utils import spectral_norm
 from typing import Optional, Tuple
+import timm
 import math
 
 def apply_spectral_norm_to_convs(module: nn.Module, n_power_iterations: int = 1) -> None:
@@ -219,3 +220,80 @@ class SNGPResNet(nn.Module):
         feats = self.backbone(x)            # [B, C, 1, 1]
         feats = self.flatten(feats)         # [B, C]
         return self.gp_head(feats, update_cov=update_cov)
+
+class TimmSNGPClassifier(nn.Module):
+    """
+    ResNet backbone (torchvision) with spectral normalization + RFF-GP head.
+    """
+
+    def __init__(
+        self,
+        num_classes: int,
+        arch: str = "resnet18",
+        pretrained: bool = False,
+        rff_dim: int = 1024,
+        length_scale: float = 1.0,
+        ridge_penalty: float = 1e-3,
+        cov_momentum: float = 0.999,
+        mean_field: bool = True,
+        n_power_iterations_sn: int = 1,
+    ):
+        super().__init__()
+        self.num_classes = num_classes
+
+        self.backbone = timm.create_model(arch,
+            pretrained=pretrained,
+            num_classes=0,  # remove classifier head
+            in_chans=3,
+        )
+
+        
+        in_feats = getattr(self.backbone, "num_features", None)
+        if in_feats is None:
+            raise ValueError(f"Backbone {arch} has no num_features attribute")
+
+
+        apply_spectral_norm_to_convs(self.backbone, n_power_iterations=n_power_iterations_sn)
+
+        # Pool + flatten
+        self.pool = nn.Identity()  # resnet already has avgpool at [-2]
+        self.flatten = nn.Flatten()
+
+        # --- RFF-GP head ---
+        self.gp_head = RandomFeatureGaussianProcess(
+            in_dim=in_feats,
+            num_classes=num_classes,
+            rff_dim=rff_dim,
+            length_scale=length_scale,
+            ridge_penalty=ridge_penalty,
+            cov_momentum=cov_momentum,
+            mean_field=mean_field,
+        )
+
+    def forward(self, x: torch.Tensor, update_cov: bool = True):
+        """
+        Returns:
+          mean_field_logits, raw_logits, pred_var
+        """
+        feats = self.backbone(x)            # [B, C, 1, 1]
+        feats = self.flatten(feats)         # [B, C]
+        return self.gp_head(feats, update_cov=update_cov)
+
+if __name__ == "__main__":
+    # simple test
+    model = TimmSNGPClassifier(
+        num_classes=10,
+        arch="resnet18",
+        pretrained=False,
+        rff_dim=512,
+        length_scale=1.0,
+        ridge_penalty=1e-3,
+        cov_momentum=0.999,
+        mean_field=True,
+        n_power_iterations_sn=1,
+    )
+    x = torch.randn(4, 3, 224, 224)
+    mean_field_logits, raw_logits, pred_var = model(x)
+    print("mean_field_logits:", mean_field_logits.shape)
+    print("raw_logits:", raw_logits.shape)
+    print("pred_var:", pred_var.shape)

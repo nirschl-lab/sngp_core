@@ -378,7 +378,6 @@ class SNGPGPTClassificationLitModule(SNGPDiagnosticsMixin, LightningModule):
         loss = self.val_loss.compute()
         nll = self.val_nll.compute()
         
-
         # log additional sngp diagnostics
         if not hasattr(self.net, "sngp_classifier"):
             self.log_sngp_diagnostics()

@@ -1,0 +1,157 @@
+train:
+  _target_: albumentations.Compose
+  transforms:
+    # Mild spatial variation
+    - _target_: albumentations.RandomSizedCrop
+      min_max_height: [224, 240]   # narrower zoom jitter
+      size: [224, 224]
+      w2h_ratio: 1
+      interpolation: 1
+      mask_interpolation: 0
+      p: 0.3
+
+    - _target_: albumentations.Resize
+      height: 224
+      width: 224
+      p: 1.0
+
+    # Keep D4 OR RandomRotate90 — not both. D4 already covers flips/rotations.
+    - _target_: albumentations.D4
+      p: 1.0
+
+    # Color / stain / illumination (gentler ranges)
+    - _target_: albumentations.OneOf
+      p: 0.3
+      transforms:
+        - _target_: albumentations.HEStain
+          method: "random_preset"
+          intensity_scale_range: [0.9, 1.1]
+          intensity_shift_range: [-0.05, 0.05]
+          augment_background: false
+          p: 1.0
+        - _target_: albumentations.Illumination
+          mode: "linear"
+          intensity_range: [0.01, 0.08]
+          effect_type: "both"
+          angle_range: [0, 360]
+          center_range: [0.2, 0.8]
+          sigma_range: [0.2, 0.8]
+          p: 1.0
+        - _target_: albumentations.RandomBrightnessContrast
+          brightness_limit: [-0.1, 0.1]
+          contrast_limit: [-0.1, 0.1]
+          brightness_by_max: True
+          ensure_safe_range: True
+          p: 1.0
+
+    # Blur/compression (remove heavy downscale, soften limits)
+    - _target_: albumentations.OneOf
+      p: 0.25
+      transforms:
+        - _target_: albumentations.GaussianBlur
+          blur_limit: 0
+          sigma_limit: [0.5, 1.2]
+          p: 1.0
+        - _target_: albumentations.ImageCompression
+          compression_type: "jpeg"
+          quality_range: [70, 95]
+          p: 1.0
+        - _target_: albumentations.NoOp
+
+    # Noise (avoid S&P and high sigma/multiplicative)
+    - _target_: albumentations.OneOf
+      p: 0.25
+      transforms:
+        - _target_: albumentations.GaussNoise
+          std_range: [0.01, 0.05]
+          mean_range: [0, 0]
+          per_channel: true
+          noise_scale_factor: 1
+          p: 1.0
+        - _target_: albumentations.ShotNoise
+          scale_range: [0.005, 0.02]
+          p: 1.0
+        - _target_: albumentations.NoOp
+
+    # Dropout / occlusion (rare, small)
+    - _target_: albumentations.OneOf
+      p: 0.05
+      transforms:
+        - _target_: albumentations.CoarseDropout
+          num_holes_range: [1, 1]
+          hole_height_range: [0.03, 0.08]
+          hole_width_range: [0.03, 0.08]
+          fill_value: 0
+          p: 1.0
+        - _target_: albumentations.NoOp
+
+    # Elastic/optical distortions (very gentle, rare)
+    - _target_: albumentations.OneOf
+      p: 0.15
+      transforms:
+        - _target_: albumentations.ElasticTransform
+          alpha: 40
+          sigma: 6
+          interpolation: 1
+          approximate: true
+          same_dxdy: true
+          mask_interpolation: 0
+          noise_distribution: "gaussian"
+          keypoint_remapping_method: "mask"
+          border_mode: 4   # REFLECT_101 to avoid black borders
+          fill: 0
+          fill_mask: 0
+          p: 1.0
+        - _target_: albumentations.NoOp
+
+    - _target_: albumentations.Normalize
+      mean: [0.485, 0.456, 0.406]
+      std:  [0.229, 0.224, 0.225]
+      max_pixel_value: 255.0
+
+    - _target_: albumentations.pytorch.transforms.ToTensorV2
+      p: 1.0
+  
+val:
+  _target_: albumentations.Compose
+  transforms:
+    - _target_: albumentations.Resize
+      height: 256
+      width: 256
+      interpolation: 1   # cv2.INTER_LINEAR
+      p: 1.0
+
+    - _target_: albumentations.CenterCrop
+      height: 224
+      width: 224
+      p: 1.0
+
+    - _target_: albumentations.Normalize
+      mean: [0.485, 0.456, 0.406]
+      std:  [0.229, 0.224, 0.225]
+      max_pixel_value: 255.0
+
+    - _target_: albumentations.pytorch.transforms.ToTensorV2
+      p: 1.0
+
+test:
+  _target_: albumentations.Compose
+  transforms:
+    - _target_: albumentations.Resize
+      height: 256
+      width: 256
+      interpolation: 1   # cv2.INTER_LINEAR
+      p: 1.0
+
+    - _target_: albumentations.CenterCrop
+      height: 224
+      width: 224
+      p: 1.0
+
+    - _target_: albumentations.Normalize
+      mean: [0.485, 0.456, 0.406]
+      std:  [0.229, 0.224, 0.225]
+      max_pixel_value: 255.0
+
+    - _target_: albumentations.pytorch.transforms.ToTensorV2
+      p: 1.0

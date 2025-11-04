@@ -1,6 +1,6 @@
 # configs/data/acevedo_image_classifier.yaml
 defaults:
-  - /img_augmentations: torchvision #albumentations #default   # absolute group ref; no ".yaml"
+  - /img_augmentations: light_augmentations #albumentations #torchvision #default
 
 datamodule:
   _target_: src.data.acevedo_image_datamodule.AcevedoImageDataModule
