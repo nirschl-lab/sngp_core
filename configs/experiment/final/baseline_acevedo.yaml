@@ -5,27 +5,27 @@
 
 defaults:
   - override /data: acevedo_image_classifier
-  - override /model: sngp_gpt
+  - override /model: baseline_classifier
   - override /callbacks: default
   - override /trainer: default
 
 # all parameters below will be merged with parameters from default configurations set above
 # this allows you to overwrite only specified parameters
-name: "acevedo_gpt_resnet18_lightaug_cosine"
-WANDB_PROJECT: "gpt_sngp_model"
-tags: ["acevedo_et_al_2020", "SNGP", "training", "resnet18", "pretrained=false", "weight_decay=1e-3", "albumentations", "cosine_annealing"]
+name: "acevedo_baseline_resnet18"
+WANDB_PROJECT: "sorted_experiments"
+tags: ["acevedo_et_al_2020", "resnet18", "training", "baseline"]
 
 seed: 12345
 
 base_lr: 1e-3
 base_batch_size: 128
 curr_batch_size: 128
-# scaled_lr: ${float_eval:${base_lr} * ((${curr_batch_size} / ${base_batch_size})**0.5)}
 
 trainer:
   min_epochs: 30
-  max_epochs: 100
+  max_epochs: 150
   accelerator: "gpu"
+
 
 model:
   optimizer:
@@ -33,8 +33,9 @@ model:
     weight_decay: 1e-3
   hist_bins: 10
   net:
-    arch: "resnet18"
+    arch: resnet18
     num_classes: 8
+    dropout_p: 0.2
     pretrained: false
   compile: false
   scheduler:
@@ -47,7 +48,7 @@ data:
   datamodule:
     dataset_name: "nirschl-lab/acevedo_et_al_2020"
     num_classes: 8
-    batch_size: ${curr_batch_size}
+    batch_size: 128
 
 logger:
   wandb:
@@ -62,6 +63,6 @@ logger:
 callbacks:
   early_stopping:
     monitor: "val/loss"
-    patience: 10
+    patience: 20
     mode: "min"
-    min_delta: 0.01
+    min_delta: 0.005

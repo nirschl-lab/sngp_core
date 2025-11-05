@@ -11,9 +11,9 @@ defaults:
 
 # all parameters below will be merged with parameters from default configurations set above
 # this allows you to overwrite only specified parameters
-name: "acevedo_gpt_resnet18_lightaug_cosine"
+name: "acevedo_sngp_vit_b_16"
 WANDB_PROJECT: "gpt_sngp_model"
-tags: ["acevedo_et_al_2020", "SNGP", "training", "resnet18", "pretrained=false", "weight_decay=1e-3", "albumentations", "cosine_annealing"]
+tags: ["acevedo_et_al_2020", "SNGP", "training", "vit_b_16", "pretrained=false", "weight_decay=1e-3", "albumentations", "cosine_annealing"]
 
 seed: 12345
 
@@ -33,21 +33,16 @@ model:
     weight_decay: 1e-3
   hist_bins: 10
   net:
-    arch: "resnet18"
+    arch: "vit_b_16"
     num_classes: 8
     pretrained: false
   compile: false
   scheduler:
-    _target_: torch.optim.lr_scheduler.CosineAnnealingLR
+    _target_: torch.optim.lr_scheduler.MultiStepLR
     _partial_: true
-    T_max: ${trainer.max_epochs}
-    eta_min: 0
+    milestones: [30, 70, 100]
+    gamma: 0.1
 
-# scheduler:
-#   _target_: torch.optim.lr_scheduler.MultiStepLR
-#   _partial_: true
-#   milestones: [30, 70, 100]
-#   gamma: 0.1
 
 data:
   datamodule:
