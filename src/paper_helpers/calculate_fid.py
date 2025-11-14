@@ -1,7 +1,7 @@
 from time import sleep
 import torch
 from torchmetrics.image.fid import FrechetInceptionDistance
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader, Dataset, ConcatDataset
 from torchvision import transforms
 from datasets import load_dataset
 
@@ -75,14 +75,24 @@ if __name__ == '__main__':
 
     fold = 'test' #train
 
-    ix1 = 5
+    ix1 = 4
     ix2 = 6
 
     d1 = load_dataset(datasets[ix1])
     d2 = load_dataset(datasets[ix2])
 
-    DL1 = HFDataset(d1[fold], transform=build_transform(299))
-    DL2 = HFDataset(d2[fold], transform=build_transform(299))
-    fid_value = calcluate_fid(DL1, DL2, batch_size=2048, num_workers=16, device='cuda')
+    print(f"Calculating FID between {datasets[ix1]} and {datasets[ix2]}")
+
+    DL1_train = HFDataset(d1['train'], transform=build_transform(299))
+    DL1_val = HFDataset(d1['validation'], transform=build_transform(299))
+    DL1_test = HFDataset(d1['test'], transform=build_transform(299))
+    combined_dataset1 = ConcatDataset([DL1_train, DL1_val, DL1_test])
+
+    DL2_train = HFDataset(d2['train'], transform=build_transform(299))
+    DL2_val = HFDataset(d2['validation'], transform=build_transform(299))
+    DL2_test = HFDataset(d2['test'], transform=build_transform(299))
+    combined_dataset2 = ConcatDataset([DL2_train, DL2_val, DL2_test])
+
+    fid_value = calcluate_fid(combined_dataset1, combined_dataset2, batch_size=2048, num_workers=16, device='cuda')
     print(f"FID between {datasets[ix1]} and {datasets[ix2]}: {fid_value}")
     

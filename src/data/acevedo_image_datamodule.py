@@ -70,6 +70,7 @@ class AcevedoImageDataModule(LightningDataModule):
         val_augmentations: Optional[transforms.Compose | A.Compose] = None,
         test_augmentations: Optional[transforms.Compose | A.Compose] = None,
         test_all_folds: Optional[bool] = False,
+        sample_rate: int = 0,
     ) -> None:
         """Initialize AcevedoImageDataModule.
 
@@ -85,6 +86,7 @@ class AcevedoImageDataModule(LightningDataModule):
         self.save_hyperparameters(logger=False)
         self.dataset_name = dataset_name
         self.num_classes = num_classes
+        self.sample_rate = sample_rate
 
         if train_augmentations:
             # It's a config, instantiate it
@@ -158,12 +160,16 @@ class AcevedoImageDataModule(LightningDataModule):
         # if not self.data_train and not self.data_val and not self.data_test:
         data = datasets.load_dataset(self.dataset_name)
 
-        data_train_ = data['train'] #load_dataset(self.data_dir, split="train",)
+        #sample 10000 images from train and val for faster training
+        if self.sample_rate > 0:
+            data_train_ = data['train'].shuffle(seed=42).select(range(self.sample_rate))
+            data_val_ = data["validation"].shuffle(seed=42).select(range(self.sample_rate//2))
+        else:
+            data_train_ = data['train']
+            data_val_ = data["validation"]
+        
         self.data_train = HFDataset(data_train_, transform=self.train_transform, fold='train')
-
-        data_val_ = data["validation"] #load_dataset(self.data_dir, split="validation",)
         self.data_val = HFDataset(data_val_, transform=self.val_transform, fold='val')
-
         
         if self.trainer is not None:
             self.trainer.train_classes_to_idx = ast.literal_eval(data_train_[0]['classes_to_idx'])
@@ -179,6 +185,7 @@ class AcevedoImageDataModule(LightningDataModule):
         :return: The train dataloader.
         """
         # self.log_.info('------------------->< * * ><----------train loader called---')
+        self.log_.info(f'Training samples: {len(self.data_train)}')
         return DataLoader(
             dataset=self.data_train,
             batch_size=self.batch_size_per_device,
@@ -193,6 +200,7 @@ class AcevedoImageDataModule(LightningDataModule):
         :return: The validation dataloader.
         """
         # self.log_.info('------------------->< * * ><----------val loader called---')
+        self.log_.info(f'Validation samples: {len(self.data_val)}')
         return DataLoader(
             dataset=self.data_val,
             batch_size=self.batch_size_per_device,

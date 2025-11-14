@@ -12,7 +12,9 @@ net:
   ridge_penalty: 1e-3
   cov_momentum: 0.999
   mean_field: True
-  
+
+class_weights: None
+
 # optimizer and scheduler
 optimizer:
   _target_: torch.optim.AdamW
@@ -37,6 +39,7 @@ compile: false # compile model for faster training with pytorch 2.0
 num_classes: 8
 hist_bins: 25 # no of bins for drawing histogram at the end of training on testset
 test_name: "test_predictions.csv" # test csv name
+csv_save_path: "csv/"
 log_csv: false
 use_mean_field_logits: false # only use mean field logits for evaluation
 log_test_metrics: true

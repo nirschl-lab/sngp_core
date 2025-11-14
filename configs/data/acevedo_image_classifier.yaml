@@ -10,3 +10,4 @@ datamodule:
   num_workers: 32
   pin_memory: True
   test_all_folds: False
+  sample_rate: 0

@@ -28,6 +28,7 @@ from src.utils import RankedLogger
 import pandas as pd
 from torch.nn.modules.dropout import _DropoutNd
 from src.models.sngp.gaussian_process import mean_field_logits
+import time
 
 class BaselineClassificationLitModule(SNGPDiagnosticsMixin, LightningModule):
     
@@ -44,6 +45,7 @@ class BaselineClassificationLitModule(SNGPDiagnosticsMixin, LightningModule):
         reset_sngp_precision: bool =False,
         test_name: str = "test_predictions",
         log_csv: bool = False,
+        csv_save_path: str = "csv/",
         log_metrics_per_class: bool = False,
         use_mc: bool = False,
         mc_passes: int = 25,
@@ -83,12 +85,14 @@ class BaselineClassificationLitModule(SNGPDiagnosticsMixin, LightningModule):
         # set criterion with class weights if provided and optional label smoothing
         if self.class_weights is not None:
             # Ensure weights are a PyTorch tensor and on the correct device if necessary
-            self.criterion = torch.nn.CrossEntropyLoss(weight=self.class_weights)
+            logger.info(f"Using class weights for CrossEntropyLoss: {self.class_weights}")
             class_weights_tensor = torch.tensor(self.class_weights, dtype=torch.float32)
             self.criterion = torch.nn.CrossEntropyLoss(weight=class_weights_tensor, label_smoothing=label_smoothing)
         else:
+            logger.info("No class weights provided, using unweighted CrossEntropyLoss")
             self.criterion = torch.nn.CrossEntropyLoss(label_smoothing=label_smoothing)
-            self.nll_loss = torch.nn.NLLLoss()
+        
+        self.nll_loss = torch.nn.NLLLoss()
 
         # secondary losses
         if calibration_cfg is None:
@@ -159,6 +163,7 @@ class BaselineClassificationLitModule(SNGPDiagnosticsMixin, LightningModule):
         # csv name
         self.test_name = test_name
         self.log_csv = log_csv
+        self.csv_save_path = csv_save_path
         self.log_test_metrics = log_test_metrics
         self.log_metrics_per_class = log_metrics_per_class
 
@@ -166,6 +171,8 @@ class BaselineClassificationLitModule(SNGPDiagnosticsMixin, LightningModule):
         self.use_mc = use_mc
         self.mc_passes = mc_passes
         self.use_mean_field_logits = use_mean_field_logits
+
+        self.inference_times = []
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Perform a forward pass through the model `self.net`.
@@ -204,16 +211,28 @@ class BaselineClassificationLitModule(SNGPDiagnosticsMixin, LightningModule):
             - A tensor of target labels.
         """
         img_ids, x, targets, fold = batch
+        batch_size = x.size(0)
 
-        # ---- Forward Pass ----
+
+        # ---- Forward Pass with Optional Timing ----
+        start_time = None
+        if self.log_test_metrics:
+            torch.cuda.synchronize() if torch.cuda.is_available() else None
+            start_time = time.time()
+        
         if self.use_mc:
+            if self.log_test_metrics:
+                logger.info("Using Monte Carlo Dropout for inference for {} passes".format(self.mc_passes))
             logits, probs = self.net.mc_predict(x, T=self.mc_passes, return_std=False, apply_softmax=True)
         else:
-            # Mean field logits adjustment is applied in RandomFeatureGaussianProcess GP head at inference
-            # returns dict with logits_adj, logits_raw, cov, features, and a flag for mean_field_applied
             logits = self.forward(x)
-
             probs = torch.softmax(logits, dim=1)
+
+        if self.log_test_metrics:
+            torch.cuda.synchronize() if torch.cuda.is_available() else None
+            end_time = time.time()
+            inference_time_per_sample = (end_time - start_time) / batch_size
+            self.inference_times.append(inference_time_per_sample)
 
         preds = torch.argmax(probs, dim=1)
 
@@ -232,7 +251,7 @@ class BaselineClassificationLitModule(SNGPDiagnosticsMixin, LightningModule):
                 cal_penalty, cal_terms = calibration_losses(logits, targets, self.cal_cfg)
 
             # Total combined loss
-            loss = ce + nll_loss 
+            loss = ce #+ nll_loss 
 
             # ---- LOGGING ----
             mode = "train" if self.training else "val"
@@ -431,6 +450,7 @@ class BaselineClassificationLitModule(SNGPDiagnosticsMixin, LightningModule):
             self.log("test/nll_final", nll, on_step=False, on_epoch=True, prog_bar=True)
             self.log("test/acc_final", acc, on_step=False, on_epoch=True, prog_bar=True)
             self.log("test/ece_final", ece, on_step=False, on_epoch=True, prog_bar=True)
+            self.log("test/inference_time_per_sample_avg", np.mean(self.inference_times), prog_bar=True)
 
             # Log per-class metrics
             if self.log_metrics_per_class:
@@ -499,12 +519,20 @@ class BaselineClassificationLitModule(SNGPDiagnosticsMixin, LightningModule):
 
     def _log_csv_artifact(self, data_dict):
 
+        # pdb.set_trace()
+        dataset_name = self._trainer.datamodule.dataset_name if hasattr(self._trainer.datamodule, 'dataset_name') else None
+        if dataset_name:
+            dataset_name = dataset_name.split('/')[-1]
+        else:
+            dataset_name = 'test_predictions'
+
         df = pd.DataFrame(data_dict)
-        csv_path = self.test_name + ".csv"
+        os.makedirs(self.csv_save_path, exist_ok=True) 
+        csv_path = os.path.join(self.csv_save_path, dataset_name + ".csv")
         df.to_csv(csv_path, index=False)
         # Create and log wandb artifact
         artifact = wandb.Artifact(
-            name=self.test_name,
+            name=dataset_name,
             type="predictions",
             description="Test set predictions with probabilities and metadata"
         )
@@ -512,8 +540,8 @@ class BaselineClassificationLitModule(SNGPDiagnosticsMixin, LightningModule):
         self.logger.experiment.log_artifact(artifact)
     
         # Clean up local file if desired
-        import os
-        os.remove(csv_path)
+        # import os
+        # os.remove(csv_path)
     
         
 
@@ -581,6 +609,20 @@ class BaselineClassificationLitModule(SNGPDiagnosticsMixin, LightningModule):
         #     "targets": targets.detach().cpu(),
         #     "loss": loss.detach().cpu(),
         # }
+    
+    def load_state_dict(self, state_dict, strict=True):
+        """Custom state dict loading to handle mismatched criterion.weight"""
+        # Create a copy to avoid modifying the original
+        filtered_state_dict = {}
+        
+        for key, value in state_dict.items():
+            # Skip criterion.weight if we don't have class weights
+            if key == "criterion.weight" and self.class_weights is None:
+                print(f"Skipping {key} from checkpoint as model has no class weights")
+                continue
+            filtered_state_dict[key] = value
+        
+        return super().load_state_dict(filtered_state_dict, strict=strict)
 
 # cache_dir = 'timm_cache_dir'
 # model = TimmBackboneWithProbe(
