@@ -4,46 +4,59 @@
 # python train.py experiment=example
 
 defaults:
-  - override /data: acevedo_image_classifier
-  - override /model: timm_sngp_classifier
+  - override /data: image_classifier
+  - override /model: sngp_classifier
   - override /callbacks: default
   - override /trainer: default
 
 # all parameters below will be merged with parameters from default configurations set above
 # this allows you to overwrite only specified parameters
-
-tags: ["acevedo_et_al_2020", "sngp", "paper_exp1", "val_loss_early_stop", 'lr_1e-4', 'only_50_epochs']
-
+name: "acevedo_sngp_resnet18"
+WANDB_PROJECT: "final_experiments"
+tags: ["acevedo_et_al_2020", "resnet18", "training", "sngp"]
 seed: 12345
 
-trainer:
-  min_epochs: 5
-  max_epochs: 50
-  accelerator: "gpu"
+base_lr: 1e-3
+base_batch_size: 128
+curr_batch_size: 128
+# scaled_lr: ${float_eval:${base_lr} * ((${curr_batch_size} / ${base_batch_size})**0.5)}
+num_classes: 8
 
+trainer:
+  min_epochs: 30
+  max_epochs: 150
+  accelerator: "gpu"
 
 model:
   optimizer:
-    lr: 0.0001
+    lr: ${base_lr}
+    weight_decay: 1e-3
   hist_bins: 10
   net:
-    num_classes: 8
-    model_name: "resnet50"
-    reduction_dim: 512
-    pretrained: true
+    arch: "resnet18"
+    num_classes: ${num_classes}
+    pretrained: false
   compile: false
+  scheduler:
+    _target_: torch.optim.lr_scheduler.MultiStepLR
+    _partial_: true
+    milestones: [30, 70, 100]
+    gamma: 0.1
+  num_classes: ${num_classes}
+  class_weights: [1.786,0.694,1.389,0.735,1.786,1.562,0.625,0.893]
 
 data:
   datamodule:
     dataset_name: "nirschl-lab/acevedo_et_al_2020"
-    num_classes: 8
-    batch_size: 256
+    num_classes: ${num_classes}
+    batch_size: ${curr_batch_size}
 
 logger:
   wandb:
+    project: "${WANDB_PROJECT}"
     tags: ${tags}
-    group: "paper_exp2"
-    name: "SNGP Acevedo"
+    group: "Training"
+    name: ${name}
     log_model: True
   aim:
     experiment: ""
@@ -53,3 +66,4 @@ callbacks:
     monitor: "val/loss"
     patience: 20
     mode: "min"
+    min_delta: 0.005

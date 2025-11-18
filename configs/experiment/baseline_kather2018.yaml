@@ -4,22 +4,22 @@
 # python train.py experiment=example
 
 defaults:
-  - override /data: acevedo_image_classifier
-  - override /model: sngp_classifier
+  - override /data: image_classifier
+  - override /model: baseline_classifier
   - override /callbacks: default
   - override /trainer: default
 
 # all parameters below will be merged with parameters from default configurations set above
 # this allows you to overwrite only specified parameters
-name: "kather2018_sngp_resnet18"
+name: "kather2018_baseline_resnet18"
 WANDB_PROJECT: "final_experiments"
-tags: ["kather_et_al_2018", "resnet18", "training", "sngp"]
+tags: ["kather_et_al_2018", "resnet18", "training", "baseline"]
+
 seed: 12345
 
 base_lr: 1e-3
 # base_batch_size: 128
 curr_batch_size: 128
-# scaled_lr: ${float_eval:${base_lr} * ((${curr_batch_size} / ${base_batch_size})**0.5)}
 num_classes: 9
 
 trainer:
@@ -27,14 +27,16 @@ trainer:
   max_epochs: 150
   accelerator: "gpu"
 
+
 model:
   optimizer:
     lr: ${base_lr}
     weight_decay: 1e-3
   hist_bins: 10
   net:
-    arch: "resnet18"
+    arch: resnet18
     num_classes: ${num_classes}
+    dropout_p: 0.2
     pretrained: false
   compile: false
   scheduler:

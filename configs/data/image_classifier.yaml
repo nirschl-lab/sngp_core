@@ -3,7 +3,7 @@ defaults:
   - /img_augmentations: light_augmentations #albumentations #torchvision #default
 
 datamodule:
-  _target_: src.data.acevedo_image_datamodule.AcevedoImageDataModule
+  _target_: src.data.classification_image_datamodule.ClassificationImageDataModule
   dataset_name: nirschl-lab/acevedo_et_al_2020
   num_classes: 8
   batch_size: 64
