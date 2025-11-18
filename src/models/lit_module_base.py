@@ -416,7 +416,7 @@ class LitModuleBase(LightningModule):
         
         #indexing classes
         logger.info(f'Trainer initialized - {self._trainer is not None}')
-        if self._trainer is not None:
+        if self._trainer is not None and self._trainer.state.stage == "test":
             # self.log_.info('------------------********-------------------')
             # self.train_classes_to_idx = self._trainer.train_classes_to_idx
             # self.train_idx_to_classes = self._trainer.train_idx_to_classes

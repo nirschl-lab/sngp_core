@@ -54,7 +54,7 @@ class HFDataset(Dataset):
 
         return image_id, image, label, self.fold
     
-class AcevedoImageDataModule(LightningDataModule):
+class ClassificationImageDataModule(LightningDataModule):
     """`LightningDataModule` for the Acevedo Image dataset.
 
     """
@@ -132,10 +132,6 @@ class AcevedoImageDataModule(LightningDataModule):
 
         self.test_all_folds = test_all_folds
 
-    # @property
-    # def num_classes(self) -> int:
-    
-    #     return self.num_classes
 
     def setup(self, stage: Optional[str] = None) -> None:
         """Load data. Set variables: `self.data_train`, `self.data_val`, `self.data_test`.
@@ -148,6 +144,7 @@ class AcevedoImageDataModule(LightningDataModule):
         :param stage: The stage to setup. Either `"fit"`, `"validate"`, `"test"`, or `"predict"`. Defaults to ``None``.
         """
         # Divide batch size by the number of devices.
+        # pdb.set_trace()
         if self.trainer is not None:
             if self.hparams.batch_size % self.trainer.world_size != 0:
                 raise RuntimeError(
@@ -155,29 +152,38 @@ class AcevedoImageDataModule(LightningDataModule):
                 )
             self.batch_size_per_device = self.hparams.batch_size // self.trainer.world_size
 
+        # set these indices for plotting
+        if self.trainer.state.stage == "test":
+            if self.test_all_folds:
+                self.log_.info('Testing on all folds - train, val and test')
+                data_train_ = datasets.load_dataset(self.dataset_name)['train']
+                data_val_   = datasets.load_dataset(self.dataset_name)['validation']
+                data_test_  = datasets.load_dataset(self.dataset_name)['test']
+                eval_train = HFDataset(data_train_, transform=self.test_transform, fold='train')
+                eval_val   = HFDataset(data_val_, transform=self.test_transform, fold='val')
+                eval_test  = HFDataset(data_test_, transform=self.test_transform, fold='test')
 
-        # load and split datasets only if not loaded already
-        # if not self.data_train and not self.data_val and not self.data_test:
-        data = datasets.load_dataset(self.dataset_name)
+                self.data_test = ConcatDataset([eval_train, eval_val, eval_test])
+            else:
+                data_test_  = datasets.load_dataset(self.dataset_name)['test']
+                self.data_test = HFDataset(data_test_, transform=self.test_transform, fold='test')
 
-        #sample 10000 images from train and val for faster training
-        if self.sample_rate > 0:
-            data_train_ = data['train'].shuffle(seed=42).select(range(self.sample_rate))
-            data_val_ = data["validation"].shuffle(seed=42).select(range(self.sample_rate//2))
-        else:
-            data_train_ = data['train']
-            data_val_ = data["validation"]
-        
-        self.data_train = HFDataset(data_train_, transform=self.train_transform, fold='train')
-        self.data_val = HFDataset(data_val_, transform=self.val_transform, fold='val')
-        
-        if self.trainer is not None:
-            self.trainer.train_classes_to_idx = ast.literal_eval(data_train_[0]['classes_to_idx'])
-            self.trainer.train_idx_to_classes = {idx:cls for cls,idx in self.trainer.train_classes_to_idx.items()}
-            self.trainer.val_classes_to_idx = ast.literal_eval(data_val_[0]['classes_to_idx'])
-            self.trainer.val_idx_to_classes = {idx:cls for cls,idx in self.trainer.val_classes_to_idx.items()}
-            self.trainer.test_classes_to_idx = ast.literal_eval(data_val_[0]['classes_to_idx'])
+            self.trainer.test_classes_to_idx = ast.literal_eval(data_test_[0]['classes_to_idx'])
             self.trainer.test_idx_to_classes = {idx:cls for cls,idx in self.trainer.test_classes_to_idx.items()}
+
+        else:
+            data = datasets.load_dataset(self.dataset_name)
+
+            #sample images from train and val for faster training
+            if self.sample_rate > 0:
+                data_train_ = data['train'].shuffle(seed=42).select(range(self.sample_rate))
+                data_val_ = data["validation"].shuffle(seed=42).select(range(self.sample_rate//2))
+            else:
+                data_train_ = data['train']
+                data_val_ = data["validation"]
+            
+            self.data_train = HFDataset(data_train_, transform=self.train_transform, fold='train')
+            self.data_val = HFDataset(data_val_, transform=self.val_transform, fold='val')
 
     def train_dataloader(self) -> DataLoader[Any]:
         """Create and return the train dataloader.
@@ -215,37 +221,13 @@ class AcevedoImageDataModule(LightningDataModule):
         :return: The test dataloader.
 
         """
-        if self.test_all_folds:
-            self.log_.info('Testing on all folds - train, val and test')
-            eval_train = HFDataset(datasets.load_dataset(self.dataset_name)['train'],
-                                transform=self.test_transform, fold='train')
-            eval_val   = HFDataset(datasets.load_dataset(self.dataset_name)['validation'],
-                                transform=self.test_transform, fold='val')
-            eval_test  = HFDataset(datasets.load_dataset(self.dataset_name)['test'],
-                                transform=self.test_transform, fold='test')
-
-            combined_dataset = ConcatDataset([eval_train, eval_val, eval_test])
-            return DataLoader(
-                dataset=combined_dataset,
+        return DataLoader(
+                dataset=self.data_test,
                 batch_size=self.batch_size_per_device,
                 num_workers=self.hparams.num_workers,
                 pin_memory=self.hparams.pin_memory,
                 shuffle=False,
             )
-
-            # rebuild eval-friendly versions of each split
-        else:
-            self.data_test = HFDataset(datasets.load_dataset(self.dataset_name)['test'], 
-                                       transform=self.test_transform, 
-                                       fold='test')
-            return DataLoader(dataset=self.data_test,
-                batch_size=self.batch_size_per_device,
-                num_workers=self.hparams.num_workers,
-                pin_memory=self.hparams.pin_memory,
-                shuffle=False,
-            )
-        
-
 
     def teardown(self, stage: Optional[str] = None) -> None:
         """Lightning hook for cleaning up after `trainer.fit()`, `trainer.validate()`,
@@ -286,7 +268,7 @@ if __name__ == "__main__":
         print(f"Error: The file '{yaml_file_path}' was not found.")
 
     data_dir = data['data_cache_dir']
-    dm = AcevedoImageDataModule(
+    dm = ClassificationImageDataModule(
         data_dir
     )
     dm.setup()
