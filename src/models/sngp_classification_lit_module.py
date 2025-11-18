@@ -9,7 +9,8 @@ from typing import Tuple
 from src.models.sngp.sngp_diagnostic_mixin import SNGPDiagnosticsMixin
 from src.metrics.calibration_losses import CalibrationLossConfig, calibration_losses
 
-class BaselineClassificationLitModule(SNGPDiagnosticsMixin, LitModuleBase):
+class SNGPClassificationLitModule(SNGPDiagnosticsMixin, LitModuleBase):
+    
     def __init__(
         self,
         net: torch.nn.Module,
@@ -20,14 +21,10 @@ class BaselineClassificationLitModule(SNGPDiagnosticsMixin, LitModuleBase):
         num_classes: int = 8,
         hist_bins: int = 10, #for histogram plotting
         calibration_curve_bins: int =10, #for ece plot
-        reset_sngp_precision: bool =False,
         test_name: str = "test_predictions",
         log_csv: bool = False,
         csv_save_path: str = "csv/",
         log_metrics_per_class: bool = False,
-        use_mc: bool = False,
-        mc_passes: int = 25,
-        use_mean_field_logits: bool = False,
         log_test_metrics: bool = True,
         log_calibration_terms: bool = True,
         compute_calibration_on_val: bool = False,
@@ -38,35 +35,47 @@ class BaselineClassificationLitModule(SNGPDiagnosticsMixin, LitModuleBase):
     ) -> None:
         
         LitModuleBase.__init__(
-            self,
-            net=net,
-            optimizer=optimizer,
-            scheduler=scheduler,
-            compile=compile,
-            num_classes=num_classes,
-            hist_bins=hist_bins,
-            calibration_curve_bins=calibration_curve_bins,
-            test_name=test_name,
-            log_csv=log_csv,
-            csv_save_path=csv_save_path,
-            log_metrics_per_class=log_metrics_per_class,
-            log_test_metrics=log_test_metrics,
-            log_calibration_terms=log_calibration_terms,
-            compute_calibration_on_val=compute_calibration_on_val,
-            class_freq=class_freq,
-            class_weights=class_weights,
-            label_smoothing=label_smoothing,
-            **kwargs
-        )
-
+                self,
+                net=net,
+                optimizer=optimizer,
+                scheduler=scheduler,
+                compile=compile,
+                num_classes=num_classes,
+                hist_bins=hist_bins,
+                calibration_curve_bins=calibration_curve_bins,
+                test_name=test_name,
+                log_csv=log_csv,
+                csv_save_path=csv_save_path,
+                log_metrics_per_class=log_metrics_per_class,
+                log_test_metrics=log_test_metrics,
+                log_calibration_terms=log_calibration_terms,
+                compute_calibration_on_val=compute_calibration_on_val,
+                class_freq=class_freq,
+                class_weights=class_weights,
+                label_smoothing=label_smoothing,
+                **kwargs
+            )
+        
         self.cal_cfg = calibration_cfg
         self.log_calibration_terms = log_calibration_terms
         self.compute_cal_on_val = compute_calibration_on_val
 
-        self.use_mc = use_mc
-        self.mc_passes = mc_passes
         self.inference_times = []
 
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Perform a forward pass through the model `self.net`.
+
+        :param x: A tensor of images.
+        :return: A tensor of logits.
+        """
+        if self.training:
+            mf_logits, _, _ = self.net(x, update_cov=True)
+        else:
+            # logger.debug('eval mode update cov is false')
+            mf_logits, _, _ = self.net(x, update_cov=False)
+
+        return mf_logits
+    
     def model_step(
             self, batch: Tuple[torch.Tensor, torch.Tensor]
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
@@ -82,19 +91,14 @@ class BaselineClassificationLitModule(SNGPDiagnosticsMixin, LitModuleBase):
         img_ids, x, targets, fold = batch
         batch_size = x.size(0)
 
-
         # ---- Forward Pass with Optional Timing ----
         start_time = None
         if self.log_test_metrics:
             torch.cuda.synchronize() if torch.cuda.is_available() else None
             start_time = time.time()
         
-        if self.use_mc:
-            logger.info("Using Monte Carlo Dropout for inference for {} passes".format(self.mc_passes))
-            logits, probs = self.net.mc_predict(x, T=self.mc_passes, return_std=False, apply_softmax=True)
-        else:
-            logits = self.forward(x)
-            probs = torch.softmax(logits, dim=1)
+        logits = self.forward(x)
+        probs = torch.softmax(logits, dim=1)
 
         if self.log_test_metrics:
             torch.cuda.synchronize() if torch.cuda.is_available() else None
@@ -104,9 +108,9 @@ class BaselineClassificationLitModule(SNGPDiagnosticsMixin, LitModuleBase):
 
         preds = torch.argmax(probs, dim=1)
 
+
         # ---- LOSS COMPUTATION (primary CE loss + secondary calibration) ----
-        # when tested with ood data, class dims from dataloader may not match model output dims
-        if not self.log_test_metrics:  
+        if not self.log_test_metrics: # when dim mismatch dont calculate loss only for testing purpose
             loss = None
         else:
             ce = self.criterion(logits, targets)  # Cross-entropy classification loss
@@ -119,7 +123,7 @@ class BaselineClassificationLitModule(SNGPDiagnosticsMixin, LitModuleBase):
                 cal_penalty, cal_terms = calibration_losses(logits, targets, self.cal_cfg)
 
             # Total combined loss
-            loss = ce 
+            loss = ce
 
             # ---- LOGGING ----
             mode = "train" if self.training else "val"
