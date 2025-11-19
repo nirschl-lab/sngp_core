@@ -3,7 +3,7 @@ _target_: src.models.baseline_classification_lit_module.BaselineClassificationLi
 name: timm_mc_baseline
 # backbone
 net:
-  _target_: src.models.torch_vision_base.BaselineClassifier
+  _target_: src.models.baseline.baseline_models.BaselineClassifier
   arch: resnet18
   num_classes: 8
   dropout_p: 0.2

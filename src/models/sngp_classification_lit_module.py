@@ -6,10 +6,9 @@ import time
 import torch.nn.functional as F
 import os
 from typing import Tuple
-from src.models.sngp.sngp_diagnostic_mixin import SNGPDiagnosticsMixin
 from src.metrics.calibration_losses import CalibrationLossConfig, calibration_losses
 
-class SNGPClassificationLitModule(SNGPDiagnosticsMixin, LitModuleBase):
+class SNGPClassificationLitModule(LitModuleBase):
     
     def __init__(
         self,

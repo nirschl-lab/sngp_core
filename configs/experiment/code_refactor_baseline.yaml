@@ -5,7 +5,7 @@
 
 defaults:
   - override /data: image_classifier
-  - override /model: baseline_classifier2
+  - override /model: baseline_classifier
   - override /callbacks: default
   - override /trainer: default
 

@@ -4,9 +4,6 @@ from typing import Any, Dict, Tuple, List, Optional
 import torch
 from lightning import LightningModule
 from torchmetrics import MaxMetric, MeanMetric
-from src.metrics.calibration_losses import CalibrationLossConfig, calibration_losses
-from src.models.sngp.sngp_diagnostic_mixin import SNGPDiagnosticsMixin
-
 import torch.nn.functional as F
 from torchmetrics.classification.accuracy import Accuracy 
 from torchmetrics.classification import \
@@ -18,17 +15,12 @@ from src.visualization.multi_class_ROC import plot_roc_curve
 from src.visualization.plot_prob_histograms import single_model_probability_histogram
 from src.visualization.plot_ece import plot_calibration_curve
 from src.visualization.dempster_shafer_uncertainity_plot import DempsterShaferUncertaintyPlot
-from src.visualization.reliability import rel_diagram_smoothed, rel_diagram_binned
 import matplotlib.pyplot as plt
 import wandb
 import pdb
 from loguru import logger
 import numpy as np
-from src.utils import RankedLogger
 import pandas as pd
-from torch.nn.modules.dropout import _DropoutNd
-from src.models.sngp.gaussian_process import mean_field_logits
-import time
 
 class LitModuleBase(LightningModule):
     def __init__(

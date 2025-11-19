@@ -1,9 +1,9 @@
-_target_: src.models.sngp_gpt_classification_lit_module.SNGPGPTClassificationLitModule
+_target_: src.models.sngp_classification_lit_module.SNGPClassificationLitModule
 
 name: timm_sngp
 # backbone
 net:
-  _target_: src.models.sngp_gpt.SNGPClassifier
+  _target_: src.models.sngp.sngp_classifier.SNGPClassifier
   num_classes: 8         # <-- change to your dataset
   arch: "resnet18"
   pretrained: True         # ok to start from ImageNet
