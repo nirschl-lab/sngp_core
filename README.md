@@ -146,7 +146,7 @@ uv run src/eval.py \
 #### Evaluation Examples
 
 <details>
-<summary><b>Basic evaluation</b></summary>
+<summary><b>Baseline model evaluation</b></summary>
 
 ```bash
 uv run src/eval.py \
@@ -157,16 +157,29 @@ uv run src/eval.py \
 </details>
 
 <details>
-<summary><b>Uncertainty quantification with Monte Carlo</b></summary>
+<summary><b>Monte-Carlo evaluation</b></summary>
 
 ```bash
 uv run src/eval.py \
     ckpt_path="path/to/sngp_checkpoint.ckpt" \
-    model="sngp_classifier" \
+    data="image_classifier" \
+    model="baseline_classifier" \
     model.use_mc=true \
     model.mc_passes=50
 ```
 </details>
+
+<details>
+<summary><b>SNGP Model evaluation</b></summary>
+
+```bash
+uv run src/eval.py \
+    ckpt_path="path/to/sngp_checkpoint.ckpt" \
+    data="image_classifier" \
+    model="sngp_classifier" \
+```
+</details>
+
 
 <details>
 <summary><b>Out-of-distribution evaluation</b></summary>
@@ -174,10 +187,27 @@ uv run src/eval.py \
 ```bash
 uv run src/eval.py \
     ckpt_path="checkpoints/acevedo_trained.ckpt" \
+    data="image_classifier" \
     data.datamodule.dataset_name="nirschl-lab/tang_et_al_2019" \
+    model="baseline_classifier" \
     model.log_test_metrics=false
 ```
 </details>
+
+<details>
+<summary><b>use multi runs for evaluating on different datasets</b></summary>
+
+```bash
+uv run src/eval.py \
+    -m \
+    ckpt_path="checkpoints/acevedo_trained.ckpt" \
+    data="image_classifier" \
+    data.datamodule.dataset_name="nirschl-lab/tang_et_al_2019","nirschl-lab/kather_et_al_2018" \
+    model="baseline_classifier" \
+    model.log_test_metrics=false
+```
+</details>
+
 
 
 > **💡 Tips:**
