@@ -1,6 +1,6 @@
 _target_: src.models.sngp_classification_lit_module.SNGPClassificationLitModule
 
-name: timm_sngp
+name: sngp_classifier
 # backbone
 net:
   _target_: src.models.sngp.sngp_classifier.SNGPClassifier
@@ -12,8 +12,6 @@ net:
   ridge_penalty: 1e-3
   cov_momentum: 0.999
   mean_field: True
-
-class_weights: None
 
 # optimizer and scheduler
 optimizer:
@@ -28,22 +26,14 @@ scheduler:
   milestones: [30, 70, 100]
   gamma: 0.1
 
-# scheduler:
-#   _target_: torch.optim.lr_scheduler.CosineAnnealingLR
-#   _partial_: true
-#   T_max: 100
-#   eta_min: 0
-
 # --- Training setup ---
 compile: false # compile model for faster training with pytorch 2.0
 num_classes: 8
 hist_bins: 25 # no of bins for drawing histogram at the end of training on testset
 test_name: "test_predictions.csv" # test csv name
-csv_save_path: "csv/"
 log_csv: false
-use_mean_field_logits: false # only use mean field logits for evaluation
+csv_save_path: "csv/"
 log_test_metrics: true
-class_freq: null
 
 # --- Calibration loss configuration (NEW) ---
 #| Loss                         | Mechanism                                                                          | Primary Focus                            | Sensitivity                        | Typical Weight Range |
@@ -104,3 +94,6 @@ calibration_cfg:
 
 log_calibration_terms: true
 compute_calibration_on_val: true
+
+class_weights: None
+class_freq: null

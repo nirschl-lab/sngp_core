@@ -45,7 +45,7 @@ model:
     milestones: [30, 70, 100]
     gamma: 0.1
   num_classes: ${num_classes}
-  class_weights: [1.786,0.694,1.389,0.735,1.786,1.562,0.625,0.893]
+  class_weights: null
 
 data:
   datamodule:
