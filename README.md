@@ -96,12 +96,94 @@ uv run src/train.py \
   logger=wandb
 ```
 
-### 4. Infer on checkpoints
-checkpoints can be downloaded from wandb artifacts or from logs created during training
+### 4. Model Evaluation
+
+Evaluate trained models using checkpoints from W&B artifacts or local training logs.
+
+#### Option 1: Using Bash Scripts (Recommended)
+```bash
+# Use pre-configured evaluation scripts
+bash scripts/eval/acevedo_baseline.sh
+# Check the script files for specific configurations and checkpoint paths
+```
+
+#### Option 2: Manual Configuration
+```bash
+uv run src/eval.py \
+    logger=wandb \
+    ckpt_path="<your-checkpoint-path>" \
+    data="image_classifier" \
+    data.datamodule.batch_size=2048 \
+    data.datamodule.dataset_name="nirschl-lab/acevedo_et_al_2020" \
+    data.datamodule.num_classes=8 \
+    data.datamodule.test_all_folds=true \
+    model="baseline_classifier" \
+    model.class_weights=null \
+    model.use_mc=false \
+    model.mc_passes=10 \
+    logger.wandb.group="<WANDB_GROUP>" \
+    +logger.wandb.name="<EXPERIMENT_NAME>" \
+    ++logger.wandb.project="<WANDB_PROJECT>" \
+    model.log_csv=true \
+    model.csv_save_path="<csv_save_path>" \
+    logger.wandb.tags="<TAGS>" \
+    model.log_test_metrics=true
+```
+
+#### Parameter Explanations
+
+| Parameter | Description | Example Values |
+|-----------|-------------|----------------|
+| `ckpt_path` | Path to model checkpoint | `logs/runs/2024-11-24_10-30-45/checkpoints/best.ckpt` |
+| `data` | Data configuration file name | `image_classifier` |
+| `data.datamodule.batch_size` | Inference batch size | `2048`, `1024`, `512` |
+| `data.datamodule.test_all_folds` | Test all data splits | `true` (all splits), `false` (test only) |
+| `model.use_mc` | Enable Monte Carlo dropout | `true`, `false` |
+| `model.mc_passes` | Number of MC forward passes | `10`, `50`, `100` |
+| `model.log_csv` | Save results to CSV | `true`, `false` |
+| `model.log_test_metrics` | Compute detailed metrics | `true` (in-domain), `false` (OOD) |
+
+#### Evaluation Examples
+
+<details>
+<summary><b>Basic evaluation</b></summary>
 
 ```bash
-bash scrips/eval/acevedo_baseline.sh #check the respective files for the configurations and setting checkpoints
+uv run src/eval.py \
+    ckpt_path="logs/runs/latest/checkpoints/best.ckpt" \
+    data="image_classifier" \
+    model="baseline_classifier"
 ```
+</details>
+
+<details>
+<summary><b>Uncertainty quantification with Monte Carlo</b></summary>
+
+```bash
+uv run src/eval.py \
+    ckpt_path="path/to/sngp_checkpoint.ckpt" \
+    model="sngp_classifier" \
+    model.use_mc=true \
+    model.mc_passes=50
+```
+</details>
+
+<details>
+<summary><b>Out-of-distribution evaluation</b></summary>
+
+```bash
+uv run src/eval.py \
+    ckpt_path="checkpoints/acevedo_trained.ckpt" \
+    data.datamodule.dataset_name="nirschl-lab/tang_et_al_2019" \
+    model.log_test_metrics=false
+```
+</details>
+
+
+> **💡 Tips:**
+> - Use `test_all_folds=false` for faster evaluation on test set only
+> - Set `log_test_metrics=false` for OOD evaluation to avoid class mismatch errors
+> - Increase `batch_size` for faster inference if GPU memory allowss
 ---
 
 ## 📁 Project Structure
@@ -194,22 +276,6 @@ uv run src/eval.py \
 | Callbacks | `configs/callbacks/` | Training callbacks (checkpointing, early stopping) |
 | Trainers | `configs/trainer/` | Lightning trainer settings |
 
-### Example Configuration Override
-
-```bash
-# Override multiple parameters
-uv run src/train.py \
-  model=sngp_classifier \
-  model.spectral_norm_bound=0.95 \
-  model.gp_hidden_dim=1024 \
-  data=acevedo \
-  data.batch_size=64 \
-  trainer.max_epochs=100 \
-  trainer.precision=16 \
-  callbacks=rich_progress \
-  logger=wandb
-```
-
 ---
 
 ## 📊 Datasets
@@ -284,7 +350,3 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - Package management with [uv](https://github.com/astral-sh/uv)
 
 ---
-
-<div align="center">
-  <p><strong>Happy Experimenting! 🧪✨</strong></p>
-</div>
