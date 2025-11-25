@@ -6,35 +6,79 @@ from hydra.core.hydra_config import HydraConfig
 from omegaconf import DictConfig
 
 
-def test_train_config(cfg_train: DictConfig) -> None:
-    """Tests the training configuration provided by the `cfg_train` pytest fixture.
+class TestTrainConfig:
+    """Grouped tests for the training configuration available via the `cfg_train` fixture.
 
-    :param cfg_train: A DictConfig containing a valid training configuration.
+    Each method checks only one top-level section (data/model/trainer) and raises an
+    informative AssertionError when instantiation fails.
     """
-    assert cfg_train
-    assert cfg_train.data
-    assert cfg_train.model
-    assert cfg_train.trainer
 
-    HydraConfig().set_config(cfg_train)
+    @pytest.fixture(autouse=True)
+    def _setup_cfg(self, cfg_train: DictConfig):
+        # sanity checks
+        assert cfg_train is not None, "cfg_train fixture returned None"
+        assert isinstance(cfg_train, DictConfig), "cfg_train must be an omegaconf.DictConfig"
+        assert getattr(cfg_train, "data", None) is not None, "cfg_train is missing 'data' section"
+        assert getattr(cfg_train, "model", None) is not None, "cfg_train is missing 'model' section"
+        assert getattr(cfg_train, "trainer", None) is not None, "cfg_train is missing 'trainer' section"
 
-    hydra.utils.instantiate(cfg_train.data)
-    hydra.utils.instantiate(cfg_train.model)
-    hydra.utils.instantiate(cfg_train.trainer)
+        HydraConfig().set_config(cfg_train)
+        self.cfg_train = cfg_train
+
+    def _instantiate(self, node, node_name: str):
+        try:
+            hydra.utils.instantiate(node)
+        except Exception as exc:
+            # Raise an AssertionError so pytest reports it as a test failure with a clear message
+            raise AssertionError(
+                f"Failed to instantiate '{node_name}' from cfg_train: {exc}"
+            ) from exc
+
+    def test_data_instantiation(self):
+        """Instantiate data."""
+        self._instantiate(self.cfg_train.data, "data")
+
+    def test_model_instantiation(self):
+        """Instantiate model only."""
+        self._instantiate(self.cfg_train.model, "model")
+
+    def test_trainer_instantiation(self):
+        """Instantiate trainer."""
+        self._instantiate(self.cfg_train.trainer, "trainer")
 
 
-def test_eval_config(cfg_eval: DictConfig) -> None:
-    """Tests the evaluation configuration provided by the `cfg_eval` pytest fixture.
+class TestEvalConfig:
+    """Grouped tests for the eval config."""
 
-    :param cfg_train: A DictConfig containing a valid evaluation configuration.
-    """
-    assert cfg_eval
-    assert cfg_eval.data
-    assert cfg_eval.model
-    assert cfg_eval.trainer
+    @pytest.fixture(autouse=True)
+    def _setup_cfg(self, cfg_eval: DictConfig):
+        # sanity check
+        assert cfg_eval is not None, "cfg_eval fixture returned None"
+        assert isinstance(cfg_eval, DictConfig), "cfg_eval must be an omegaconf.DictConfig"
+        assert getattr(cfg_eval, "data", None) is not None, "cfg_eval is missing 'data' section"
+        assert getattr(cfg_eval, "model", None) is not None, "cfg_eval is missing 'model' section"
+        assert getattr(cfg_eval, "trainer", None) is not None, "cfg_eval is missing 'trainer' section"
 
-    HydraConfig().set_config(cfg_eval)
+        HydraConfig().set_config(cfg_eval)
+        self.cfg_eval = cfg_eval
 
-    hydra.utils.instantiate(cfg_eval.data)
-    hydra.utils.instantiate(cfg_eval.model)
-    hydra.utils.instantiate(cfg_eval.trainer)
+    def _instantiate(self, node, node_name: str):
+        try:
+            hydra.utils.instantiate(node)
+        except Exception as exc:
+            # Raise an AssertionError so pytest reports it as a test failure with a clear message
+            raise AssertionError(
+                f"Failed to instantiate '{node_name}' from cfg_eval: {exc}"
+            ) from exc
+
+    def test_data_instantiation(self):
+        """Instantiate data."""
+        self._instantiate(self.cfg_eval.data, "data")
+
+    def test_model_instantiation(self):
+        """Instantiate model."""
+        self._instantiate(self.cfg_eval.model, "model")
+
+    def test_trainer_instantiation(self):
+        """Instantiate trainer."""
+        self._instantiate(self.cfg_eval.trainer, "trainer")

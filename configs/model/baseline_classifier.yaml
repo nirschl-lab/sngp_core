@@ -9,7 +9,7 @@ net:
   dropout_p: 0.2
   pretrained: true
 
-class_weights: None
+class_weights: null
 
 optimizer:
   _target_: torch.optim.AdamW

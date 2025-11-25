@@ -95,5 +95,5 @@ calibration_cfg:
 log_calibration_terms: true
 compute_calibration_on_val: true
 
-class_weights: None
+class_weights: null
 class_freq: null
