@@ -25,60 +25,6 @@ def apply_spectral_norm_to_convs(module: nn.Module, n_power_iterations: int = 1)
         else:
             apply_spectral_norm_to_convs(child, n_power_iterations=n_power_iterations)
 
-class ScaledWeightParam(torch.nn.Module):
-    """Applies a scalar multiplier to a layer's weight for spectral normalization bound."""
-    def __init__(self, scale: float):
-        super().__init__()
-        self.scale = torch.nn.Parameter(torch.tensor(scale), requires_grad=False)
-
-    def forward(self, w):
-        return w * self.scale
-
-# def apply_spectral_norm_to_model(
-#     model: nn.Module,
-#     spec_norm_bound: float = 1.0,
-#     spec_norm_iteration: int = 1,
-#     verbose: bool = False,
-# ) -> nn.Module:
-#     """
-#     Recursively apply spectral normalization to Conv2d and Linear layers.
-
-#     Args:
-#         model: Model or submodule to modify.
-#         spec_norm_bound: Maximum spectral norm (like TF norm_multiplier).
-#         spec_norm_iteration: Power iteration count (like TF iteration).
-#         verbose: Print wrapped layers if True.
-
-#     Returns:
-#         Model with spectral normalization applied in-place.
-#     """
-#     for name, module in model.named_children():
-#         if isinstance(module, (nn.Conv2d, nn.Linear)):
-#             if not hasattr(module, "weight_u"):
-#                 try:
-#                     # apply spectral normalization
-#                     spectral_norm(module, n_power_iterations=spec_norm_iteration)
-#                     if spec_norm_bound != 1.0 and isinstance(module, nn.Linear) and hasattr(module, "weight_u") :
-#                         # apply scaling parametrization (currently only works for nn.Linear)
-#                         parametrize.register_parametrization(
-#                             module, "weight", ScaledWeightParam(spec_norm_bound)
-#                         )
-
-#                     # ensure no NaNs in weights after init
-#                     if torch.isnan(module.weight).any():
-#                         raise ValueError(f"NaN detected in weights of layer {name} after spectral norm application")
-
-#                     if verbose:
-#                         print(f"Applied SN to {name}: iter={spec_norm_iteration}, bound={spec_norm_bound}")
-#                 except Exception as e:
-#                     error_msg = f"Failed to wrap {name}: {e}"
-#                     logger.error(error_msg)
-#                     raise RuntimeError(error_msg) from e
-
-#         else:
-#             apply_spectral_norm_to_model(module, spec_norm_bound, spec_norm_iteration, verbose)
-#     return model
-
 # ---------------------------
 # Random Fourier Feature GP head
 # ---------------------------
@@ -295,13 +241,6 @@ class SNGPClassifier(nn.Module):
 
         # Apply spectral norm to all convs/linears in the backbone
         apply_spectral_norm_to_convs(self.backbone, n_power_iterations=n_power_iterations_sn)
-        # self.backbone = apply_spectral_norm_to_model(self.backbone)
-
-        # Ensure all parameters are on the same device
-        # if torch.cuda.is_available():
-        #     device = next(iter(self.backbone.parameters())).device
-        #     self.backbone = self.backbone.to(device)
-
 
         # --- RFF-GP head ---
         self.gp_head = RandomFeatureGaussianProcess(
@@ -360,25 +299,3 @@ if __name__ == "__main__":
         assert mean_field_logits.shape == (4, 10)
         assert raw_logits.shape == (4, 10)
         assert pred_var.shape == (4, 1)
-
-# print("mean_field_logits:", mean_field_logits.shape)
-# print("raw_logits:", raw_logits.shape)
-# print("pred_var:", pred_var.shape)
-# print("-" * 50)
-
-# model = SNGPResNet(
-# num_classes=10,
-# arch="resnet18",
-# pretrained=False,
-# rff_dim=512,
-# length_scale=1.0,
-# ridge_penalty=1e-3,
-# cov_momentum=0.999,
-# mean_field=True,
-# n_power_iterations_sn=1,
-# )
-# x = torch.randn(4, 3, 224, 224)
-# mean_field_logits, raw_logits, pred_var = model(x)
-# print("mean_field_logits:", mean_field_logits.shape)
-# print("raw_logits:", raw_logits.shape)
-# print("pred_var:", pred_var.shape)
