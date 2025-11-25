@@ -1,26 +1,27 @@
 import os
 from typing import Any, Dict, Tuple, List, Optional
 
-import torch
-from lightning import LightningModule
-from torchmetrics import MaxMetric, MeanMetric
-import torch.nn.functional as F
-from torchmetrics.classification.accuracy import Accuracy 
-from torchmetrics.classification import \
-                    MulticlassCalibrationError, \
-                    MulticlassPrecision, \
-                    MulticlassRecall, \
-                    MulticlassF1Score
-from src.visualization.multi_class_ROC import plot_roc_curve
-from src.visualization.plot_prob_histograms import single_model_probability_histogram
-from src.visualization.plot_ece import plot_calibration_curve
-from src.visualization.dempster_shafer_uncertainity_plot import DempsterShaferUncertaintyPlot
 import matplotlib.pyplot as plt
-import wandb
-import pdb
-from loguru import logger
 import numpy as np
 import pandas as pd
+import torch
+import torch.nn.functional as F
+import wandb
+from lightning import LightningModule
+from loguru import logger
+from torchmetrics import MaxMetric, MeanMetric
+from torchmetrics.classification import \
+    MulticlassCalibrationError, \
+    MulticlassPrecision, \
+    MulticlassRecall, \
+    MulticlassF1Score
+from torchmetrics.classification.accuracy import Accuracy
+
+from src.visualization.dempster_shafer_uncertainity_plot import DempsterShaferUncertaintyPlot
+from src.visualization.multi_class_ROC import plot_roc_curve
+from src.visualization.plot_ece import plot_calibration_curve
+from src.visualization.plot_prob_histograms import single_model_probability_histogram
+
 
 class LitModuleBase(LightningModule):
     def __init__(
@@ -126,12 +127,12 @@ class LitModuleBase(LightningModule):
         if self.class_weights is not None:
             logger.info(f"Using class weights for CrossEntropyLoss: {self.class_weights} and label smoothing: {self.label_smoothing}")
             class_weights_tensor = torch.tensor(self.class_weights, device=self.device)
-            criterion = torch.nn.CrossEntropyLoss(weight=class_weights_tensor, label_smoothing=self.label_smoothing)
+            return torch.nn.CrossEntropyLoss(
+                weight=class_weights_tensor, label_smoothing=self.label_smoothing
+            )
         else:
             logger.info(f"No class weights provided, using unweighted CrossEntropyLoss and label smoothing: {self.label_smoothing}")
-            criterion = torch.nn.CrossEntropyLoss(label_smoothing=self.label_smoothing)
-        
-        return criterion
+            return torch.nn.CrossEntropyLoss(label_smoothing=self.label_smoothing)
     
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Perform a forward pass through the model `self.net`.
@@ -197,7 +198,6 @@ class LitModuleBase(LightningModule):
 
     def on_train_epoch_end(self) -> None:
         "Lightning hook that is called when a training epoch ends."
-        pass
 
     def validation_step(self, batch: Tuple[torch.Tensor, torch.Tensor], batch_idx: int) -> None:
         """Perform a single validation step on a batch of data from the validation set.
@@ -347,22 +347,24 @@ class LitModuleBase(LightningModule):
         data_classes = len(self.test_idx_to_classes)
         if data_classes < self.num_classes:
             for i in range(self.num_classes - data_classes):
-                self.test_idx_to_classes[data_classes + i] = 'No class ' + str(data_classes + i)
+                self.test_idx_to_classes[
+                    data_classes + i
+                ] = f'No class {str(data_classes + i)}'
                 logger.info("Class names not found, using numbers for plotting.")
-        
+
         fig = plot_calibration_curve(preds=probs_all, \
-                                    targets=targets, \
-                                    num_classes=self.num_classes, \
-                                    n_bins=self.calibration_curve_bins, \
-                                    image_classes=self.test_idx_to_classes)
-        
+                                        targets=targets, \
+                                        num_classes=self.num_classes, \
+                                        n_bins=self.calibration_curve_bins, \
+                                        image_classes=self.test_idx_to_classes)
+
         self.logger.experiment.log({"test/ece_plot": wandb.Image(fig)})
         plt.close(fig)
 
         fig = plot_roc_curve(probs_all, targets, num_classes=self.num_classes, class_names=self.test_idx_to_classes)
         self.logger.experiment.log({"test/roc_curve": wandb.Image(fig)})
         plt.close(fig)
-        
+
         fig = single_model_probability_histogram(prediction_prob_score, bins=self.hist_bins)
         self.logger.experiment.log({"test/logits_distribution": wandb.Image(fig)})
         plt.close(fig)

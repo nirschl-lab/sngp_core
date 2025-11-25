@@ -1,12 +1,14 @@
-import torch
-from typing import List, Optional
-from src.models.lit_module_base import LitModuleBase
-from loguru import logger
-import time
-import torch.nn.functional as F
 import os
+import time
+from typing import List, Optional
 from typing import Tuple
+
+import torch
+from loguru import logger
+
 from src.metrics.calibration_losses import CalibrationLossConfig, calibration_losses
+from src.models.lit_module_base import LitModuleBase
+
 
 class BaselineClassificationLitModule(LitModuleBase):
     def __init__(
@@ -87,9 +89,11 @@ class BaselineClassificationLitModule(LitModuleBase):
         if self.log_test_metrics:
             torch.cuda.synchronize() if torch.cuda.is_available() else None
             start_time = time.time()
-        
+
         if self.use_mc:
-            logger.info("Using Monte Carlo Dropout for inference for {} passes".format(self.mc_passes))
+            logger.info(
+                f"Using Monte Carlo Dropout for inference for {self.mc_passes} passes"
+            )
             logits, probs = self.net.mc_predict(x, T=self.mc_passes, return_std=False, apply_softmax=True)
         else:
             logits = self.forward(x)
