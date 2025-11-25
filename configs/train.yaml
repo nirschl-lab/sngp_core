@@ -3,8 +3,8 @@
 # specify here default configuration
 # order of defaults determines the order in which configs override each other
 defaults:
-  - data: acevedo_image_classifier #mnist #acevedo # override img_augmentations in data config if needed
-  - model: timm_sngp_classifier #mnist #acevedo_baseline
+  - data: image_classifier
+  - model: sngp_classifier
   - callbacks: default
   - logger: wandb # set logger here or use command line (e.g. `python train.py logger=tensorboard`)
   - trainer: default
@@ -27,7 +27,7 @@ defaults:
 
   - hydra: default
 
-  # overrides after others but before _self_
+  # if using submitit_slurm, set override after others but before _self_
   # - override /hydra/launcher: submitit_slurm
 
   - _self_
@@ -38,7 +38,7 @@ task_name: "train"
 # tags to help you identify your experiments
 # you can overwrite this in experiment configs
 # overwrite from command line with `python train.py tags="[first_tag, second_tag]"`
-# tags: ["sngp_10-17", "jjn_multirun", "sngp_param_sweep"]
+tags: ["isbi2026",]
 
 # set False to skip model training
 train: True
@@ -50,7 +50,8 @@ test: False
 # simply provide checkpoint path to resume training
 ckpt_path: null
 
-# seed for random number generators in pytorch, numpy and python.random
+# random seed for experiment reproducibility
+# most popular random seeds: https://blog.semicolonsoftware.de/the-most-popular-random-seeds/
 seed: null
 
 # flag for torch precision: 'medium', 'high' or 'highest'
@@ -61,9 +62,9 @@ precision: "medium"
 #   mode: MULTIRUN
 #   sweep:
 #     dir: ${paths.root_dir}/multirun/${now:%Y-%m-%d_%H-%M-%S}
-#     subdir: ${name}_${seed}
+#     subdir: ${task_name}_${seed}
 #   run:
-#     dir: ${paths.root_dir}/runs/${name}_seed-${seed}_${now:%H-%M-%S}
+#     dir: ${paths.root_dir}/runs/${task_name}_seed-${seed}_${now:%H-%M-%S}
 
 #   # param sweep combinations
 #   # Note: Sweeper params apply to the final composed config, not to subtrees that are replaced later
@@ -73,9 +74,6 @@ precision: "medium"
 #       # nested overrides: Hydra only applies '+' overrides when the key does not exist in the main/base/subtree config.
 #       # nested overrides: Hydra applies '++' to force override keys that do exist in the main/base/subtree config.
 #       # overrides need to be applied to the correct subtree
-#       # +experiment: ['sn_sngp_acevedo', 'sn_sngp_tang', 'sn_sngp_wong', 'sn_sngp_kather_2016'] #'sn_sngp_kather_2018'
-#       # +experiment: ["baseline_acevedo","sn_sngp_acevedo","baseline_tang","sn_sngp_tang","baseline_wong","sn_sngp_wong","baseline_kather_2016","sn_sngp_kather_2016","baseline_kather_2018","sn_sngp_kather_2018"]
 #       +experiment: ["mcdropout_acevedo", "mcdropout_kather_2016", "mcdropout_kather_2018", "mcdropout_tang", "mcdropout_wong"]
 #       ++logger.wandb.project: "baseline_vs_sngp" # project name in wandb
 #       seed:  0,1,1234,380843,42
-#       # most popular random seeds: https://blog.semicolonsoftware.de/the-most-popular-random-seeds/

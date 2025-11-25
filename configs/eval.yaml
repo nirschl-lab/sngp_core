@@ -1,32 +1,31 @@
 # @package _global_
 
+# specify here default configuration
+# order of defaults determines the order in which configs override each other
 defaults:
-  - data: acevedo_image_classifier # choose datamodule with `test_dataloader()` for evaluation
-  - model: timm_sngp_classifier # timm_basic_classifier
+  - data: image_classifier
+  - model: sngp_classifier
   - callbacks: default
-  - logger: wandb
+  - logger: wandb # set logger here or use command line (e.g. `python train.py logger=tensorboard`)
   - trainer: default
   - paths: default
   - extras: default
   - hydra: default
-#  - override /hydra/launcher: submitit_slurm
+#  - override /hydra/launcher: submitit_slurm # uncomment if using submitit_slurm
   - _self_
 
 # task name, determines output directory path
-# task_name: "tr-acevedo_sngp_test-acevedo"
-# train_data: "acevedo_et_al_2020"
-# test_data: "acevedo_et_al_2020"
-
 task_name: "predict"
-tags: ["eval", "sngp"]
+tags: ["eval", "sngp", "isbi2026"]
 
 # flag for torch precision: 'medium', 'high' or 'highest'
 precision: "medium"
 
 ## passing checkpoint path is necessary for evaluation
-ckpt_path: ${oc.env:HOME}/Downloads/tang_model-wniqcd8j.ckpt # (use for single run, multirun below)
+ckpt_path: null # (use for single run, multirun below)
 
 # random seed for experiment reproducibility
+# most popular random seeds: https://blog.semicolonsoftware.de/the-most-popular-random-seeds/
 # seed: 0
 
 # # multirun config
@@ -46,12 +45,6 @@ ckpt_path: ${oc.env:HOME}/Downloads/tang_model-wniqcd8j.ckpt # (use for single r
 #       # nested overrides: Hydra only applies '+' overrides when the key does not exist in the main/base/subtree config.
 #       # nested overrides: Hydra applies '++' to force override keys that do exist in the main/base/subtree config.
 #       # overrides need to be applied to the correct subtree
-#       ++seed:  0 #,1,1234,380843,42
-#       ++data.datamodule.dataset_name: "nirschl-lab/acevedo_et_al_2020"
-#       ++data.datamodule.num_classes: 8
-#       ++data.datamodule.batch_size: 256
-#       ++logger.wandb.group: "eval"
-#       ++logger.wandb.name: "SNGP Tr-acevedo-Test-acevedo"
-#       ++ckpt_path: ${paths.root_dir}/multirun/2025-10-19_22-15-59/acevedo_sngp_${seed}/checkpoints/best.ckpt
 #       ++logger.wandb.project: "baseline_vs_sngp" # project name in wandb
+#       seed:  0,1,1234,380843,42
 #       # most popular random seeds: https://blog.semicolonsoftware.de/the-most-popular-random-seeds/
