@@ -1,0 +1,14 @@
+# configs/data/acevedo_image_classifier.yaml
+defaults:
+  - /img_augmentations: light_augmentations #albumentations #torchvision #default
+
+datamodule:
+  _target_: src.data.artifact_datamodule.ArtifactImageDataModule
+  dataset_name: nirschl-lab/acevedo_et_al_2020
+  num_classes: 8
+  batch_size: 64
+  num_workers: 32
+  pin_memory: True
+  test_all_folds: False
+  sample_rate: 0
+  artifact_dir: /data1/shared/data/artifacts/
