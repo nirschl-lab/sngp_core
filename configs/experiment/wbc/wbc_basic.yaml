@@ -11,7 +11,7 @@ defaults:
 
 # all parameters below will be merged with parameters from default configurations set above
 # this allows you to overwrite only specified parameters
-name: "baseline_resnet18"
+name: "baseline_resnet50"
 WANDB_PROJECT: "wbc_challenge"
 
 seed: 12345
@@ -34,7 +34,7 @@ model:
     weight_decay: 1e-3
   hist_bins: 10
   net:
-    arch: resnet18
+    arch: resnet50
     num_classes: ${num_classes}
     dropout_p: 0.2
     pretrained: false
