@@ -23,13 +23,13 @@ scheduler:
 
 compile: false
 num_classes: 8
-test_name: "test_predictions.csv"
 log_csv: false
 csv_save_path: "csv/"
+csv_name: "test_predictions"
 log_metrics_per_class: false
 log_test_metrics: true
 class_freq: null
-class_weights: null
+class_weights: [0.17, 0.28, 0.8, 1.12, 2.61, 5.17, 4.98, 5.66, 5.89, 6.68, 21.63, 44.01, 196.36]
 class_indices:
     "SNE": 0
     "LY": 1

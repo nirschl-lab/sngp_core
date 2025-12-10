@@ -1,12 +1,15 @@
 import os
 from typing import Any, Dict, List, Optional, Tuple
 
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import seaborn as sns
 import torch
 import wandb
 from lightning import LightningModule
 from loguru import logger
+from sklearn.metrics import confusion_matrix
 from torchmetrics import MaxMetric, MeanMetric
 from torchmetrics.classification import (
     MulticlassF1Score,
@@ -24,9 +27,9 @@ class LitModuleBase(LightningModule):
         compile: bool,
         class_indices: Dict[str, int],
         num_classes: int = 8,
-        test_name: str = "test_predictions",
         log_csv: bool = False,
         csv_save_path: str = "csv/",
+        csv_name: str = "test_predictions",
         log_metrics_per_class: bool = False,
         log_test_metrics: bool = True,
         class_freq: Optional[dict] = None,
@@ -75,9 +78,15 @@ class LitModuleBase(LightningModule):
         self._test_image_ids: List[str] = []
         self._test_fold: List[str] = []
         self._test_preds: List[torch.Tensor] = []
+        
+        # Storage for confusion matrix creation
+        self._train_preds: List[torch.Tensor] = []
+        self._train_targets: List[torch.Tensor] = []
+        self._val_preds: List[torch.Tensor] = []
+        self._val_targets: List[torch.Tensor] = []
 
         # CSV logging configuration
-        self.test_name = test_name
+        self.csv_name = csv_name
         self.log_csv = log_csv
         self.csv_save_path = csv_save_path
         self.log_test_metrics = log_test_metrics
@@ -132,6 +141,12 @@ class LitModuleBase(LightningModule):
         self.val_loss.reset()
         self.val_acc.reset()
         self.val_acc_best.reset()
+        
+        # Reset confusion matrix storage
+        self._train_preds.clear()
+        self._train_targets.clear()
+        self._val_preds.clear()
+        self._val_targets.clear()
     
     def model_step(
         self, batch: Tuple[torch.Tensor, torch.Tensor]
@@ -165,6 +180,10 @@ class LitModuleBase(LightningModule):
         """
         img_ids, loss, logits, probs, preds, targets, _ = self.model_step(batch)
 
+        # Store predictions and targets for confusion matrix
+        self._train_preds.append(preds.detach().cpu())
+        self._train_targets.append(targets.detach().cpu())
+
         # Update and log metrics
         self.train_loss(loss)
         self.train_acc(preds, targets)
@@ -177,6 +196,7 @@ class LitModuleBase(LightningModule):
 
     def on_train_epoch_end(self) -> None:
         """Lightning hook that is called when a training epoch ends."""
+        
 
     def validation_step(self, batch: Tuple[torch.Tensor, torch.Tensor], batch_idx: int) -> None:
         """Perform a single validation step on a batch of data from the validation set.
@@ -191,6 +211,10 @@ class LitModuleBase(LightningModule):
             return
 
         img_ids, loss, logits, probs, preds, targets, fold = self.model_step(batch)
+
+        # Store predictions and targets for confusion matrix
+        self._val_preds.append(preds.detach().cpu())
+        self._val_targets.append(targets.detach().cpu())
 
         # Update and log metrics
         self.val_loss(loss)
@@ -251,20 +275,21 @@ class LitModuleBase(LightningModule):
 
     def _log_csv_artifact(self, data_dict):
         """Log CSV predictions as a wandb artifact."""
-        dataset_name = self._trainer.datamodule.dataset_name if hasattr(self._trainer.datamodule, 'dataset_name') else None
-        if dataset_name:
-            dataset_name = dataset_name.split('/')[-1]
-        else:
-            dataset_name = 'submission'
+        # dataset_name = self._trainer.datamodule.dataset_name if hasattr(self._trainer.datamodule, 'dataset_name') else None
+        # if dataset_name:
+        #     dataset_name = dataset_name.split('/')[-1]
+        # else:
+        #     dataset_name = 'submission'
+
 
         df = pd.DataFrame(data_dict)
         os.makedirs(self.csv_save_path, exist_ok=True)
-        csv_path = os.path.join(self.csv_save_path, f"{dataset_name}.csv")
+        csv_path = os.path.join(self.csv_save_path, f"{self.csv_name}.csv")
         df.to_csv(csv_path, index=False)
         
         # Create and log wandb artifact
         artifact = wandb.Artifact(
-            name=dataset_name,
+            name=self.csv_name,
             type="predictions",
             description="Test set predictions with probabilities and metadata"
         )
@@ -283,12 +308,6 @@ class LitModuleBase(LightningModule):
         """
         if self.hparams.compile and stage == "fit":
             self.net = torch.compile(self.net)
-        
-        # Set up class indexing for test stage
-        # logger.info(f'Trainer initialized - {self._trainer is not None}')
-        # # if self._trainer is not None and self._trainer.state.stage == "test":
-        # self.test_classes_to_idx = self._trainer.test_classes_to_idx
-        # self.test_idx_to_classes = self._trainer.test_idx_to_classes
 
     def configure_optimizers(self) -> Dict[str, Any]:
         """Choose what optimizers and learning-rate schedulers to use in your optimization.
@@ -357,3 +376,80 @@ class LitModuleBase(LightningModule):
             filtered_state_dict[key] = value
         
         return super().load_state_dict(filtered_state_dict, strict=strict)
+
+    def on_train_end(self):
+        """Lightning hook called at the end of training."""
+        pass
+        # self._create_and_log_confusion_matrices()
+    
+    def _create_and_log_confusion_matrices(self):
+        """Create and log confusion matrices for training and validation sets."""
+        try:
+            # Get class names for labels
+            class_names = list(self.classes_to_idx.keys()) if self.classes_to_idx else [str(i) for i in range(self.num_classes)]
+            
+            # Create training confusion matrix
+            if self._train_preds and self._train_targets:
+                train_preds_all = torch.cat(self._train_preds).numpy()
+                train_targets_all = torch.cat(self._train_targets).numpy()
+                train_cm = confusion_matrix(train_targets_all, train_preds_all)
+                
+                # Create and save training confusion matrix plot
+                train_fig = self._plot_confusion_matrix(train_cm, class_names, "Training Confusion Matrix")
+                
+                # Log to wandb
+                if self.logger and hasattr(self.logger, 'experiment'):
+                    self.logger.experiment.log({"train/confusion_matrix": wandb.Image(train_fig)})
+                
+                plt.close(train_fig)
+                logger.info("Training confusion matrix logged to wandb")
+            
+            # Create validation confusion matrix
+            if self._val_preds and self._val_targets:
+                val_preds_all = torch.cat(self._val_preds).numpy()
+                val_targets_all = torch.cat(self._val_targets).numpy()
+                val_cm = confusion_matrix(val_targets_all, val_preds_all)
+                
+                # Create and save validation confusion matrix plot
+                val_fig = self._plot_confusion_matrix(val_cm, class_names, "Validation Confusion Matrix")
+                
+                # Log to wandb
+                if self.logger and hasattr(self.logger, 'experiment'):
+                    self.logger.experiment.log({"val/confusion_matrix": wandb.Image(val_fig)})
+                
+                plt.close(val_fig)
+                logger.info("Validation confusion matrix logged to wandb")
+                
+        except Exception as e:
+            logger.error(f"Error creating confusion matrices: {e}")
+    
+    def _plot_confusion_matrix(self, cm, class_names, title):
+        """Create a confusion matrix plot.
+        
+        Args:
+            cm: Confusion matrix array
+            class_names: List of class names
+            title: Title for the plot
+            
+        Returns:
+            matplotlib figure
+        """
+        plt.style.use('default')
+        fig, ax = plt.subplots(figsize=(10, 8))
+        
+        # Create heatmap
+        sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', 
+                   xticklabels=class_names, yticklabels=class_names,
+                   ax=ax, cbar_kws={'shrink': 0.8})
+        
+        ax.set_title(title, fontsize=16, fontweight='bold')
+        ax.set_xlabel('Predicted Label', fontsize=12)
+        ax.set_ylabel('True Label', fontsize=12)
+        
+        # Rotate labels for better readability
+        plt.setp(ax.get_xticklabels(), rotation=45, ha='right')
+        plt.setp(ax.get_yticklabels(), rotation=0)
+        
+        plt.tight_layout()
+        return fig
+ 

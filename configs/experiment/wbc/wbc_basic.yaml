@@ -44,6 +44,8 @@ model:
     _partial_: true
     milestones: [30, 70, 100]
     gamma: 0.1
+  csv_save_path: "csv/wbc/"
+  csv_name: "resnet50_CW"
   num_classes: ${num_classes}
   class_weights: null
 
