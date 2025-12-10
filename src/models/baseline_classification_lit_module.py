@@ -1,4 +1,5 @@
 import os
+import pdb
 import time
 from typing import List, Optional
 from typing import Tuple
@@ -106,13 +107,15 @@ class BaselineClassificationLitModule(LitModuleBase):
             self.inference_times.append(inference_time_per_sample)
 
         preds = torch.argmax(probs, dim=1)
+        # pdb.set_trace()
 
         # ---- LOSS COMPUTATION (primary CE loss + secondary calibration) ----
         # when tested with ood data, class dims from dataloader may not match model output dims
-        if not self.log_test_metrics:  
+        if not self.log_test_metrics or self.trainer.state.stage == 'predict':  
             loss = None
         else:
             ce = self.criterion(logits, targets)  # Cross-entropy classification loss
+            # pdb.set_trace()
             cal_penalty = logits.new_tensor(0.0)
             cal_terms = {}
 

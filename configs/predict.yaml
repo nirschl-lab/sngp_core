@@ -10,52 +10,23 @@ defaults:
   - trainer: default
   - paths: default
   - extras: default
-
-#  # experiment configs allow for version control of specific hyperparameters
-#  # e.g. best hyperparameters for given model and datamodule
-  - experiment: null
-
-  # config for hyperparameter optimization
-  - hparams_search: null
-
-  # optional local config for machine/user specific settings
-  # it's optional since it doesn't need to exist and is excluded from version control
-  - optional local: default
-
-  # debugging config (enable through command line, e.g. `python train.py debug=default)
-  - debug: null
-
   - hydra: default
-
-  # if using submitit_slurm, set override after others but before _self_
-  # - override /hydra/launcher: submitit_slurm
-
+#  - override /hydra/launcher: submitit_slurm # uncomment if using submitit_slurm
   - _self_
 
 # task name, determines output directory path
-task_name: "train"
-
-# tags to help you identify your experiments
-# you can overwrite this in experiment configs
-# overwrite from command line with `python train.py tags="[first_tag, second_tag]"`
-tags: ["isbi2026",]
-
-# set False to skip model training
-train: True
-
-# evaluate on test set, using best model weights achieved during training
-# lightning chooses best weights based on the metric specified in checkpoint callback
-test: True
-
-# simply provide checkpoint path to resume training
-ckpt_path: null
-
-# random seed for experiment reproducibility
-# most popular random seeds: https://blog.semicolonsoftware.de/the-most-popular-random-seeds/
-seed: null
+task_name: "predict"
+tags: ["eval", "sngp", "isbi2026"]
 
 # flag for torch precision: 'medium', 'high' or 'highest'
 precision: "medium"
+
+## passing checkpoint path is necessary for evaluation
+ckpt_path: null # (use for single run, multirun below)
+
+# random seed for experiment reproducibility
+# most popular random seeds: https://blog.semicolonsoftware.de/the-most-popular-random-seeds/
+# seed: 0
 
 # # multirun config
 # hydra:
@@ -74,6 +45,6 @@ precision: "medium"
 #       # nested overrides: Hydra only applies '+' overrides when the key does not exist in the main/base/subtree config.
 #       # nested overrides: Hydra applies '++' to force override keys that do exist in the main/base/subtree config.
 #       # overrides need to be applied to the correct subtree
-#       +experiment: ["mcdropout_acevedo", "mcdropout_kather_2016", "mcdropout_kather_2018", "mcdropout_tang", "mcdropout_wong"]
 #       ++logger.wandb.project: "baseline_vs_sngp" # project name in wandb
 #       seed:  0,1,1234,380843,42
+#       # most popular random seeds: https://blog.semicolonsoftware.de/the-most-popular-random-seeds/
