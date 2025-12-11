@@ -3,6 +3,11 @@ from torchvision.models import (
     vit_b_16, vit_b_32, vit_l_16, vit_l_32, vit_h_14,
     ViT_B_16_Weights, ViT_B_32_Weights, ViT_L_16_Weights, ViT_L_32_Weights, ViT_H_14_Weights
 )
+from torchvision.models import (
+    swin_t, swin_s, swin_b, swin_v2_t, swin_v2_s, swin_v2_b,
+    Swin_T_Weights, Swin_S_Weights, Swin_B_Weights,
+    Swin_V2_T_Weights, Swin_V2_S_Weights, Swin_V2_B_Weights
+)
 import torch
 import torch.nn as nn
 from torch.nn.utils import spectral_norm
@@ -236,6 +241,52 @@ class SNGPClassifier(nn.Module):
             self.pool = nn.Identity()   # no pooling for ViT
             self.flatten = nn.Identity()
         
+        elif arch in {"swin_t", "swin_s", "swin_b", "swin_v2_t", "swin_v2_s", "swin_v2_b"}:
+            # Construct Swin Transformer with optional ImageNet weights
+            if arch == "swin_t":
+                weights = Swin_T_Weights.IMAGENET1K_V1 if pretrained else None
+                base = swin_t(weights=weights)
+            elif arch == "swin_s":
+                weights = Swin_S_Weights.IMAGENET1K_V1 if pretrained else None
+                base = swin_s(weights=weights)
+            elif arch == "swin_b":
+                weights = Swin_B_Weights.IMAGENET1K_V1 if pretrained else None
+                base = swin_b(weights=weights)
+            elif arch == "swin_v2_t":
+                weights = Swin_V2_T_Weights.IMAGENET1K_V1 if pretrained else None
+                base = swin_v2_t(weights=weights)
+            elif arch == "swin_v2_s":
+                weights = Swin_V2_S_Weights.IMAGENET1K_V1 if pretrained else None
+                base = swin_v2_s(weights=weights)
+            elif arch == "swin_v2_b":
+                weights = Swin_V2_B_Weights.IMAGENET1K_V1 if pretrained else None
+                base = swin_v2_b(weights=weights)
+
+            # Swin Transformer head is usually a Linear layer; get its in_features
+            feat_dim = None
+            if hasattr(base, "head") and hasattr(base.head, "in_features"):
+                feat_dim = base.head.in_features
+            else:
+                # Fallback: try to find any Linear layer
+                for m in base.modules():
+                    if isinstance(m, nn.Linear):
+                        feat_dim = m.in_features
+                        break
+            
+            if feat_dim is None:
+                # Default feature dimensions for common Swin models
+                feat_dim_map = {
+                    "swin_t": 768, "swin_s": 768, "swin_b": 1024,
+                    "swin_v2_t": 768, "swin_v2_s": 768, "swin_v2_b": 1024
+                }
+                feat_dim = feat_dim_map.get(arch, 768)
+
+            base.head = nn.Identity()  # expose feature representation [B, feat_dim]
+
+            self.backbone = base
+            self.pool = nn.Identity()   # no pooling for Swin
+            self.flatten = nn.Identity()
+        
         else:
             raise ValueError(f"Unsupported arch: {arch}")
 
@@ -281,7 +332,7 @@ class SNGPClassifier(nn.Module):
 
 if __name__ == "__main__":
     # simple test
-    for arch in ["resnet18", "resnet34", "resnet50", "vit_b_16", "vit_b_32", "vit_l_16", "vit_l_32", "vit_h_14"]:
+    for arch in ["resnet18", "resnet34", "resnet50", "vit_b_16", "vit_b_32", "vit_l_16", "vit_l_32", "vit_h_14", "swin_t", "swin_s", "swin_b", "swin_v2_t", "swin_v2_s", "swin_v2_b"]:
         print(f"Testing SNGPClassifier with arch={arch}")
         model = SNGPClassifier(
             num_classes=10,

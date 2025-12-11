@@ -1,0 +1,46 @@
+_target_: src.models.wbc_classification_lit_module.BaselineClassificationLitModule
+
+name: baseline
+# backbone
+net:
+  _target_: src.models.baseline.baseline_models.BaselineClassifier
+  arch: swin_t  # Options: swin_t, swin_s, swin_b, swin_v2_t, swin_v2_s, swin_v2_b
+  num_classes: 8
+  dropout_p: 0.2
+  pretrained: true
+
+optimizer:
+  _target_: torch.optim.AdamW
+  _partial_: true
+  lr: 0.001
+  weight_decay: 0.0
+
+scheduler:
+    _target_: torch.optim.lr_scheduler.MultiStepLR
+    _partial_: true
+    milestones: [30, 70, 100]
+    gamma: 0.1
+
+compile: false
+num_classes: 8
+log_csv: false
+csv_save_path: "csv/"
+csv_name: "test_predictions"
+log_metrics_per_class: false
+log_test_metrics: true
+class_freq: null
+class_weights: [0.17, 0.28, 0.8, 1.12, 2.61, 5.17, 4.98, 5.66, 5.89, 6.68, 21.63, 44.01, 196.36]
+class_indices:
+    "SNE": 0
+    "LY": 1
+    "MO": 2
+    "BL": 3
+    "EO": 4
+    "BA": 5
+    "MY": 6
+    "BNE": 7
+    "MMY": 8
+    "VLY": 9
+    "PMY": 10
+    "PC": 11
+    "PLY": 12

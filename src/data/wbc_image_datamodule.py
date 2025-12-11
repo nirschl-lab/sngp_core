@@ -160,7 +160,18 @@ class WBCClassificationDataModule(LightningDataModule):
             self.batch_size_per_device = self.hparams.batch_size // self.trainer.world_size
 
         if stage == "predict" or self.trainer.state.stage == "predict":
-            
+            val_csv = os.path.join(self.data_dir, 'phase2_eval.csv')
+            val_img_dir = os.path.join(self.data_dir, 'phase2', 'eval')
+            # For testing, load the test dataset
+            self.data_val = WBCDataset(
+                csv_file=val_csv,
+                image_dir=val_img_dir,
+                classes_to_idx=self.classes_to_idx,
+                transform=self.val_transform,
+                fold='validation'
+            )            
+        
+        elif stage == 'test' or self.trainer.state.stage == "test":
             test_csv = os.path.join(self.data_dir, 'phase2_test.csv')
             test_img_dir = os.path.join(self.data_dir, 'phase2', 'test')
             # For testing, load the test dataset
@@ -169,8 +180,9 @@ class WBCClassificationDataModule(LightningDataModule):
                 image_dir=test_img_dir,
                 classes_to_idx=self.classes_to_idx,
                 transform=self.test_transform,
-                fold='test'
+                fold='validation'
             )
+
 
         else: # train and val
             # For prediction, load the test dataset (or specify a different dataset for prediction)
@@ -264,7 +276,7 @@ class WBCClassificationDataModule(LightningDataModule):
         """
         
         return DataLoader(
-            dataset=self.data_test,
+            dataset=self.data_val,
             batch_size=self.batch_size_per_device,
             num_workers=self.hparams.num_workers,
             pin_memory=self.hparams.pin_memory,

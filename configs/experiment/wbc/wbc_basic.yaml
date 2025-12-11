@@ -11,7 +11,7 @@ defaults:
 
 # all parameters below will be merged with parameters from default configurations set above
 # this allows you to overwrite only specified parameters
-name: "baseline_resnet50"
+name: "baseline_resnet18_CW"
 WANDB_PROJECT: "wbc_challenge"
 
 seed: 12345
@@ -34,7 +34,7 @@ model:
     weight_decay: 1e-3
   hist_bins: 10
   net:
-    arch: resnet50
+    arch: resnet18
     num_classes: ${num_classes}
     dropout_p: 0.2
     pretrained: false
@@ -45,14 +45,14 @@ model:
     milestones: [30, 70, 100]
     gamma: 0.1
   csv_save_path: "csv/wbc/"
-  csv_name: "resnet50_CW"
+  csv_name: "resnet18_CW"
   num_classes: ${num_classes}
-  class_weights: null
+  class_weights: [0.17, 0.28, 0.8, 1.12, 2.61, 5.17, 4.98, 5.66, 5.89, 6.68, 21.63, 44.01, 196.36]
 
 data:
   datamodule:
     data_dir: /data1/shared/data/wbc-bench-2026/
-    batch_size: 64
+    batch_size: ${curr_batch_size}
     num_workers: 32
     pin_memory: False
 

@@ -1,4 +1,5 @@
 import os
+import pdb
 from typing import Any, Dict, List, Optional, Tuple
 
 import matplotlib.pyplot as plt
@@ -17,6 +18,7 @@ from torchmetrics.classification import (
     MulticlassRecall,
 )
 from torchmetrics.classification.accuracy import Accuracy
+from src.losses.focal_loss import FocalLoss
 
 class LitModuleBase(LightningModule):
     def __init__(
@@ -47,7 +49,14 @@ class LitModuleBase(LightningModule):
         self.class_freq = class_freq
         self.class_weights = class_weights
         self.label_smoothing = label_smoothing
-        self.criterion = self._init_criterion()
+        # self.criterion = self._init_criterion()
+    
+        # Before passing class_weights to FocalLoss
+        if self.class_weights is not None:
+            self.class_weights = torch.tensor(list(self.class_weights), dtype=torch.float32)
+
+        self.criterion = FocalLoss(alpha=self.class_weights, gamma=2.0)
+        logger.info(f"Focal loss initialized with class weights: {self.class_weights}")
 
         # Training metrics
         self.train_acc = Accuracy(task="multiclass", num_classes=self.num_classes)
@@ -78,6 +87,7 @@ class LitModuleBase(LightningModule):
         self._test_image_ids: List[str] = []
         self._test_fold: List[str] = []
         self._test_preds: List[torch.Tensor] = []
+        self._test_targets: List[torch.Tensor] = []
         
         # Storage for confusion matrix creation
         self._train_preds: List[torch.Tensor] = []
@@ -97,6 +107,8 @@ class LitModuleBase(LightningModule):
         self._predict_probs: List[torch.Tensor] = []
         self._predict_image_ids: List[str] = []
         self._predict_fold: List[str] = []
+        self._predict_preds: List[torch.Tensor] = []
+        self._predict_targets: List[torch.Tensor] = []
 
         # Store class mappings
         self.classes_to_idx = class_indices
@@ -142,12 +154,6 @@ class LitModuleBase(LightningModule):
         self.val_acc.reset()
         self.val_acc_best.reset()
         
-        # Reset confusion matrix storage
-        self._train_preds.clear()
-        self._train_targets.clear()
-        self._val_preds.clear()
-        self._val_targets.clear()
-    
     def model_step(
         self, batch: Tuple[torch.Tensor, torch.Tensor]
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
@@ -193,6 +199,12 @@ class LitModuleBase(LightningModule):
 
         # Return loss or backpropagation will fail
         return loss
+    def on_train_epoch_start(self):
+        # Reset confusion matrix storage
+        self._train_preds.clear()
+        self._train_targets.clear()
+        self._val_preds.clear()
+        self._val_targets.clear()
 
     def on_train_epoch_end(self) -> None:
         """Lightning hook that is called when a training epoch ends."""
@@ -205,10 +217,10 @@ class LitModuleBase(LightningModule):
             labels.
         :param batch_idx: The index of the current batch.
         """
-        # Skip if batch and epoch are both 0
-        if batch_idx == 0 and self.current_epoch == 0:
-            logger.warning("Skipping validation step for batch 0 in epoch 0")
-            return
+        # # Skip if batch and epoch are both 0
+        # if batch_idx == 0 and self.current_epoch == 0:
+        #     logger.warning("Skipping validation step for batch 0 in epoch 0")
+        #     return
 
         img_ids, loss, logits, probs, preds, targets, fold = self.model_step(batch)
 
@@ -255,7 +267,10 @@ class LitModuleBase(LightningModule):
         img_ids, x, targets, fold = batch
         logits = self.forward(x)
         probs = torch.softmax(logits, dim=1)
+        preds = torch.argmax(probs, dim=1)
         self._test_probs.append(probs.detach().cpu())
+        self._test_preds.append(preds.detach().cpu())
+        self._test_targets.append(targets.detach().cpu())
         self._test_image_ids.extend(img_ids)
 
     def on_test_epoch_end(self) -> None:
@@ -265,13 +280,11 @@ class LitModuleBase(LightningModule):
         prediction = np.argmax(probs_all, axis=-1)
         prediction = [self.idx_to_classes[idx] for idx in prediction]
 
-
         data_dict = {
             'ID': self._test_image_ids,
             'labels': prediction,
         }
         self._log_csv_artifact(data_dict)
-
 
     def _log_csv_artifact(self, data_dict):
         """Log CSV predictions as a wandb artifact."""
@@ -296,7 +309,6 @@ class LitModuleBase(LightningModule):
         artifact.add_file(csv_path)
         self.logger.experiment.log_artifact(artifact)
     
-
     def setup(self, stage: str) -> None:
         """Lightning hook that is called at the beginning of fit (train + validate), validate,
         test, or predict.
@@ -341,9 +353,12 @@ class LitModuleBase(LightningModule):
         img_ids, x, targets, fold = batch
         logits = self.forward(x)
         probs = torch.softmax(logits, dim=1)
+        preds = torch.argmax(probs, dim=1)
 
-        # Store predictions and metadata
+        
         self._predict_probs.append(probs.detach().cpu())
+        self._predict_preds.append(preds.detach().cpu())
+        self._predict_targets.append(targets.detach().cpu())
         self._predict_image_ids.extend(img_ids)
         
     
@@ -361,6 +376,13 @@ class LitModuleBase(LightningModule):
                 'labels': prediction,
             }
             self._log_csv_artifact(data_dict)
+        
+        res = self.create_confusion_matrix()
+        if res is None or len(res) == 0:
+            return
+        
+        if self.logger and hasattr(self.logger, 'experiment'):
+            self.logger.experiment.log({"val_set_confusion_matrix": wandb.Image(res['validation_cm'])})
 
     
     def load_state_dict(self, state_dict, strict=True):
@@ -379,49 +401,106 @@ class LitModuleBase(LightningModule):
 
     def on_train_end(self):
         """Lightning hook called at the end of training."""
-        pass
-        # self._create_and_log_confusion_matrices()
+        res = self.create_confusion_matrix()
+
+        if len(res) == 0:
+            return
+
+        if self.logger and hasattr(self.logger, 'experiment'):
+            self.logger.experiment.log({"train/confusion_matrix": wandb.Image(res['train_cm'])})
+        
+        # Log to wandb
+        if self.logger and hasattr(self.logger, 'experiment'):
+            self.logger.experiment.log({"val/confusion_matrix": wandb.Image(res["val_cm"])})
+        
+
     
-    def _create_and_log_confusion_matrices(self):
-        """Create and log confusion matrices for training and validation sets."""
-        try:
-            # Get class names for labels
-            class_names = list(self.classes_to_idx.keys()) if self.classes_to_idx else [str(i) for i in range(self.num_classes)]
+    def create_confusion_matrix(self):
+        """Manually create confusion matrices for both train and validation sets.
+        
+        Args:
+            save_path: Directory to save the confusion matrix plots
+        """
+        logger.info("Creating confusion matrices...")
+        
+        # Get class names for labels
+        class_names = [self.idx_to_classes[i] for i in range(self.num_classes)]
+        
+        results = {}
+        
+        os.makedirs(self.csv_save_path, exist_ok=True)
+        # csv_path = os.path.join(self.csv_save_path, f"{self.csv_name}.csv")
+
+        #only used in testing stage 
+        if self.trainer.state.stage == 'predict':
+            if self._predict_preds and self._predict_targets:
+                logger.info('Creating validation set confusion matrix...')
+                val_preds_all = torch.cat(self._predict_preds).numpy()
+                val_targets_all = torch.cat(self._predict_targets).numpy()
+                logger.info(f"total validation samples - {len(val_preds_all)}")
+                val_cm = confusion_matrix(val_targets_all, val_preds_all)
+                
+                # Create and save plot
+                val_fig = self._plot_confusion_matrix(val_cm, class_names, "Validation Data Confusion Matrix")
+                val_path = os.path.join(self.csv_save_path, "validation_confusion_matrix.png")
+                val_fig.savefig(val_path, dpi=300, bbox_inches='tight')
+                plt.close(val_fig)
+                
+                results['validation_cm'] = val_fig
+                logger.info(f"Validation confusion matrix saved to {val_path}")
+            else:
+                logger.warning("No validation predictions available for confusion matrix")
             
+            return results
+            
+            
+        else:
+
             # Create training confusion matrix
             if self._train_preds and self._train_targets:
+                logger.info('Creating training confusion matrix...')
                 train_preds_all = torch.cat(self._train_preds).numpy()
                 train_targets_all = torch.cat(self._train_targets).numpy()
+                logger.info(f"total train samples - {len(train_preds_all)}")
                 train_cm = confusion_matrix(train_targets_all, train_preds_all)
                 
-                # Create and save training confusion matrix plot
-                train_fig = self._plot_confusion_matrix(train_cm, class_names, "Training Confusion Matrix")
-                
-                # Log to wandb
-                if self.logger and hasattr(self.logger, 'experiment'):
-                    self.logger.experiment.log({"train/confusion_matrix": wandb.Image(train_fig)})
-                
+                # Create and save plot
+                train_fig = self._plot_confusion_matrix(train_cm, class_names, "Train Data Confusion Matrix")
+                train_path = os.path.join(self.csv_save_path, "train_confusion_matrix.png")
+                train_fig.savefig(train_path, dpi=300, bbox_inches='tight')
                 plt.close(train_fig)
-                logger.info("Training confusion matrix logged to wandb")
+                
+                results['train_cm'] = train_fig
+                logger.info(f"Training confusion matrix saved to {train_path}")
+            else:
+                logger.warning("No training predictions available for confusion matrix")
             
             # Create validation confusion matrix
             if self._val_preds and self._val_targets:
+                logger.info('Creating validation confusion matrix...')
                 val_preds_all = torch.cat(self._val_preds).numpy()
                 val_targets_all = torch.cat(self._val_targets).numpy()
+                logger.info(f"total val samples - {len(val_preds_all)}")
                 val_cm = confusion_matrix(val_targets_all, val_preds_all)
                 
-                # Create and save validation confusion matrix plot
-                val_fig = self._plot_confusion_matrix(val_cm, class_names, "Validation Confusion Matrix")
-                
-                # Log to wandb
-                if self.logger and hasattr(self.logger, 'experiment'):
-                    self.logger.experiment.log({"val/confusion_matrix": wandb.Image(val_fig)})
-                
+                # Create and save plot
+                val_fig = self._plot_confusion_matrix(val_cm, class_names, "Validation Data Confusion Matrix")
+                val_path = os.path.join(self.csv_save_path, "val_confusion_matrix.png")
+                val_fig.savefig(val_path, dpi=300, bbox_inches='tight')
                 plt.close(val_fig)
-                logger.info("Validation confusion matrix logged to wandb")
                 
-        except Exception as e:
-            logger.error(f"Error creating confusion matrices: {e}")
+                results['val_cm'] = val_fig
+                logger.info(f"Validation confusion matrix saved to {val_path}")
+            else:
+                logger.warning("No validation predictions available for confusion matrix")
+            
+            return results
+
+    def infer_train_dataset(self):
+        pass
+
+    def infer_val_dataset(self):
+        pass
     
     def _plot_confusion_matrix(self, cm, class_names, title):
         """Create a confusion matrix plot.
@@ -452,4 +531,3 @@ class LitModuleBase(LightningModule):
         
         plt.tight_layout()
         return fig
- 

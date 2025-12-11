@@ -42,7 +42,7 @@ cv2.setNumThreads(0)
 cv2.setUseOptimized(True)
 
 @task_wrapper
-def evaluate(cfg: DictConfig) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+def predict(cfg: DictConfig) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     """Evaluates given checkpoint on a datamodule testset.
 
     This method is wrapped in optional @task_wrapper decorator, that controls the behavior during
@@ -132,7 +132,7 @@ def main(cfg: DictConfig) -> None:
     # (e.g. ask for tags if none are provided in cfg, print cfg tree, etc.)
     extras(cfg)
 
-    evaluate(cfg)
+    predict(cfg)
 
 
 if __name__ == "__main__":

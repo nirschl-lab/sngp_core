@@ -4,29 +4,29 @@
 # python train.py experiment=example
 
 defaults:
-  - override /data: image_classifier
-  - override /model: baseline_classifier
+  - override /data: wbc_classifier
+  - override /model: swin_baseline_classifier
   - override /callbacks: default
   - override /trainer: default
 
 # all parameters below will be merged with parameters from default configurations set above
 # this allows you to overwrite only specified parameters
-name: "kather2018_baseline_resnet18"
-WANDB_PROJECT: "final_experiments"
-tags: ["kather_et_al_2018", "resnet18", "training", "baseline"]
+name: "swin_s_focal_loss"
+WANDB_PROJECT: "wbc_challenge"
 
 seed: 12345
 
 base_lr: 1e-3
 # base_batch_size: 128
-curr_batch_size: 128
-num_classes: 9
+curr_batch_size: 64
+num_classes: 13
 
 trainer:
-  min_epochs: 30
-  max_epochs: 150
+  min_epochs: 1
+  max_epochs: 1
   accelerator: "gpu"
-
+  # limit_train_batches: 1
+  # limit_val_batches: 1
 
 model:
   optimizer:
@@ -44,15 +44,17 @@ model:
     _partial_: true
     milestones: [30, 70, 100]
     gamma: 0.1
+  csv_save_path: "csv/wbc/"
+  csv_name: "swin_s_focal_loss"
   num_classes: ${num_classes}
-  class_weights: [0.8017, 0.8016, 1.1222, 0.9352, 0.9352, 1.2469, 1.1222, 1.0202, 1.2469]
+  class_weights: [0.17, 0.28, 0.8, 1.12, 2.61, 5.17, 4.98, 5.66, 5.89, 6.68, 21.63, 44.01, 196.36]
 
 data:
   datamodule:
-    dataset_name: "nirschl-lab/kather_et_al_2018"
-    num_classes: ${num_classes}
+    data_dir: /data1/shared/data/wbc-bench-2026/
     batch_size: ${curr_batch_size}
-    sample_rate: 0
+    num_workers: 32
+    pin_memory: False
 
 logger:
   wandb:
