@@ -63,9 +63,12 @@ class ClassificationImageDataModule(LightningDataModule):
         self,
         dataset_name: str,
         num_classes: int = 8,
-        batch_size: int = 64,
-        num_workers: int = 0,
+        train_batch_size: int = 64,
+        val_batch_size: int = 64,
+        test_batch_size: int = 64,
+        num_workers: int = 32,
         pin_memory: bool = False,
+        class_indices: Dict[str, int] = None,
         train_augmentations: Optional[transforms.Compose | A.Compose] = None,  # New argument
         val_augmentations: Optional[transforms.Compose | A.Compose] = None,
         test_augmentations: Optional[transforms.Compose | A.Compose] = None,
@@ -126,11 +129,17 @@ class ClassificationImageDataModule(LightningDataModule):
         self.data_val: Optional[Dataset] = None
         self.data_test: Optional[Dataset] = None
 
-        self.batch_size_per_device = batch_size
+        self.train_batch_size_per_device = train_batch_size
+        self.val_batch_size_per_device = val_batch_size
+        self.test_batch_size_per_device = test_batch_size
 
         self.log_ = RankedLogger(__name__, rank_zero_only=True)
 
         self.test_all_folds = test_all_folds
+
+        # Store class mappings
+        self.classes_to_idx = class_indices
+        self.idx_to_classes = {v: k for k, v in class_indices.items()} if class_indices else None
 
 
     def setup(self, stage: Optional[str] = None) -> None:
@@ -146,14 +155,28 @@ class ClassificationImageDataModule(LightningDataModule):
         # Divide batch size by the number of devices.
         # pdb.set_trace()
         if self.trainer is not None:
-            if self.hparams.batch_size % self.trainer.world_size != 0:
+            if self.hparams.train_batch_size % self.trainer.world_size != 0:
                 raise RuntimeError(
-                    f"Batch size ({self.hparams.batch_size}) is not divisible by the number of devices ({self.trainer.world_size})."
+                    f"Batch size ({self.hparams.train_batch_size}) is not divisible by the number of devices ({self.trainer.world_size})."
                 )
-            self.batch_size_per_device = self.hparams.batch_size // self.trainer.world_size
+            self.train_batch_size_per_device = self.hparams.train_batch_size // self.trainer.world_size
+            self.val_batch_size_per_device = self.hparams.val_batch_size // self.trainer.world_size
+            self.test_batch_size_per_device = self.hparams.test_batch_size // self.trainer.world_size
 
+        if stage == "predict" or self.trainer.state.stage == "predict":
+            self.log_.info('Testing on all folds - train, val and test')
+            data_train_ = datasets.load_dataset(self.dataset_name)['train']
+            data_val_   = datasets.load_dataset(self.dataset_name)['validation']
+            data_test_  = datasets.load_dataset(self.dataset_name)['test']
+            eval_train = HFDataset(data_train_, transform=self.test_transform, fold='train')
+            eval_val   = HFDataset(data_val_, transform=self.test_transform, fold='val')
+            eval_test  = HFDataset(data_test_, transform=self.test_transform, fold='test')
+
+            self.data_test = ConcatDataset([eval_train, eval_val, eval_test])
+        
+        
         # set these indices for plotting
-        if self.trainer.state.stage == "test":
+        elif self.trainer.state.stage == "test":
             if self.test_all_folds:
                 self.log_.info('Testing on all folds - train, val and test')
                 data_train_ = datasets.load_dataset(self.dataset_name)['train']
@@ -194,7 +217,7 @@ class ClassificationImageDataModule(LightningDataModule):
         self.log_.info(f'Training samples: {len(self.data_train)}')
         return DataLoader(
             dataset=self.data_train,
-            batch_size=self.batch_size_per_device,
+            batch_size=self.train_batch_size_per_device,
             num_workers=self.hparams.num_workers,
             pin_memory=self.hparams.pin_memory,
             shuffle=True,
@@ -209,7 +232,7 @@ class ClassificationImageDataModule(LightningDataModule):
         self.log_.info(f'Validation samples: {len(self.data_val)}')
         return DataLoader(
             dataset=self.data_val,
-            batch_size=self.batch_size_per_device,
+            batch_size=self.val_batch_size_per_device,
             num_workers=self.hparams.num_workers,
             pin_memory=self.hparams.pin_memory,
             shuffle=False,
@@ -223,11 +246,26 @@ class ClassificationImageDataModule(LightningDataModule):
         """
         return DataLoader(
                 dataset=self.data_test,
-                batch_size=self.batch_size_per_device,
+                batch_size=self.test_batch_size_per_device,
                 num_workers=self.hparams.num_workers,
                 pin_memory=self.hparams.pin_memory,
                 shuffle=False,
             )
+
+    def predict_dataloader(self) -> DataLoader[Any]:
+        """Create and return the predict dataloader.
+        
+        By default, uses the test dataset for prediction.
+        For custom prediction datasets, override this method.
+        """
+        
+        return DataLoader(
+            dataset=self.data_test,
+            batch_size=self.test_batch_size_per_device,
+            num_workers=self.hparams.num_workers,
+            pin_memory=self.hparams.pin_memory,
+            shuffle=False,
+        )
 
     def teardown(self, stage: Optional[str] = None) -> None:
         """Lightning hook for cleaning up after `trainer.fit()`, `trainer.validate()`,

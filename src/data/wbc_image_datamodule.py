@@ -80,7 +80,9 @@ class WBCClassificationDataModule(LightningDataModule):
         self,
         data_dir: str = '/data1/shared/data/wbc-bench-2026/',
         num_classes: int = 8,
-        batch_size: int = 64,
+        train_batch_size: int = 64,
+        val_batch_size: int = 64,
+        test_batch_size: int = 64,
         num_workers: int = 32,
         pin_memory: bool = False,
         class_indices: Dict[str, int] = None,
@@ -140,7 +142,9 @@ class WBCClassificationDataModule(LightningDataModule):
         self.data_val: Optional[Dataset] = None
         self.data_test: Optional[Dataset] = None
 
-        self.batch_size_per_device = batch_size
+        self.train_batch_size_per_device = train_batch_size
+        self.val_batch_size_per_device = val_batch_size
+        self.test_batch_size_per_device = test_batch_size
 
         self.log_ = RankedLogger(__name__, rank_zero_only=True)
 
@@ -153,11 +157,13 @@ class WBCClassificationDataModule(LightningDataModule):
         
         # Divide batch size by the number of devices
         if self.trainer is not None:
-            if self.hparams.batch_size % self.trainer.world_size != 0:
+            if self.hparams.train_batch_size % self.trainer.world_size != 0:
                 raise RuntimeError(
-                    f"Batch size ({self.hparams.batch_size}) is not divisible by the number of devices ({self.trainer.world_size})."
+                    f"Batch size ({self.hparams.train_batch_size}) is not divisible by the number of devices ({self.trainer.world_size})."
                 )
-            self.batch_size_per_device = self.hparams.batch_size // self.trainer.world_size
+            self.train_batch_size_per_device = self.hparams.train_batch_size // self.trainer.world_size
+            self.val_batch_size_per_device = self.hparams.val_batch_size // self.trainer.world_size
+            self.test_batch_size_per_device = self.hparams.test_batch_size // self.trainer.world_size
 
         if stage == "predict" or self.trainer.state.stage == "predict":
             val_csv = os.path.join(self.data_dir, 'phase2_eval.csv')
@@ -241,7 +247,7 @@ class WBCClassificationDataModule(LightningDataModule):
         self.log_.info(f'Training samples: {len(self.data_train)}')
         return DataLoader(
             dataset=self.data_train,
-            batch_size=self.batch_size_per_device,
+            batch_size=self.train_batch_size_per_device,
             num_workers=self.hparams.num_workers,
             pin_memory=self.hparams.pin_memory,
             shuffle=True,
@@ -252,7 +258,7 @@ class WBCClassificationDataModule(LightningDataModule):
         self.log_.info(f'Validation samples: {len(self.data_val)}')
         return DataLoader(
             dataset=self.data_val,
-            batch_size=self.batch_size_per_device,
+            batch_size=self.val_batch_size_per_device,
             num_workers=self.hparams.num_workers,
             pin_memory=self.hparams.pin_memory,
             shuffle=False,
@@ -262,7 +268,7 @@ class WBCClassificationDataModule(LightningDataModule):
         """Create and return the test dataloader."""
         return DataLoader(
             dataset=self.data_test,
-            batch_size=self.batch_size_per_device,
+            batch_size=self.test_batch_size_per_device,
             num_workers=self.hparams.num_workers,
             pin_memory=self.hparams.pin_memory,
             shuffle=False,
@@ -277,7 +283,7 @@ class WBCClassificationDataModule(LightningDataModule):
         
         return DataLoader(
             dataset=self.data_val,
-            batch_size=self.batch_size_per_device,
+            batch_size=self.val_batch_size_per_device,
             num_workers=self.hparams.num_workers,
             pin_memory=self.hparams.pin_memory,
             shuffle=False,

@@ -16,25 +16,29 @@ WANDB_PROJECT: "wbc_challenge"
 
 seed: 12345
 
-base_lr: 1e-3
+base_lr: 1e-4
 # base_batch_size: 128
-curr_batch_size: 64
+train_batch_size: 64
+val_batch_size: 1024
+test_batch_size: 1024
 num_classes: 13
 
 trainer:
-  min_epochs: 1
-  max_epochs: 1
+  min_epochs: 30
+  max_epochs: 150
   accelerator: "gpu"
   # limit_train_batches: 1
   # limit_val_batches: 1
 
 model:
   optimizer:
+    _target_: torch.optim.AdamW
+    _partial_: true
     lr: ${base_lr}
     weight_decay: 1e-3
   hist_bins: 10
   net:
-    arch: resnet18
+    arch: swin_t
     num_classes: ${num_classes}
     dropout_p: 0.2
     pretrained: false
@@ -52,7 +56,9 @@ model:
 data:
   datamodule:
     data_dir: /data1/shared/data/wbc-bench-2026/
-    batch_size: ${curr_batch_size}
+    train_batch_size: ${train_batch_size}
+    val_batch_size: ${val_batch_size}
+    test_batch_size: ${test_batch_size}
     num_workers: 32
     pin_memory: False
 
@@ -72,3 +78,5 @@ callbacks:
     patience: 20
     mode: "min"
     min_delta: 0.005
+
+# ckpt_path: nirschl-lab/wbc_challenge/model-afm9jtyw:v2

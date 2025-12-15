@@ -6,6 +6,7 @@ from typing import Tuple
 import torch
 from loguru import logger
 
+from src.losses.focal_loss import FocalLoss
 from src.metrics.calibration_losses import CalibrationLossConfig, calibration_losses
 from src.models.wbc_module_base import LitModuleBase
 
@@ -26,6 +27,7 @@ class BaselineClassificationLitModule(LitModuleBase):
         class_freq: Optional[dict] = None,
         class_weights: Optional[List[float]] = None,
         label_smoothing: float = 0.0, # recommend avoiding with SNGP and calibration losses, if needed set alpha low [0.01, 0.05].
+        loss_function = 'cross_entropy',
         **kwargs
     ) -> None:
         
@@ -41,12 +43,52 @@ class BaselineClassificationLitModule(LitModuleBase):
             csv_name=csv_name,
             log_metrics_per_class=log_metrics_per_class,
             log_test_metrics=log_test_metrics,
-            class_freq=class_freq,
-            class_weights=class_weights,
-            label_smoothing=label_smoothing,
             class_indices=class_indices,
             **kwargs
         )
+        self.loss_function = loss_function
+        self.class_freq = class_freq
+        self.class_weights = class_weights
+        self.label_smoothing = label_smoothing  # recommend avoiding with SNGP and calibration losses
+        self.num_classes = num_classes
+        # Before passing class_weights to FocalLoss
+        if self.class_weights is not None:
+            self.class_weights = torch.tensor(list(self.class_weights), dtype=torch.float32)
+
+        # Initialize the loss criterion
+        if self.loss_function == 'focal_loss':
+            # Move class_weights to device if not None
+            device_weights = self.class_weights.to(self.device) if self.class_weights is not None else None
+            self.criterion = FocalLoss(alpha=device_weights, gamma=1.0)
+            logger.info(f"Focal loss initialized with class weights: {self.class_weights}")
+        else:
+            self.criterion = self._init_criterion()
+    
+    def _init_criterion(self):
+        """Initialize the loss criterion with class weights and label smoothing if provided."""
+
+        # Set class weights, if provided
+        if self.class_weights:
+            assert len(self.class_weights) == self.num_classes, "Length of class_weights must match num_classes"
+        elif self.class_freq:
+            assert len(self.class_freq) == self.num_classes, "Length of class_freq must match num_classes"
+            weights = torch.tensor([1.0 / self.class_freq[k] for k in self.class_freq], dtype=torch.float32)
+            self.class_weights = weights / weights.sum()
+        else:
+            self.class_weights = None
+
+        if self.class_weights is not None:
+            logger.info(f"Using class weights for CrossEntropyLoss: {self.class_weights} and label smoothing: {self.label_smoothing}")
+            class_weights_tensor = torch.tensor(self.class_weights, device=self.device)
+            return torch.nn.CrossEntropyLoss(
+                weight=class_weights_tensor, label_smoothing=self.label_smoothing
+            )
+        else:
+            logger.info(f"No class weights provided, using unweighted CrossEntropyLoss and label smoothing: {self.label_smoothing}")
+            return torch.nn.CrossEntropyLoss(label_smoothing=self.label_smoothing)
+        
+
+
 
     # def model_step(
     #         self, batch: Tuple[torch.Tensor, torch.Tensor]

@@ -11,14 +11,15 @@ defaults:
 
 # all parameters below will be merged with parameters from default configurations set above
 # this allows you to overwrite only specified parameters
-name: "baseline_resnet18_CW"
+name: "baseline_resnet18_focal_loss"
 WANDB_PROJECT: "wbc_challenge"
 
 seed: 12345
 
 base_lr: 1e-3
-# base_batch_size: 128
-curr_batch_size: 128
+train_batch_size: 64
+val_batch_size: 1024
+test_batch_size: 1024
 num_classes: 13
 
 trainer:
@@ -52,7 +53,9 @@ model:
 data:
   datamodule:
     data_dir: /data1/shared/data/wbc-bench-2026/
-    batch_size: ${curr_batch_size}
+    train_batch_size: ${train_batch_size}
+    val_batch_size: ${val_batch_size}
+    test_batch_size: ${test_batch_size}
     num_workers: 32
     pin_memory: False
 

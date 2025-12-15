@@ -6,8 +6,24 @@ datamodule:
   _target_: src.data.classification_image_datamodule.ClassificationImageDataModule
   dataset_name: nirschl-lab/acevedo_et_al_2020
   num_classes: 8
-  batch_size: 64
+  train_batch_size: 64
+  val_batch_size: 2048
+  test_batch_size: 2048
   num_workers: 32
   pin_memory: True
   test_all_folds: False
   sample_rate: 0
+  class_indices:
+    "SNE": 0
+    "LY": 1
+    "MO": 2
+    "BL": 3
+    "EO": 4
+    "BA": 5
+    "MY": 6
+    "BNE": 7
+    "MMY": 8
+    "VLY": 9
+    "PMY": 10
+    "PC": 11
+    "PLY": 12

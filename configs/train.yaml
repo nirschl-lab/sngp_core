@@ -48,7 +48,7 @@ train: True
 test: True
 
 # simply provide checkpoint path to resume training
-ckpt_path: null
+ckpt_path: null #nirschl-lab/wbc_challenge/model-afm9jtyw:v2
 
 # random seed for experiment reproducibility
 # most popular random seeds: https://blog.semicolonsoftware.de/the-most-popular-random-seeds/

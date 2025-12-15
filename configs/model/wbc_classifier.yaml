@@ -30,6 +30,7 @@ log_metrics_per_class: false
 log_test_metrics: true
 class_freq: null
 class_weights: [0.17, 0.28, 0.8, 1.12, 2.61, 5.17, 4.98, 5.66, 5.89, 6.68, 21.63, 44.01, 196.36]
+loss_function: "focal_loss"
 class_indices:
     "SNE": 0
     "LY": 1

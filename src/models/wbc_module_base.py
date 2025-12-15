@@ -34,29 +34,15 @@ class LitModuleBase(LightningModule):
         csv_name: str = "test_predictions",
         log_metrics_per_class: bool = False,
         log_test_metrics: bool = True,
-        class_freq: Optional[dict] = None,
-        class_weights: Optional[List[float]] = None,
-        label_smoothing: float = 0.0,  # recommend avoiding with SNGP and calibration losses
         **kwargs,
     ) -> None:
         super().__init__()
         self.save_hyperparameters(logger=False)
 
         self.net = net
-        self.num_classes = self.net.num_classes
+        self.num_classes = num_classes
 
-        # Loss criterion parameters
-        self.class_freq = class_freq
-        self.class_weights = class_weights
-        self.label_smoothing = label_smoothing
-        # self.criterion = self._init_criterion()
-    
-        # Before passing class_weights to FocalLoss
-        if self.class_weights is not None:
-            self.class_weights = torch.tensor(list(self.class_weights), dtype=torch.float32)
-
-        self.criterion = FocalLoss(alpha=self.class_weights, gamma=2.0)
-        logger.info(f"Focal loss initialized with class weights: {self.class_weights}")
+        self.criterion = None
 
         # Training metrics
         self.train_acc = Accuracy(task="multiclass", num_classes=self.num_classes)
@@ -113,30 +99,6 @@ class LitModuleBase(LightningModule):
         # Store class mappings
         self.classes_to_idx = class_indices
         self.idx_to_classes = {v: k for k, v in class_indices.items()} if class_indices else None
-
-
-    def _init_criterion(self):
-        """Initialize the loss criterion with class weights and label smoothing if provided."""
-
-        # Set class weights, if provided
-        if self.class_weights:
-            assert len(self.class_weights) == self.num_classes, "Length of class_weights must match num_classes"
-        elif self.class_freq:
-            assert len(self.class_freq) == self.num_classes, "Length of class_freq must match num_classes"
-            weights = torch.tensor([1.0 / self.class_freq[k] for k in self.class_freq], dtype=torch.float32)
-            self.class_weights = weights / weights.sum()
-        else:
-            self.class_weights = None
-
-        if self.class_weights is not None:
-            logger.info(f"Using class weights for CrossEntropyLoss: {self.class_weights} and label smoothing: {self.label_smoothing}")
-            class_weights_tensor = torch.tensor(self.class_weights, device=self.device)
-            return torch.nn.CrossEntropyLoss(
-                weight=class_weights_tensor, label_smoothing=self.label_smoothing
-            )
-        else:
-            logger.info(f"No class weights provided, using unweighted CrossEntropyLoss and label smoothing: {self.label_smoothing}")
-            return torch.nn.CrossEntropyLoss(label_smoothing=self.label_smoothing)
     
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Perform a forward pass through the model `self.net`.
