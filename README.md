@@ -12,10 +12,11 @@
 
 ## Notes
 
-test: used for getting csv on test set which is used for submitting to kaggle
+test: used for getting csv on test set which can be submitted to Kaggle
 
-predict: used for testing on validation set and getting confusion matrix
-after training confusion matrix on train and val set will from last checkpoint will be logged to wandb
+predict: used for infering on validation set, confusion matrix will be logged to wandb 
+
+On the end of training: confusion matrix on train and val set from last epoch will be logged to wandb
 
 ## 📋 Table of Contents
 - [Overview](#-overview)
