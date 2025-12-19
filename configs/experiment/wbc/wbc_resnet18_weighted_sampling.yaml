@@ -1,30 +1,29 @@
 # @package _global_
 
-# to execute this experiment run:
-# python train.py experiment=example
-
 defaults:
-  - override /data: wbc_classifier
-  - override /model: swin_baseline_classifier
+  - override /data: wbc_weighted_sampler
+  - override /model: wbc_classifier
   - override /callbacks: default
   - override /trainer: default
 
-# all parameters below will be merged with parameters from default configurations set above
-# this allows you to overwrite only specified parameters
-name: "baseline_swin_v2_t_label_smoothing"
-WANDB_PROJECT: "wbc_challenge"
+# Override the checkpoint path here
+ckpt_path: nirschl-lab/wbc_challenge/model-mz5kktdt:v0
+resume_training: false
+
+name: "resnet18_weighted_sampling_5epoch"
+WANDB_PROJECT: "resnet18"
 
 seed: 12345
 
-base_lr: 1e-3
+base_lr: 1e-4
 train_batch_size: 64
 val_batch_size: 1024
 test_batch_size: 1024
 num_classes: 13
 
 trainer:
-  min_epochs: 30
-  max_epochs: 200
+  min_epochs: 1
+  max_epochs: 5
   accelerator: "gpu"
   # limit_train_batches: 2
   # limit_val_batches: 5
@@ -35,7 +34,7 @@ model:
     weight_decay: 1e-3
   hist_bins: 10
   net:
-    arch: swin_v2_t
+    arch: resnet18
     num_classes: ${num_classes}
     dropout_p: 0.2
     pretrained: True

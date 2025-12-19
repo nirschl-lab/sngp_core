@@ -68,6 +68,58 @@ class WBCDataset(Dataset):
         
         return img_name, image, label, self.fold
 
+class WBCTrainDatasetWBC(Dataset):
+    def __init__(self, csv_file, image_root_dir, classes_to_idx, transform=None, fold=None):
+        """
+        Args:
+            csv_file (str): Path to the CSV file with annotations.
+            image_dir (str): Directory with all the images.
+            transform (callable, optional): Optional transform to be applied on a sample.
+            fold (str, optional): Fold identifier (train/val/test).
+        """
+        self.annotations = pd.read_csv(csv_file)
+        self.image_root_dir = image_root_dir
+        self.classes_to_idx = classes_to_idx
+        self.transform = transform
+        self.fold = fold
+        
+    
+    def __len__(self):
+        return len(self.annotations)
+    
+    def __getitem__(self, idx):
+        # Handle the case where idx might be a tensor (from Subset)
+        if isinstance(idx, torch.Tensor):
+            idx = idx.item()
+            
+        img_name = self.annotations.iloc[idx]['ID']
+        phase = self.annotations.iloc[idx]['phase']
+        if phase == 'phase2':
+            img_path = os.path.join(self.image_root_dir, phase, 'train', img_name)
+        else: #phase1
+            img_path = os.path.join(self.image_root_dir, phase, img_name)
+        
+        # Load image
+        image = Image.open(img_path).convert('RGB')
+        
+        # Get label if available
+        assert 'labels' in self.annotations.columns, 'Labels column is missing in annotations'
+        assert pd.notna(self.annotations.iloc[idx]['labels']), f"Label is missing for index {idx}"
+        label_name = self.annotations.iloc[idx]['labels']
+        label = self.classes_to_idx[label_name]
+    
+        # Apply transforms
+        if self.transform:
+            if isinstance(self.transform, A.Compose):
+                # Albumentations expects numpy arrays
+                image_np = np.array(image)
+                transformed = self.transform(image=image_np)
+                image = transformed['image']
+            else:
+                image = self.transform(image)
+        
+        return img_name, image, label, self.fold
+
 
 class WBCClassificationDataModule(LightningDataModule):
     """LightningDataModule for the WBC Phase2 classification dataset.
@@ -168,6 +220,13 @@ class WBCClassificationDataModule(LightningDataModule):
         if stage == "predict" or self.trainer.state.stage == "predict":
             val_csv = os.path.join(self.data_dir, 'phase2_eval.csv')
             val_img_dir = os.path.join(self.data_dir, 'phase2', 'eval')
+
+            # val_csv = os.path.join(self.data_dir, 'dist1_val.csv')
+            # val_img_dir = os.path.join(self.data_dir, 'phase2', 'eval')
+
+            # val_csv = os.path.join(self.data_dir, 'dist2_val.csv')
+            # val_img_dir = os.path.join(self.data_dir, 'phase2', 'eval')
+
             # For testing, load the test dataset
             self.data_val = WBCDataset(
                 csv_file=val_csv,
@@ -175,31 +234,7 @@ class WBCClassificationDataModule(LightningDataModule):
                 classes_to_idx=self.classes_to_idx,
                 transform=self.val_transform,
                 fold='validation'
-            )           
-
-            # phase1_train_csv = os.path.join(self.data_dir, 'phase1_label.csv')
-            # phase1_train_img_dir = os.path.join(self.data_dir, 'phase1')
-            
-            # phase2_train_csv = os.path.join(self.data_dir, 'phase2_train.csv')
-            # phase2_train_img_dir = os.path.join(self.data_dir, 'phase2', 'train')
-
-            # self.phase1_data_train = WBCDataset(
-            #     csv_file=phase1_train_csv,
-            #     image_dir=phase1_train_img_dir,
-            #     classes_to_idx=self.classes_to_idx,
-            #     transform=self.train_transform,
-            #     fold='train'
-            # )
-
-            # self.phase2_data_train = WBCDataset(
-            #     csv_file=phase2_train_csv,
-            #     image_dir=phase2_train_img_dir,
-            #     classes_to_idx=self.classes_to_idx,
-            #     transform=self.train_transform,
-            #     fold='train'
-            # )
-
-            # self.data_val = ConcatDataset([self.phase1_data_train, self.phase2_data_train]) 
+            )            
         
         elif stage == 'test' or self.trainer.state.stage == "test":
             test_csv = os.path.join(self.data_dir, 'phase2_test.csv')
@@ -216,35 +251,24 @@ class WBCClassificationDataModule(LightningDataModule):
 
         else: # train and val
             # For prediction, load the test dataset (or specify a different dataset for prediction)
-            phase1_train_csv = os.path.join(self.data_dir, 'phase1_label.csv')
-            phase1_train_img_dir = os.path.join(self.data_dir, 'phase1')
-            
-            phase2_train_csv = os.path.join(self.data_dir, 'phase2_train.csv')
-            phase2_train_img_dir = os.path.join(self.data_dir, 'phase2', 'train')
-            
-            val_csv = os.path.join(self.data_dir, 'phase2_eval.csv')
+            phase1_train_csv = os.path.join(self.data_dir, 'dist1_train.csv')
+            phase1_train_root_dir = self.data_dir
+         
+            val_csv = os.path.join(self.data_dir, 'dist1_val.csv')
             val_img_dir = os.path.join(self.data_dir, 'phase2', 'eval')
 
             test_csv = os.path.join(self.data_dir, 'phase2_test.csv')
             test_img_dir = os.path.join(self.data_dir, 'phase2', 'test')
             
-            self.phase1_data_train = WBCDataset(
+            self.dist1_data_train = WBCTrainDatasetWBC(
                 csv_file=phase1_train_csv,
-                image_dir=phase1_train_img_dir,
+                image_root_dir=phase1_train_root_dir,
                 classes_to_idx=self.classes_to_idx,
                 transform=self.train_transform,
                 fold='train'
             )
 
-            self.phase2_data_train = WBCDataset(
-                csv_file=phase2_train_csv,
-                image_dir=phase2_train_img_dir,
-                classes_to_idx=self.classes_to_idx,
-                transform=self.train_transform,
-                fold='train'
-            )
-
-            self.data_train = ConcatDataset([self.phase1_data_train, self.phase2_data_train])
+            self.data_train = ConcatDataset([self.dist1_data_train])
 
             self.data_val = WBCDataset(
                 csv_file=val_csv,
@@ -253,7 +277,6 @@ class WBCClassificationDataModule(LightningDataModule):
                 transform=self.val_transform,
                 fold='validation'
             )
-
             
             # For testing, load the test dataset
             self.data_test = WBCDataset(
@@ -263,7 +286,6 @@ class WBCClassificationDataModule(LightningDataModule):
                 transform=self.test_transform,
                 fold='test'
             )
-
             
 
     def train_dataloader(self) -> DataLoader[Any]:

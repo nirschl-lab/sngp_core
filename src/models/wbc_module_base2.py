@@ -24,8 +24,6 @@ class LitModuleBase(LightningModule):
     def __init__(
         self,
         net: torch.nn.Module,
-        optimizer: torch.optim.Optimizer,
-        scheduler: torch.optim.lr_scheduler,
         compile: bool,
         class_indices: Dict[str, int],
         num_classes: int = 8,

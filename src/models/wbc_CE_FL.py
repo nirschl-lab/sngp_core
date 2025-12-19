@@ -25,9 +25,12 @@ class BaselineClassificationLitModule(LitModuleBase):
         log_metrics_per_class: bool = False,
         log_test_metrics: bool = True,
         class_freq: Optional[dict] = None,
-        class_weights: Optional[List[float]] = None,
+        CE_class_weights: Optional[List[float]] = None,
+        FL_class_weights: Optional[List[float]] = None,
+        FL_gamma: float = 1.0,
         label_smoothing: float = 0.0, # recommend avoiding with SNGP and calibration losses, if needed set alpha low [0.01, 0.05].
         loss_function = 'cross_entropy',
+        CE_weight: float = 0.5,
         **kwargs
     ) -> None:
         
@@ -48,48 +51,95 @@ class BaselineClassificationLitModule(LitModuleBase):
         )
         self.loss_function = loss_function
         self.class_freq = class_freq
-        self.class_weights = class_weights
+        self.CE_class_weights = CE_class_weights
+        self.FL_class_weights = FL_class_weights
+        self.FL_gamma = FL_gamma
         self.label_smoothing = label_smoothing  # recommend avoiding with SNGP and calibration losses
         self.num_classes = num_classes
         # Before passing class_weights to FocalLoss
-        if self.class_weights is not None:
-            self.class_weights = torch.tensor(list(self.class_weights), dtype=torch.float32)
+        if self.CE_class_weights is not None:
+            self.CE_class_weights = torch.tensor(list(self.CE_class_weights), dtype=torch.float32)
+        
+        if self.FL_class_weights is not None:
+            self.FL_class_weights = torch.tensor(list(self.FL_class_weights), dtype=torch.float32)
 
         # Initialize the loss criterion
-        if self.loss_function == 'focal_loss':
+        if self.loss_function == 'FL_CE':
+            logger.info("Initializing combined Focal Loss and Cross Entropy Loss")
+            self.FL_loss = self._init_FL()
+            self.CE_loss = self._init_CE()
+            self.CE_weight = CE_weight
+        
+        elif self.loss_function == 'focal_loss':
             self.criterion = self._init_FL()
+        
         else:
             self.criterion = self._init_CE()
+
+    def model_step(
+        self, batch: Tuple[torch.Tensor, torch.Tensor]
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Perform a single model step on a batch of data.
+
+        :param batch: A batch of data (a tuple) containing the input tensor of images and target labels.
+
+        :return: A tuple containing (in order):
+            - A tensor of losses.
+            - A tensor of predictions.
+            - A tensor of target labels.
+        """
+        img_ids, x, targets, fold = batch
+        logits = self.forward(x)
+        probs = torch.softmax(logits, dim=1)
+        focal_loss = self.FL_loss(logits, targets)
+        CE_loss = self.CE_loss(logits, targets)
+        loss = self.CE_weight * CE_loss + (1 - self.CE_weight) * focal_loss
+        preds = torch.argmax(logits, dim=1)
+
+        return img_ids, loss, logits, probs, preds, targets, fold
     
     def _init_FL(self):
         # Move class_weights to device if not None
-        device_weights = self.class_weights.to(self.device) if self.class_weights is not None else None
-        logger.info(f"Initializing focal loss with class weights: {self.class_weights}")
-        return FocalLoss(alpha=device_weights, gamma=1.0)
+        device_weights = self.FL_class_weights.to(self.device) if self.FL_class_weights is not None else None
+        logger.info(f"Initializing focal loss with class weights: {self.FL_class_weights}")
+        return FocalLoss(alpha=device_weights, gamma=self.FL_gamma)
     
     def _init_CE(self):
         """Initialize the loss criterion with class weights and label smoothing if provided."""
 
         # Set class weights, if provided
-        if self.class_weights:
-            assert len(self.class_weights) == self.num_classes, "Length of class_weights must match num_classes"
+        if self.CE_class_weights:
+            assert len(self.CE_class_weights) == self.num_classes, "Length of class_weights must match num_classes"
         elif self.class_freq:
             assert len(self.class_freq) == self.num_classes, "Length of class_freq must match num_classes"
             weights = torch.tensor([1.0 / self.class_freq[k] for k in self.class_freq], dtype=torch.float32)
-            self.class_weights = weights / weights.sum()
+            self.CE_class_weights = weights / weights.sum()
         else:
-            self.class_weights = None
+            self.CE_class_weights = None
 
-        if self.class_weights is not None:
-            logger.info(f"Using class weights for CrossEntropyLoss: {self.class_weights} and label smoothing: {self.label_smoothing}")
-            class_weights_tensor = torch.tensor(self.class_weights, device=self.device)
+        if self.CE_class_weights is not None:
+            logger.info(f"Using class weights for CrossEntropyLoss: {self.CE_class_weights} and label smoothing: {self.label_smoothing}")
+            class_weights_tensor = torch.tensor(self.CE_class_weights, device=self.device)
             return torch.nn.CrossEntropyLoss(
                 weight=class_weights_tensor, label_smoothing=self.label_smoothing
             )
         else:
             logger.info(f"No class weights provided, using unweighted CrossEntropyLoss and label smoothing: {self.label_smoothing}")
             return torch.nn.CrossEntropyLoss(label_smoothing=self.label_smoothing)
+    
+    def load_state_dict(self, state_dict, strict=False):
+        """Custom state dict loading to handle mismatched criterion.weight"""
+        # Create a copy to avoid modifying the original
+        filtered_state_dict = {}
         
+        for key, value in state_dict.items():
+            # Skip criterion.weight if we don't have class weights
+            if key == "FL_loss.nll_loss.weight" and self.FL_class_weights is None:
+                print(f"Skipping {key} from checkpoint as model has no class weights")
+                continue
+            filtered_state_dict[key] = value
+        
+        return super().load_state_dict(filtered_state_dict, strict=strict)
 
 
 

@@ -145,10 +145,21 @@ def train(cfg: DictConfig) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     if logger:
         log.info("Logging hyperparameters!")
         log_hyperparameters(object_dict)
+    
+    # pdb.set_trace()
 
     if cfg.get("train"):
         log.info("Starting training!")
-        trainer.fit(model=model, datamodule=datamodule, ckpt_path=cfg.get("ckpt_path"))
+        if cfg.get("ckpt_path") and cfg.get("resume_training"):
+            log.info(f"Resuming training from checkpoint: {cfg.get('ckpt_path')}")
+            trainer.fit(model=model, datamodule=datamodule, ckpt_path=cfg.get("ckpt_path"))
+        elif cfg.get("ckpt_path") and not cfg.get("resume_training"):
+            log.info('Loading weights from checkpoint (not resuming training state)')
+            checkpoint = torch.load(cfg.get("ckpt_path"), weights_only=False)
+            model.load_state_dict(checkpoint['state_dict'])
+            trainer.fit(model=model, datamodule=datamodule)
+        else:
+            trainer.fit(model=model, datamodule=datamodule)
 
     train_metrics = trainer.callback_metrics
 

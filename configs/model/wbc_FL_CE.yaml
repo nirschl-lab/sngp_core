@@ -1,4 +1,4 @@
-_target_: src.models.wbc_classification_lit_module.BaselineClassificationLitModule
+_target_: src.models.wbc_CE_FL.BaselineClassificationLitModule
 
 name: baseline
 # backbone
@@ -29,9 +29,12 @@ csv_name: "test_predictions"
 log_metrics_per_class: false
 log_test_metrics: true
 class_freq: null
-class_weights: [0.17, 0.28, 0.8, 1.12, 2.61, 5.17, 4.98, 5.66, 5.89, 6.68, 21.63, 44.01, 196.36]
+CE_class_weights: null
+FL_class_weights: [0.17, 0.28, 0.8, 1.12, 2.61, 5.17, 4.98, 5.66, 5.89, 6.68, 21.63, 44.01, 196.36]
+FL_gamma: 1.0
 label_smoothing: 0.1
-loss_function: "focal_loss"
+loss_function: 'FL_CE'
+CE_weight: 0.8
 class_indices:
     "SNE": 0
     "LY": 1

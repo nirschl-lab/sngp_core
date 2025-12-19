@@ -5,20 +5,20 @@ from typing import Tuple
 
 import torch
 from loguru import logger
+from transformers import get_cosine_schedule_with_warmup
 
 from src.losses.focal_loss import FocalLoss
 from src.metrics.calibration_losses import CalibrationLossConfig, calibration_losses
-from src.models.wbc_module_base import LitModuleBase
+from src.models.wbc_module_base2 import LitModuleBase
+import timm
+import torch.nn as nn
 
 class BaselineClassificationLitModule(LitModuleBase):
     def __init__(
         self,
-        net: torch.nn.Module,
-        optimizer: torch.optim.Optimizer,
-        scheduler: torch.optim.lr_scheduler,
         compile: bool,
         class_indices: dict,
-        num_classes: int = 8,
+        num_classes: int = 13,
         log_csv: bool = False,
         csv_name: str = "test_predictions",
         csv_save_path: str = "csv/",
@@ -28,14 +28,33 @@ class BaselineClassificationLitModule(LitModuleBase):
         class_weights: Optional[List[float]] = None,
         label_smoothing: float = 0.0, # recommend avoiding with SNGP and calibration losses, if needed set alpha low [0.01, 0.05].
         loss_function = 'cross_entropy',
+        freeze_backbone_epochs: int = 3,  # Number of epochs to freeze backbone
+        max_epochs: int = 50,  # Total number of training epochs
+        warmup_ratio: float = 0.1,  # Ratio of total steps for warmup
         **kwargs
     ) -> None:
+        
+        net = timm.create_model(
+                "vit_large_patch16_224", img_size=224, patch_size=16, init_values=1e-5, num_classes=num_classes, dynamic_img_size=True,
+            )
+        cache_dir = "/data1/shared/models/pathology_fms/"
+        output_model = os.path.join(cache_dir, "uni_dinov2_vit_L16.bin")
+        net.load_state_dict(torch.load(output_model), strict=False)
+        logger.info(f'using uni_dinov2_vit_L16.bin')
+
+        d = net.num_features
+        net.classifier = nn.Sequential(
+            nn.LayerNorm(d),
+            nn.Dropout(0.1),
+            nn.Linear(d, 512),
+            nn.GELU(),
+            nn.Dropout(0.3),
+            nn.Linear(512, 13),
+        )
         
         LitModuleBase.__init__(
             self,
             net=net,
-            optimizer=optimizer,
-            scheduler=scheduler,
             compile=compile,
             num_classes=num_classes,
             log_csv=log_csv,
@@ -51,6 +70,10 @@ class BaselineClassificationLitModule(LitModuleBase):
         self.class_weights = class_weights
         self.label_smoothing = label_smoothing  # recommend avoiding with SNGP and calibration losses
         self.num_classes = num_classes
+        self.freeze_backbone_epochs = freeze_backbone_epochs
+        self.max_epochs = max_epochs
+        self.warmup_ratio = warmup_ratio
+        
         # Before passing class_weights to FocalLoss
         if self.class_weights is not None:
             self.class_weights = torch.tensor(list(self.class_weights), dtype=torch.float32)
@@ -60,6 +83,127 @@ class BaselineClassificationLitModule(LitModuleBase):
             self.criterion = self._init_FL()
         else:
             self.criterion = self._init_CE()
+
+        # Freeze backbone initially
+        # self._freeze_backbone()
+
+    def _freeze_backbone(self):
+        """Freeze all parameters except classifier."""
+        for name, param in self.net.named_parameters():
+            if "classifier" not in name:
+                param.requires_grad = False
+        logger.info("Backbone frozen - only classifier parameters will be updated")
+
+    def _unfreeze_backbone(self):
+        """Unfreeze all backbone parameters."""
+        for name, param in self.net.named_parameters():
+            if "classifier" not in name:
+                param.requires_grad = True
+        logger.info("Backbone unfrozen - all parameters will be updated")
+    
+    # In your configure_optimizers method, replace the entire method with:
+    def configure_optimizers(self):
+        # Always configure for all parameters, but with different learning rates
+        # Use very small LR for backbone initially, then it will naturally increase
+        backbone_params = [p for n, p in self.net.named_parameters() if "classifier" not in n]
+        classifier_params = list(self.net.classifier.parameters())
+        
+        # # Calculate current learning rate based on epoch
+        # if hasattr(self, 'current_epoch') and self.current_epoch < self.freeze_backbone_epochs:
+        #     backbone_lr = 0.0  # Effectively frozen
+        # else:
+        #     backbone_lr = 1e-5
+
+        backbone_lr = 1e-5
+        optimizer = torch.optim.AdamW([
+            {"params": classifier_params, "lr": 1e-3},
+            {"params": backbone_params, "lr": backbone_lr},
+        ], weight_decay=0.05)
+        
+        # Calculate total training steps
+        if hasattr(self.trainer, 'estimated_stepping_batches') and self.trainer.estimated_stepping_batches:
+            total_steps = self.trainer.estimated_stepping_batches
+        else:
+            steps_per_epoch = 500  # reasonable default
+            total_steps = self.max_epochs * steps_per_epoch
+        
+        warmup_steps = int(self.warmup_ratio * total_steps)
+        
+        scheduler = get_cosine_schedule_with_warmup(
+            optimizer,
+            num_warmup_steps=warmup_steps,
+            num_training_steps=total_steps,
+        )
+        
+        return {
+            "optimizer": optimizer,
+            "lr_scheduler": {
+                "scheduler": scheduler,
+                "interval": "step",
+                "frequency": 1,
+            },
+        }
+
+    # def on_train_epoch_start(self):
+    #     """Called at the start of each training epoch."""
+    #     # Call parent method
+    #     super().on_train_epoch_start()
+        
+    #     # Unfreeze backbone after specified epochs
+    #     if self.current_epoch == self.freeze_backbone_epochs:
+    #         self._unfreeze_backbone()
+    #         # Reconfigure optimizers to include backbone parameters
+    #         optimizers, schedulers = self.configure_optimizers()
+    #         self.trainer.optimizers = [optimizers] if not isinstance(optimizers, list) else optimizers
+    #         if schedulers:
+    #             self.trainer.lr_schedulers = [schedulers] if not isinstance(schedulers, list) else schedulers
+    #         logger.info(f"Epoch {self.current_epoch}: Backbone unfrozen and optimizer reconfigured")
+
+    # def configure_optimizers(self):
+    #     # Check if backbone should be frozen based on current epoch
+    #     if hasattr(self, 'current_epoch') and self.current_epoch < self.freeze_backbone_epochs:
+    #         # Only optimize classifier parameters
+    #         optimizer = torch.optim.AdamW([
+    #             {"params": self.net.classifier.parameters(), "lr": 1e-3},
+    #         ], weight_decay=0.05)
+    #         logger.info(f"Optimizer configured for frozen backbone (epoch {self.current_epoch})")
+    #     else:
+    #         # Optimize all parameters with different learning rates
+    #         optimizer = torch.optim.AdamW([
+    #             {"params": self.net.classifier.parameters(), "lr": 1e-3},
+    #             {"params": [p for n,p in self.net.named_parameters() if "classifier" not in n], "lr": 1e-5},
+    #         ], weight_decay=0.05)
+    #         logger.info("Optimizer configured for full model training")
+        
+    #     # Calculate total training steps for cosine schedule
+    #     # Use Lightning's estimated stepping batches if available
+    #     if hasattr(self.trainer, 'estimated_stepping_batches') and self.trainer.estimated_stepping_batches:
+    #         total_steps = self.trainer.estimated_stepping_batches
+    #     else:
+    #         # Fallback calculation if estimated stepping batches is not available
+    #         # This might not be exact but provides a reasonable estimate
+    #         steps_per_epoch = len(self.trainer.train_dataloader) if self.trainer.train_dataloader else 500
+    #         total_steps = self.max_epochs * steps_per_epoch
+        
+    #     warmup_steps = int(self.warmup_ratio * total_steps)
+        
+    #     logger.info(f"Total training steps: {total_steps}, Warmup steps: {warmup_steps}")
+        
+    #     # Create cosine schedule with warmup
+    #     scheduler = get_cosine_schedule_with_warmup(
+    #         optimizer,
+    #         num_warmup_steps=warmup_steps,
+    #         num_training_steps=total_steps,
+    #     )
+        
+    #     return {
+    #         "optimizer": optimizer,
+    #         "lr_scheduler": {
+    #             "scheduler": scheduler,
+    #             "interval": "step",  # Update scheduler every step (not epoch)
+    #             "frequency": 1,
+    #         },
+    #     }
     
     def _init_FL(self):
         # Move class_weights to device if not None
@@ -95,7 +239,7 @@ class BaselineClassificationLitModule(LitModuleBase):
 
     # def model_step(
     #         self, batch: Tuple[torch.Tensor, torch.Tensor]
-    # ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    #     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     #     """Perform a single model step on a batch of data.
 
     #     :param batch: A batch of data (a tuple) containing the input tensor of images and target labels.

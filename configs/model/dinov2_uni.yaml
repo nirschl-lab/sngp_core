@@ -1,13 +1,6 @@
-_target_: src.models.wbc_classification_lit_module.BaselineClassificationLitModule
+_target_: src.models.wbc_dinov2_uni.BaselineClassificationLitModule
 
 name: baseline
-# backbone
-net:
-  _target_: src.models.baseline.baseline_models.BaselineClassifier
-  arch: resnet18
-  num_classes: 8
-  dropout_p: 0.2
-  pretrained: true
 
 optimizer:
   _target_: torch.optim.AdamW
@@ -29,9 +22,9 @@ csv_name: "test_predictions"
 log_metrics_per_class: false
 log_test_metrics: true
 class_freq: null
-class_weights: [0.17, 0.28, 0.8, 1.12, 2.61, 5.17, 4.98, 5.66, 5.89, 6.68, 21.63, 44.01, 196.36]
-label_smoothing: 0.1
-loss_function: "focal_loss"
+class_weights: null #[0.17, 0.28, 0.8, 1.12, 2.61, 5.17, 4.98, 5.66, 5.89, 6.68, 21.63, 44.01, 196.36]
+label_smoothing: 0.0
+loss_function: "cross_entropy"
 class_indices:
     "SNE": 0
     "LY": 1

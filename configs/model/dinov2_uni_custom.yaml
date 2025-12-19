@@ -1,0 +1,31 @@
+_target_: src.models.wbc_dinov2_uni_custom.BaselineClassificationLitModule
+
+name: dinov2_uni_custom
+
+compile: false
+num_classes: 8
+log_csv: false
+csv_save_path: "csv/"
+csv_name: "test_predictions"
+log_metrics_per_class: false
+log_test_metrics: true
+class_freq: null
+class_weights: null #[0.17, 0.28, 0.8, 1.12, 2.61, 5.17, 4.98, 5.66, 5.89, 6.68, 21.63, 44.01, 196.36]
+label_smoothing: 0.0
+loss_function: "cross_entropy"
+max_epochs: 50
+warmup_ratio: 0.1
+class_indices:
+    "SNE": 0
+    "LY": 1
+    "MO": 2
+    "BL": 3
+    "EO": 4
+    "BA": 5
+    "MY": 6
+    "BNE": 7
+    "MMY": 8
+    "VLY": 9
+    "PMY": 10
+    "PC": 11
+    "PLY": 12

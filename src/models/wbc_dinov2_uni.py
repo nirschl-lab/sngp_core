@@ -9,16 +9,16 @@ from loguru import logger
 from src.losses.focal_loss import FocalLoss
 from src.metrics.calibration_losses import CalibrationLossConfig, calibration_losses
 from src.models.wbc_module_base import LitModuleBase
+import timm
 
 class BaselineClassificationLitModule(LitModuleBase):
     def __init__(
         self,
-        net: torch.nn.Module,
         optimizer: torch.optim.Optimizer,
         scheduler: torch.optim.lr_scheduler,
         compile: bool,
         class_indices: dict,
-        num_classes: int = 8,
+        num_classes: int = 13,
         log_csv: bool = False,
         csv_name: str = "test_predictions",
         csv_save_path: str = "csv/",
@@ -30,6 +30,14 @@ class BaselineClassificationLitModule(LitModuleBase):
         loss_function = 'cross_entropy',
         **kwargs
     ) -> None:
+        
+        net = timm.create_model(
+                "vit_large_patch16_224", img_size=224, patch_size=16, init_values=1e-5, num_classes=num_classes, dynamic_img_size=True,
+            )
+        cache_dir = "/data1/shared/models/pathology_fms/"
+        output_model = os.path.join(cache_dir, "uni_dinov2_vit_L16.bin")
+        net.load_state_dict(torch.load(output_model), strict=False)
+        logger.info(f'using uni_dinov2_vit_L16.bin')
         
         LitModuleBase.__init__(
             self,

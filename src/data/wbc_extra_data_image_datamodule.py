@@ -1,5 +1,6 @@
 from typing import Any, Dict, Optional, Tuple
 
+import PIL
 import torch
 from lightning import LightningDataModule
 from torch.utils.data import ConcatDataset, DataLoader, Dataset, random_split
@@ -47,6 +48,9 @@ class WBCDataset(Dataset):
         
         # Load image
         image = Image.open(img_path).convert('RGB')
+
+        # resize image to 224
+        # image = image.resize((224, 224))
         
         # Get label if available
         if 'labels' in self.annotations.columns and pd.notna(self.annotations.iloc[idx]['labels']):
@@ -63,11 +67,90 @@ class WBCDataset(Dataset):
                 image_np = np.array(image)
                 transformed = self.transform(image=image_np)
                 image = transformed['image']
+                # Add this check:
+                if not isinstance(image, torch.Tensor):
+                    raise ValueError(f"Transform failed to convert image to tensor. Got type: {type(image)}")
             else:
                 image = self.transform(image)
         
+        # Add this at the end of __getitem__ method, after transform application:
+        if not isinstance(image, torch.Tensor):
+            # Fallback: convert PIL image to tensor
+            from torchvision.transforms import ToTensor
+            to_tensor = ToTensor()
+            image = to_tensor(image)
+        
         return img_name, image, label, self.fold
 
+
+class AcevedoExtraDataset(Dataset):
+    def __init__(self, classes_to_idx, csv_file = 'data/wbc/acevedo_wbc_subset.csv', image_dir = '/data1/shared/data/acevedo_et_al_2020', transform=None, fold=None):
+        """
+        Args:
+            classes_to_idx: class to index mapping
+            csv_file (str): Path to the CSV file with annotations.
+            image_dir (str): Directory with all the images.
+            transform (callable, optional): Optional transform to be applied on a sample.
+            fold (str, optional): Fold identifier (train/val/test).
+        """
+         
+        self.classes_to_idx = classes_to_idx
+        self.transform = transform
+        self.fold = fold
+        self.annotations = pd.read_csv(csv_file)
+        self.image_dir = image_dir
+    
+    def __len__(self):
+        return len(self.annotations)
+    
+    def __getitem__(self, idx):
+        # Handle the case where idx might be a tensor (from Subset)
+        if isinstance(idx, torch.Tensor):
+            idx = idx.item()
+            
+        filename = self.annotations.iloc[idx]['file_name']
+        acevedo_fold = self.annotations.iloc[idx]['fold']
+        img_path = os.path.join(self.image_dir, acevedo_fold, filename)
+        img_name = filename.split('.png')[0]
+
+        assert os.path.exists(img_path), "image path doesnt exist: " + img_path
+        
+        # Load image
+        image = Image.open(img_path).convert('RGB')
+
+        # resize image to 224
+        image = image.resize((368, 370))
+        
+        # Get label if available
+        if 'labels' in self.annotations.columns and pd.notna(self.annotations.iloc[idx]['labels']):
+            label_name = self.annotations.iloc[idx]['labels']
+            label = self.classes_to_idx[label_name]
+        else:
+            # For test set or missing labels
+            label = -1
+        
+        # Apply transforms
+        if self.transform:
+            if isinstance(self.transform, A.Compose):
+                # Albumentations expects numpy arrays
+                image_np = np.array(image)
+                transformed = self.transform(image=image_np)
+                image = transformed['image']
+                # Add this check:
+                if not isinstance(image, torch.Tensor):
+                    raise ValueError(f"Transform failed to convert image to tensor. Got type: {type(image)}")
+            else:
+                image = self.transform(image)
+        
+        # Add this at the end of __getitem__ method, after transform application:
+        if not isinstance(image, torch.Tensor):
+            # Fallback: convert PIL image to tensor
+            from torchvision.transforms import ToTensor
+            to_tensor = ToTensor()
+            image = to_tensor(image)
+        
+        return img_name, image, label, self.fold
+        
 
 class WBCClassificationDataModule(LightningDataModule):
     """LightningDataModule for the WBC Phase2 classification dataset.
@@ -175,31 +258,7 @@ class WBCClassificationDataModule(LightningDataModule):
                 classes_to_idx=self.classes_to_idx,
                 transform=self.val_transform,
                 fold='validation'
-            )           
-
-            # phase1_train_csv = os.path.join(self.data_dir, 'phase1_label.csv')
-            # phase1_train_img_dir = os.path.join(self.data_dir, 'phase1')
-            
-            # phase2_train_csv = os.path.join(self.data_dir, 'phase2_train.csv')
-            # phase2_train_img_dir = os.path.join(self.data_dir, 'phase2', 'train')
-
-            # self.phase1_data_train = WBCDataset(
-            #     csv_file=phase1_train_csv,
-            #     image_dir=phase1_train_img_dir,
-            #     classes_to_idx=self.classes_to_idx,
-            #     transform=self.train_transform,
-            #     fold='train'
-            # )
-
-            # self.phase2_data_train = WBCDataset(
-            #     csv_file=phase2_train_csv,
-            #     image_dir=phase2_train_img_dir,
-            #     classes_to_idx=self.classes_to_idx,
-            #     transform=self.train_transform,
-            #     fold='train'
-            # )
-
-            # self.data_val = ConcatDataset([self.phase1_data_train, self.phase2_data_train]) 
+            )            
         
         elif stage == 'test' or self.trainer.state.stage == "test":
             test_csv = os.path.join(self.data_dir, 'phase2_test.csv')
@@ -235,6 +294,7 @@ class WBCClassificationDataModule(LightningDataModule):
                 transform=self.train_transform,
                 fold='train'
             )
+            logger.info(f'Loaded Phase 1 train data with {len(self.phase1_data_train)} samples.')
 
             self.phase2_data_train = WBCDataset(
                 csv_file=phase2_train_csv,
@@ -243,8 +303,12 @@ class WBCClassificationDataModule(LightningDataModule):
                 transform=self.train_transform,
                 fold='train'
             )
+            logger.info(f'Loaded Phase 2 train data with {len(self.phase2_data_train)} samples.')
 
-            self.data_train = ConcatDataset([self.phase1_data_train, self.phase2_data_train])
+            self.acevedo_extra_data = AcevedoExtraDataset(classes_to_idx=self.classes_to_idx, transform=self.train_transform, fold='train')
+            logger.info(f'Loaded Acevedo extra data with {len(self.acevedo_extra_data)} samples.')
+
+            self.data_train = ConcatDataset([self.phase1_data_train, self.phase2_data_train, self.acevedo_extra_data])
 
             self.data_val = WBCDataset(
                 csv_file=val_csv,
@@ -330,16 +394,55 @@ if __name__ == "__main__":
     # Add project root to path for testing
     import sys
     sys.path.append('/home/wisc/maheswararao/code/lightning-hydra-template')
+
+    classes_to_idx={
+        "SNE": 0,
+        "LY": 1,
+        "MO": 2,
+        "BL": 3,
+        "EO": 4,
+        "BA": 5,
+        "MY": 6,
+        "BNE": 7,
+        "MMY": 8,
+        "VLY": 9,
+        "PMY": 10,
+        "PC": 11,
+        "PLY": 12  
+    }
     
+    # extra_dataset = AcevedoExtraDataset(classes_to_idx={
+    #     "SNE": 0,
+    #     "LY": 1,
+    #     "MO": 2,
+    #     "BL": 3,
+    #     "EO": 4,
+    #     "BA": 5,
+    #     "MY": 6,
+    #     "BNE": 7,
+    #     "MMY": 8,
+    #     "VLY": 9,
+    #     "PMY": 10,
+    #     "PC": 11,
+    #     "PLY": 12  
+    # })
+    # for i in range(len(extra_dataset)):
+    #     img_name, image, label, fold = extra_dataset[i]
+    #     # assert image is PIL
+    #     assert isinstance(image, Image.Image), f"Expected PIL Image, got {type(image)}"
+
+
     # Test the WBC datamodule
     print("Testing WBC Phase2 Classification DataModule...")
     
     # Initialize the WBC datamodule
     wbc_dm = WBCClassificationDataModule(
         data_dir='/data1/shared/data/wbc-bench-2026/',
-        batch_size=4,
-        num_workers=0,
-        sample_rate=10  # Use small sample for testing
+        train_batch_size = 64,
+        val_batch_size = 64,
+        test_batch_size = 64,
+        num_workers=16,
+        class_indices=classes_to_idx
     )
     
     # Mock trainer for testing
@@ -355,20 +458,19 @@ if __name__ == "__main__":
     wbc_dm.trainer = MockTrainer()
     wbc_dm.setup()
     
-    print(f"Classes to idx: {wbc_dm.classes_to_idx}")
-    print(f"Number of classes: {len(wbc_dm.classes_to_idx) if wbc_dm.classes_to_idx else 0}")
+    # print(f"Classes to idx: {wbc_dm.classes_to_idx}")
+    # print(f"Number of classes: {len(wbc_dm.classes_to_idx) if wbc_dm.classes_to_idx else 0}")
     
     print("\nTrain loader:")
     for batch in wbc_dm.train_dataloader():
         image_id, X, y, fold = batch
-        print(f"Image IDs: {image_id}")
-        print(f"X shape: {X.shape}, y shape: {y.shape}, fold: {fold}")
-        break
+        # print(f"Image IDs: {image_id}")
+        # print(f"X shape: {X.shape}, y shape: {y.shape}, fold: {fold}")
+        # break
     
     print("\nVal loader:")
     for batch in wbc_dm.val_dataloader():
         image_id, X, y, fold = batch
-        print(f"Image IDs: {image_id}")
-        print(f"X shape: {X.shape}, y shape: {y.shape}, fold: {fold}")
-        break
-    
+        # print(f"Image IDs: {image_id}")
+        # print(f"X shape: {X.shape}, y shape: {y.shape}, fold: {fold}")
+        # break

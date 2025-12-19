@@ -1,0 +1,132 @@
+train:
+  _target_: albumentations.Compose
+  transforms:
+    # 1) Crop/scale jitter (good for tiles + ViT)
+    - _target_: albumentations.Resize
+      height: 256
+      width: 256
+      interpolation: 1
+      p: 1.0
+
+    - _target_: albumentations.CenterCrop
+      height: 224
+      width: 224
+      p: 1.0
+
+    # 2) Rotation/flip invariance
+    - _target_: albumentations.D4
+      p: 0.75
+
+    # 3) Stain / illumination (important domain shift)
+    - _target_: albumentations.OneOf
+      p: 0.6
+      transforms:
+        - _target_: albumentations.HEStain
+          method: "random_preset"
+          intensity_scale_range: [0.85, 1.15]
+          intensity_shift_range: [-0.08, 0.08]
+          augment_background: false
+          p: 1.0
+        - _target_: albumentations.RandomBrightnessContrast
+          brightness_limit: [-0.12, 0.12]
+          contrast_limit: [-0.12, 0.12]
+          brightness_by_max: true
+          ensure_safe_range: true
+          p: 1.0
+        - _target_: albumentations.Illumination
+          mode: "linear"
+          intensity_range: [0.01, 0.08]
+          effect_type: "both"
+          angle_range: [0, 360]
+          center_range: [0.2, 0.8]
+          sigma_range: [0.2, 0.8]
+          p: 1.0
+
+    # 4) Acquisition artifacts: mild blur / jpeg
+    - _target_: albumentations.OneOf
+      p: 0.25
+      transforms:
+        - _target_: albumentations.GaussianBlur
+          blur_limit: [3, 7]
+          p: 1.0
+        - _target_: albumentations.ImageCompression
+          compression_type: "jpeg"
+          quality_range: [75, 95]
+          p: 1.0
+        - _target_: albumentations.NoOp
+          p: 1.0
+
+    # 5) Sensor noise
+    - _target_: albumentations.OneOf
+      p: 0.2
+      transforms:
+        - _target_: albumentations.GaussNoise
+          std_range: [0.005, 0.03]
+          mean_range: [0, 0]
+          per_channel: true
+          p: 1.0
+        - _target_: albumentations.ShotNoise
+          scale_range: [0.003, 0.015]
+          p: 1.0
+        - _target_: albumentations.NoOp
+          p: 1.0
+
+    # 6) Rare occlusion; use white fill (more realistic than black)
+    - _target_: albumentations.CoarseDropout
+      num_holes_range: [1, 2]
+      hole_height_range: [0.03, 0.07]
+      hole_width_range: [0.03, 0.07]
+      fill_value: 255
+      p: 0.05
+
+    - _target_: albumentations.Normalize
+      mean: [0.485, 0.456, 0.406]
+      std:  [0.229, 0.224, 0.225]
+      max_pixel_value: 255.0
+
+    - _target_: albumentations.pytorch.transforms.ToTensorV2
+      p: 1.0
+
+val:
+  _target_: albumentations.Compose
+  transforms:
+    - _target_: albumentations.Resize
+      height: 256
+      width: 256
+      interpolation: 1   # cv2.INTER_LINEAR
+      p: 1.0
+
+    - _target_: albumentations.CenterCrop
+      height: 224
+      width: 224
+      p: 1.0
+
+    - _target_: albumentations.Normalize
+      mean: [0.485, 0.456, 0.406]
+      std:  [0.229, 0.224, 0.225]
+      max_pixel_value: 255.0
+
+    - _target_: albumentations.pytorch.transforms.ToTensorV2
+      p: 1.0
+
+test:
+  _target_: albumentations.Compose
+  transforms:
+    - _target_: albumentations.Resize
+      height: 256
+      width: 256
+      interpolation: 1
+      p: 1.0
+
+    - _target_: albumentations.CenterCrop
+      height: 224
+      width: 224
+      p: 1.0
+
+    - _target_: albumentations.Normalize
+      mean: [0.485, 0.456, 0.406]
+      std:  [0.229, 0.224, 0.225]
+      max_pixel_value: 255.0
+
+    - _target_: albumentations.pytorch.transforms.ToTensorV2
+      p: 1.0

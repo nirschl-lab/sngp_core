@@ -1,9 +1,9 @@
 # configs/data/acevedo_image_classifier.yaml
 defaults:
-  - /img_augmentations: light_augmentations2 #albumentations #torchvision #default
+  - /img_augmentations: light_augmentations #albumentations #torchvision #default
 
 datamodule:
-  _target_: src.data.wbc_image_datamodule.WBCClassificationDataModule
+  _target_: src.data.wbc_dist1_datamodule.WBCClassificationDataModule
   data_dir: /data1/shared/data/wbc-bench-2026/
   num_classes: 13
   train_batch_size: 64

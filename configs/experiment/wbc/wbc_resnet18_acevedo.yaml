@@ -4,14 +4,14 @@
 # python train.py experiment=example
 
 defaults:
-  - override /data: wbc_classifier
-  - override /model: swin_baseline_classifier
+  - override /data: wbc_extradata
+  - override /model: wbc_classifier
   - override /callbacks: default
   - override /trainer: default
 
 # all parameters below will be merged with parameters from default configurations set above
 # this allows you to overwrite only specified parameters
-name: "baseline_swin_v2_t_label_smoothing"
+name: "baseline_resnet18_extradata"
 WANDB_PROJECT: "wbc_challenge"
 
 seed: 12345
@@ -35,7 +35,7 @@ model:
     weight_decay: 1e-3
   hist_bins: 10
   net:
-    arch: swin_v2_t
+    arch: resnet18
     num_classes: ${num_classes}
     dropout_p: 0.2
     pretrained: True
@@ -65,7 +65,7 @@ logger:
   wandb:
     project: "${WANDB_PROJECT}"
     tags: ${tags}
-    group: "Training"
+    group: "extra_data"
     name: ${name}
     log_model: True
   aim:
@@ -77,3 +77,5 @@ callbacks:
     patience: 20
     mode: "min"
     min_delta: 0.005
+  
+# ckpt_path: "nirschl-lab/wbc_challenge/model-j20kz5ww:v1"

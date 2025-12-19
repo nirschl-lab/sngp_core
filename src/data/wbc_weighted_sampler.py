@@ -1,8 +1,7 @@
 from typing import Any, Dict, Optional, Tuple
-
 import torch
 from lightning import LightningDataModule
-from torch.utils.data import ConcatDataset, DataLoader, Dataset, random_split
+from torch.utils.data import ConcatDataset, DataLoader, Dataset, random_split, WeightedRandomSampler
 from datasets import load_dataset
 from torchvision.transforms import transforms
 import albumentations as A
@@ -17,6 +16,7 @@ from loguru import logger
 import pandas as pd
 from PIL import Image
 import os
+from collections import Counter
 
 class WBCDataset(Dataset):
     def __init__(self, csv_file, image_dir, classes_to_idx, transform=None, fold=None):
@@ -33,7 +33,6 @@ class WBCDataset(Dataset):
         self.transform = transform
         self.fold = fold
         
-    
     def __len__(self):
         return len(self.annotations)
     
@@ -89,24 +88,31 @@ class WBCClassificationDataModule(LightningDataModule):
         train_augmentations: Optional[transforms.Compose | A.Compose] = None,
         val_augmentations: Optional[transforms.Compose | A.Compose] = None,
         test_augmentations: Optional[transforms.Compose | A.Compose] = None,
-        sample_rate: int = 0,
+        use_weighted_sampler: bool = False,
+        sampling_strategy: str = 'inverse_freq',  # 'inverse_freq' or 'sqrt_inverse_freq'
     ) -> None:
         """Initialize WBCImageDataModule.
 
         :param data_dir: The data directory containing CSV files and phase2 folder.
-        :param batch_size: The batch size.
+        :param train_batch_size: The train batch size.
+        :param val_batch_size: The validation batch size.
+        :param test_batch_size: The test batch size.
         :param num_workers: The number of workers.
         :param pin_memory: Whether to pin memory.
         :param train_augmentations: Transformations for training.
         :param val_augmentations: Transformations for validation.
         :param test_augmentations: Transformations for testing.
-        :param sample_rate: Number of samples to use for faster training (0 for all).
+        :param use_weighted_sampler: Whether to use WeightedRandomSampler for training.
+        :param sampling_strategy: Strategy for computing sample weights ('inverse_freq' or 'sqrt_inverse_freq').
         """
         super().__init__()
 
         self.save_hyperparameters(logger=False)
         self.data_dir = data_dir
-        self.sample_rate = sample_rate
+        self.use_weighted_sampler = use_weighted_sampler
+        self.sampling_strategy = sampling_strategy
+        self.num_workers = num_workers
+        self.pin_memory = pin_memory
 
         # Set up transforms
         if train_augmentations:
@@ -114,7 +120,7 @@ class WBCClassificationDataModule(LightningDataModule):
         else:
             logger.warning("No train augmentations provided, using default Resize + ToTensor + Normalize.")
             self.train_transform = transforms.Compose([
-                transforms.Resize((224, 224)),  # Resize to consistent dimensions
+                transforms.Resize((224, 224)),
                 transforms.ToTensor(),
                 transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
             ])
@@ -124,7 +130,7 @@ class WBCClassificationDataModule(LightningDataModule):
         else:
             logger.warning("No val augmentations provided, using default Resize + ToTensor + Normalize.")
             self.val_transform = transforms.Compose([
-                transforms.Resize((224, 224)),  # Resize to consistent dimensions
+                transforms.Resize((224, 224)),
                 transforms.ToTensor(),
                 transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
             ])
@@ -133,7 +139,7 @@ class WBCClassificationDataModule(LightningDataModule):
             self.test_transform = test_augmentations
         else:
             self.test_transform = transforms.Compose([
-                transforms.Resize((224, 224)),  # Resize to consistent dimensions
+                transforms.Resize((224, 224)),
                 transforms.ToTensor(),
                 transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
             ])
@@ -151,6 +157,52 @@ class WBCClassificationDataModule(LightningDataModule):
         # Store class mappings
         self.classes_to_idx = class_indices
         self.idx_to_classes = {v: k for k, v in class_indices.items()} if class_indices else None
+        
+        # For weighted sampler
+        self.sample_weights = None
+        self.weighted_sampler = None
+
+    def _compute_sample_weights(self, dataset):
+        """Compute sample weights for WeightedRandomSampler based on class frequencies."""
+        # Extract labels from dataset
+        labels = []
+        for i in range(len(dataset)):
+            if isinstance(dataset, ConcatDataset):
+                # Handle ConcatDataset
+                _, _, label, _ = dataset[i]
+            else:
+                _, _, label, _ = dataset[i]
+            labels.append(label)
+        
+        labels = torch.tensor(labels)
+        
+        # Count class frequencies
+        class_counts = Counter(labels.numpy())
+        logger.info(f"Class distribution in training set: {class_counts}")
+        
+        # Calculate class weights
+        total_samples = len(labels)
+        num_classes = len(class_counts)
+        
+        if self.sampling_strategy == 'inverse_freq':
+            # Inverse frequency weighting
+            class_weights = {cls: total_samples / count for cls, count in class_counts.items()}
+        elif self.sampling_strategy == 'sqrt_inverse_freq':
+            # Square root of inverse frequency (less aggressive)
+            class_weights = {cls: np.sqrt(total_samples / count) for cls, count in class_counts.items()}
+        else:
+            raise ValueError(f"Unknown sampling strategy: {self.sampling_strategy}")
+        
+        # Normalize weights
+        max_weight = max(class_weights.values())
+        class_weights = {cls: weight / max_weight for cls, weight in class_weights.items()}
+        
+        self.log_.info(f"Class weights for sampling: {class_weights}")
+        
+        # Assign weight to each sample
+        sample_weights = torch.tensor([class_weights[label.item()] for label in labels])
+        
+        return sample_weights
 
     def setup(self, stage: Optional[str] = None) -> None:
         """Load data. Set variables: `self.data_train`, `self.data_val`, `self.data_test`."""
@@ -165,10 +217,9 @@ class WBCClassificationDataModule(LightningDataModule):
             self.val_batch_size_per_device = self.hparams.val_batch_size // self.trainer.world_size
             self.test_batch_size_per_device = self.hparams.test_batch_size // self.trainer.world_size
 
-        if stage == "predict" or self.trainer.state.stage == "predict":
+        if stage == "predict" or (self.trainer and self.trainer.state.stage == "predict"):
             val_csv = os.path.join(self.data_dir, 'phase2_eval.csv')
             val_img_dir = os.path.join(self.data_dir, 'phase2', 'eval')
-            # For testing, load the test dataset
             self.data_val = WBCDataset(
                 csv_file=val_csv,
                 image_dir=val_img_dir,
@@ -177,45 +228,18 @@ class WBCClassificationDataModule(LightningDataModule):
                 fold='validation'
             )           
 
-            # phase1_train_csv = os.path.join(self.data_dir, 'phase1_label.csv')
-            # phase1_train_img_dir = os.path.join(self.data_dir, 'phase1')
-            
-            # phase2_train_csv = os.path.join(self.data_dir, 'phase2_train.csv')
-            # phase2_train_img_dir = os.path.join(self.data_dir, 'phase2', 'train')
-
-            # self.phase1_data_train = WBCDataset(
-            #     csv_file=phase1_train_csv,
-            #     image_dir=phase1_train_img_dir,
-            #     classes_to_idx=self.classes_to_idx,
-            #     transform=self.train_transform,
-            #     fold='train'
-            # )
-
-            # self.phase2_data_train = WBCDataset(
-            #     csv_file=phase2_train_csv,
-            #     image_dir=phase2_train_img_dir,
-            #     classes_to_idx=self.classes_to_idx,
-            #     transform=self.train_transform,
-            #     fold='train'
-            # )
-
-            # self.data_val = ConcatDataset([self.phase1_data_train, self.phase2_data_train]) 
-        
-        elif stage == 'test' or self.trainer.state.stage == "test":
+        elif stage == 'test' or (self.trainer and self.trainer.state.stage == "test"):
             test_csv = os.path.join(self.data_dir, 'phase2_test.csv')
             test_img_dir = os.path.join(self.data_dir, 'phase2', 'test')
-            # For testing, load the test dataset
             self.data_test = WBCDataset(
                 csv_file=test_csv,
                 image_dir=test_img_dir,
                 classes_to_idx=self.classes_to_idx,
                 transform=self.test_transform,
-                fold='validation'
+                fold='test'
             )
 
-
-        else: # train and val
-            # For prediction, load the test dataset (or specify a different dataset for prediction)
+        else:  # train and val
             phase1_train_csv = os.path.join(self.data_dir, 'phase1_label.csv')
             phase1_train_img_dir = os.path.join(self.data_dir, 'phase1')
             
@@ -246,6 +270,16 @@ class WBCClassificationDataModule(LightningDataModule):
 
             self.data_train = ConcatDataset([self.phase1_data_train, self.phase2_data_train])
 
+            # Compute sample weights for weighted sampler if enabled
+            if self.use_weighted_sampler and stage in [None, "fit"]:
+                self.sample_weights = self._compute_sample_weights(self.data_train)
+                self.weighted_sampler = WeightedRandomSampler(
+                    weights=self.sample_weights,
+                    num_samples=len(self.sample_weights),
+                    replacement=True
+                )
+                self.log_.info("Created WeightedRandomSampler for training data")
+
             self.data_val = WBCDataset(
                 csv_file=val_csv,
                 image_dir=val_img_dir,
@@ -254,8 +288,6 @@ class WBCClassificationDataModule(LightningDataModule):
                 fold='validation'
             )
 
-            
-            # For testing, load the test dataset
             self.data_test = WBCDataset(
                 csv_file=test_csv,
                 image_dir=test_img_dir,
@@ -264,18 +296,27 @@ class WBCClassificationDataModule(LightningDataModule):
                 fold='test'
             )
 
-            
-
     def train_dataloader(self) -> DataLoader[Any]:
         """Create and return the train dataloader."""
         self.log_.info(f'Training samples: {len(self.data_train)}')
-        return DataLoader(
-            dataset=self.data_train,
-            batch_size=self.train_batch_size_per_device,
-            num_workers=self.hparams.num_workers,
-            pin_memory=self.hparams.pin_memory,
-            shuffle=True,
-        )
+        
+        if self.use_weighted_sampler and self.weighted_sampler is not None:
+            self.log_.info("Using WeightedRandomSampler for training dataloader")
+            return DataLoader(
+                dataset=self.data_train,
+                batch_size=self.train_batch_size_per_device,
+                num_workers=self.num_workers,
+                pin_memory=self.pin_memory,
+                sampler=self.weighted_sampler,  # Use weighted sampler instead of shuffle
+            )
+        else:
+            return DataLoader(
+                dataset=self.data_train,
+                batch_size=self.train_batch_size_per_device,
+                num_workers=self.num_workers,
+                pin_memory=self.pin_memory,
+                shuffle=True,
+            )
 
     def val_dataloader(self) -> DataLoader[Any]:
         """Create and return the validation dataloader."""
@@ -283,8 +324,8 @@ class WBCClassificationDataModule(LightningDataModule):
         return DataLoader(
             dataset=self.data_val,
             batch_size=self.val_batch_size_per_device,
-            num_workers=self.hparams.num_workers,
-            pin_memory=self.hparams.pin_memory,
+            num_workers=self.num_workers,
+            pin_memory=self.pin_memory,
             shuffle=False,
         )
 
@@ -293,23 +334,18 @@ class WBCClassificationDataModule(LightningDataModule):
         return DataLoader(
             dataset=self.data_test,
             batch_size=self.test_batch_size_per_device,
-            num_workers=self.hparams.num_workers,
-            pin_memory=self.hparams.pin_memory,
+            num_workers=self.num_workers,
+            pin_memory=self.pin_memory,
             shuffle=False,
         )
 
     def predict_dataloader(self) -> DataLoader[Any]:
-        """Create and return the predict dataloader.
-        
-        By default, uses the test dataset for prediction.
-        For custom prediction datasets, override this method.
-        """
-        
+        """Create and return the predict dataloader."""
         return DataLoader(
             dataset=self.data_val,
             batch_size=self.val_batch_size_per_device,
-            num_workers=self.hparams.num_workers,
-            pin_memory=self.hparams.pin_memory,
+            num_workers=self.num_workers,
+            pin_memory=self.pin_memory,
             shuffle=False,
         )
 
@@ -331,15 +367,37 @@ if __name__ == "__main__":
     import sys
     sys.path.append('/home/wisc/maheswararao/code/lightning-hydra-template')
     
-    # Test the WBC datamodule
-    print("Testing WBC Phase2 Classification DataModule...")
+    # Test the WBC datamodule with weighted sampler
+    print("Testing WBC Phase2 Classification DataModule with WeightedRandomSampler...")
     
-    # Initialize the WBC datamodule
+    # Example class indices (you should use your actual class mapping)
+
+    class_to_idx ={
+            "SNE": 0,
+            "LY": 1,
+            "MO": 2,
+            "BL": 3,
+            "EO": 4,
+            "BA": 5,
+            "MY": 6,
+            "BNE": 7,
+            "MMY": 8,
+            "VLY": 9,
+            "PMY": 10,
+            "PC": 11,
+            "PLY": 12  
+        }
+    
+    # Initialize the WBC datamodule with weighted sampler enabled
     wbc_dm = WBCClassificationDataModule(
         data_dir='/data1/shared/data/wbc-bench-2026/',
-        batch_size=4,
-        num_workers=0,
-        sample_rate=10  # Use small sample for testing
+        train_batch_size=128,
+        val_batch_size=4,
+        test_batch_size=4,
+        num_workers=20,
+        class_indices=class_to_idx,
+        use_weighted_sampler=True,
+        sampling_strategy='inverse_freq',  # or 'sqrt_inverse_freq'
     )
     
     # Mock trainer for testing
@@ -357,13 +415,28 @@ if __name__ == "__main__":
     
     print(f"Classes to idx: {wbc_dm.classes_to_idx}")
     print(f"Number of classes: {len(wbc_dm.classes_to_idx) if wbc_dm.classes_to_idx else 0}")
+    print(f"Using weighted sampler: {wbc_dm.use_weighted_sampler}")
     
-    print("\nTrain loader:")
+    if wbc_dm.use_weighted_sampler and wbc_dm.sample_weights is not None:
+        print(f"Sample weights shape: {wbc_dm.sample_weights.shape}")
+        print(f"Sample weights stats: min={wbc_dm.sample_weights.min():.4f}, max={wbc_dm.sample_weights.max():.4f}")
+    
+    print("\nTrain loader with weighted sampling:")
+    batch_count = 0
+    class_distribution = Counter()
+    
     for batch in wbc_dm.train_dataloader():
         image_id, X, y, fold = batch
-        print(f"Image IDs: {image_id}")
-        print(f"X shape: {X.shape}, y shape: {y.shape}, fold: {fold}")
-        break
+        # Count class distribution in batches
+        for label in y:
+            if label.item() != -1:  # Ignore invalid labels
+                class_distribution[label.item()] += 1
+        
+        batch_count += 1
+        if batch_count >= 3:  # Test a few batches
+            break
+    
+    print(f"Sampled class distribution over {batch_count} batches: {dict(class_distribution)}")
     
     print("\nVal loader:")
     for batch in wbc_dm.val_dataloader():
@@ -371,4 +444,3 @@ if __name__ == "__main__":
         print(f"Image IDs: {image_id}")
         print(f"X shape: {X.shape}, y shape: {y.shape}, fold: {fold}")
         break
-    

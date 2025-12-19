@@ -5,52 +5,41 @@
 
 defaults:
   - override /data: wbc_classifier
-  - override /model: swin_baseline_classifier
+  - override /model: dinov2_uni_custom
   - override /callbacks: default
   - override /trainer: default
 
 # all parameters below will be merged with parameters from default configurations set above
 # this allows you to overwrite only specified parameters
-name: "baseline_swin_v2_t_label_smoothing"
-WANDB_PROJECT: "wbc_challenge"
+name: "dinov2_uni_custom"
+WANDB_PROJECT: "wbc_dinov2"
 
 seed: 12345
 
-base_lr: 1e-3
+base_lr: 1e-4
 train_batch_size: 64
 val_batch_size: 1024
 test_batch_size: 1024
 num_classes: 13
 
 trainer:
-  min_epochs: 30
-  max_epochs: 200
+  min_epochs: 20
+  max_epochs: 50
   accelerator: "gpu"
   # limit_train_batches: 2
   # limit_val_batches: 5
 
 model:
-  optimizer:
-    lr: ${base_lr}
-    weight_decay: 1e-3
-  hist_bins: 10
-  net:
-    arch: swin_v2_t
-    num_classes: ${num_classes}
-    dropout_p: 0.2
-    pretrained: True
   compile: false
-  scheduler:
-    _target_: torch.optim.lr_scheduler.MultiStepLR
-    _partial_: true
-    milestones: [30, 70, 100]
-    gamma: 0.1
   csv_save_path: "csv/wbc/"
   csv_name: ${name}
   num_classes: ${num_classes}
   class_weights: null #[0.17, 0.28, 0.8, 1.12, 2.61, 5.17, 4.98, 5.66, 5.89, 6.68, 21.63, 44.01, 196.36]
-  label_smoothing: 0.1
+  label_smoothing: 0.0
   loss_function: 'cross_entropy'
+  max_epochs: ${trainer.max_epochs}
+  warmup_ratio: 0.1
+
 
 data:
   datamodule:
@@ -73,7 +62,7 @@ logger:
 
 callbacks:
   early_stopping:
-    monitor: "val/loss"
-    patience: 20
-    mode: "min"
-    min_delta: 0.005
+    monitor: "val/f1"
+    patience: 10
+    mode: "max"
+    min_delta: 0.0
