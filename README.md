@@ -154,12 +154,14 @@ For training, evaluation, and development setup, see [DEVELOPMENT.md](docs/DEVEL
 If you use SNGP in your research, please cite:
 
 ```bibtex
-@article{sngp2025,
-  title={SNGP: Spectral-normalized Neural Gaussian Processes for Uncertainty Quantification in Medical Imaging},
-  author={...},
-  journal={ISBI 2025},
-  year={2025},
-  url={https://arxiv.org/abs/2602.02370}
+@misc{meleti2026uncertaintyawareimageclassificationbiomedical,
+      title={Uncertainty-Aware Image Classification In Biomedical Imaging Using Spectral-normalized Neural Gaussian Processes}, 
+      author={Uma Meleti and Jeffrey J. Nirschl},
+      year={2026},
+      eprint={2602.02370},
+      archivePrefix={arXiv},
+      primaryClass={cs.CV},
+      url={https://arxiv.org/abs/2602.02370}, 
 }
 ```
 
