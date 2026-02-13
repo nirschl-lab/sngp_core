@@ -1,7 +1,6 @@
 <div align="center">
   <h1>🧬 SNGP: Spectral-normalized Neural Gaussian Processes</h1>
-  <p><em>PyTorch Implementation with Systematic Evaluation of Out-of-Distribution Detection in Biomedical Imaging</em></p>
-  <p><small>A PyTorch implementation of Spectral-normalized Neural Gaussian Processes (SNGP) for uncertainty quantification and robust out-of-distribution detection in medical imaging.</small></p>
+  <p><em>PyTorch implementation with systematic evaluation of uncertainty quantification and out-of-distribution detection in biomedical imaging</em></p>
   
   [![Python](https://img.shields.io/badge/Python-3.8+-blue.svg)](https://python.org)
   [![PyTorch Lightning](https://img.shields.io/badge/PyTorch%20Lightning-2.0+-purple.svg)](https://lightning.ai)
