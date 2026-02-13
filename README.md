@@ -1,11 +1,12 @@
 <div align="center">
   <h1>🧬 SNGP: Spectral-normalized Neural Gaussian Processes</h1>
-  <p><em>Uncertainty quantification in medical imaging with robust out-of-distribution detection</em></p>
+  <p><em>PyTorch Implementation with Systematic Evaluation of Out-of-Distribution Detection in Biomedical Imaging</em></p>
+  <p><small>A PyTorch implementation of Spectral-normalized Neural Gaussian Processes (SNGP) for uncertainty quantification and robust out-of-distribution detection in medical imaging.</small></p>
   
   [![Python](https://img.shields.io/badge/Python-3.8+-blue.svg)](https://python.org)
   [![PyTorch Lightning](https://img.shields.io/badge/PyTorch%20Lightning-2.0+-purple.svg)](https://lightning.ai)
   [![Paper](https://img.shields.io/badge/Paper-arXiv-red.svg)](https://arxiv.org/abs/2602.02370)
-  [![Project](https://img.shields.io/badge/Project-Website-green.svg)](https://sngp.github.io)
+  [![Project](https://img.shields.io/badge/Project-Website-green.svg)](https://nirschl-lab.github.io/sngp_biomed/)
   [![Models](https://img.shields.io/badge/Models-HF%20Hub-yellow.svg)](https://huggingface.co/nirschl-lab/sngp-models)
 </div>
 
@@ -175,9 +176,18 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 🙏 Acknowledgments
 
-Built with:
+This project is a PyTorch implementation based on the Spectral-normalized Neural Gaussian Processes (SNGP) methodology. We gratefully acknowledge:
+
+**Original SNGP Papers:**
+- [Spectral-normalized Neural Gaussian Processes (2020 NeurIPS)](https://dl.acm.org/doi/10.5555/3495724.3496353) by Spectral-normalized Neural Gaussian Processes authors
+- [Spectral-normalized Neural Gaussian Processes Revisited (2022 JMLR)](https://dl.acm.org/doi/abs/10.5555/3648699.3648741) by Spectral-normalized Neural Gaussian Processes authors
+
+**Reference Implementation:**
+- [Google's Uncertainty Baselines](https://github.com/google/uncertainty-baselines) - A valuable reference implementation in TensorFlow that informed our PyTorch approach
+
+**Built with:**
 - [PyTorch Lightning](https://lightning.ai) for training
 - [Hydra](https://hydra.cc) for configuration
 - [Hugging Face](https://huggingface.co) for model hub
 
-For more details, visit [sngp.github.io](https://sngp.github.io)
+For more details, visit [nirschl-lab.github.io/sngp_biomed/](https://nirschl-lab.github.io/sngp_biomed/)
