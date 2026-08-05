@@ -1,0 +1,82 @@
+# Keep the empirical profile separate from code. This is an example based on
+# the current dataset summary and can be replaced without touching Python.
+clean_probability: 0.10
+overlay_probability: 0.90
+max_overlays: 2
+
+categories:
+  debris:
+    weight: 65.3
+    coverage: {q1: 0.73, median: 1.60, q3: 4.64, maximum: 20.86}
+    opacity: [0.65, 1.00]
+    blend_modes: [normal, multiply, darken]
+  pigment_ink:
+    weight: 8.1
+    coverage: {q1: 2.58, median: 5.19, q3: 14.20, maximum: 24.65}
+    opacity: [0.60, 0.95]
+    blend_modes: [normal, multiply, darken]
+  stain_artifact:
+    weight: 6.0
+    coverage: {q1: 0.06, median: 0.26, q3: 0.39, maximum: 3.77}
+    opacity: [0.45, 0.90]
+    blend_modes: [normal, multiply]
+  bone_calcification:
+    weight: 4.0
+    coverage: {q1: 8.01, median: 11.15, q3: 15.73, maximum: 22.08}
+    opacity: [0.70, 1.00]
+    blend_modes: [normal]
+  fiber_hair:
+    weight: 4.0
+    coverage: {q1: 0.71, median: 1.39, q3: 2.38, maximum: 8.28}
+    opacity: [0.70, 1.00]
+    blend_modes: [normal, darken]
+  tissue_component:
+    weight: 3.4
+    coverage: {q1: 10.27, median: 12.42, q3: 14.50, maximum: 18.38}
+    opacity: [0.70, 1.00]
+    blend_modes: [normal]
+  other_artifact:
+    weight: 3.4
+    coverage: {q1: 1.04, median: 2.04, q3: 3.09, maximum: 8.93}
+    opacity: [0.60, 1.00]
+    blend_modes: [normal]
+  processing_material:
+    weight: 2.6
+    coverage: {q1: 9.14, median: 13.02, q3: 16.10, maximum: 23.19}
+    opacity: [0.65, 1.00]
+    blend_modes: [normal]
+  bubble:
+    weight: 2.2
+    coverage: {q1: 0.72, median: 1.99, q3: 2.92, maximum: 4.03}
+    opacity: [0.35, 0.80]
+    blend_modes: [normal, screen]
+  focus:
+    weight: 0.6
+    coverage: {q1: 0.03, median: 0.03, q3: 0.04, maximum: 0.06}
+    opacity: [0.70, 1.00]
+    blend_modes: [normal]
+  scratch_glass:
+    weight: 0.6
+    coverage: {q1: 0.001, median: 0.001, q3: 0.35, maximum: 0.70}
+    opacity: [0.50, 0.90]
+    blend_modes: [normal, screen]
+
+procedural:
+  illumination_gradient:
+    probability: 0.15
+    params:
+      strength: [0.10, 0.30]
+  local_blur:
+    probability: 0.12
+    params:
+      radius: [1.0, 3.5]
+      area_fraction: [0.05, 0.30]
+  pixelate:
+    probability: 0.03
+    params:
+      factor: [4, 10]
+  brightness_contrast:
+    probability: 0.08
+    params:
+      brightness: [0.85, 1.15]
+      contrast: [0.85, 1.15]

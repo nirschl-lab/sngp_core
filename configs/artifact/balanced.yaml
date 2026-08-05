@@ -1,0 +1,22 @@
+clean_probability: 0.10
+overlay_probability: 0.90
+max_overlays: 2
+
+# Equal occurrence weights are useful for training/evaluation when the source
+# asset collection is highly imbalanced. Coverage statistics stay realistic.
+categories:
+  debris: {weight: 1, coverage: {q1: 0.73, median: 1.60, q3: 4.64, maximum: 20.86}}
+  pigment_ink: {weight: 1, coverage: {q1: 2.58, median: 5.19, q3: 14.20, maximum: 24.65}}
+  stain_artifact: {weight: 1, coverage: {q1: 0.06, median: 0.26, q3: 0.39, maximum: 3.77}}
+  bone_calcification: {weight: 1, coverage: {q1: 8.01, median: 11.15, q3: 15.73, maximum: 22.08}}
+  fiber_hair: {weight: 1, coverage: {q1: 0.71, median: 1.39, q3: 2.38, maximum: 8.28}}
+  tissue_component: {weight: 1, coverage: {q1: 10.27, median: 12.42, q3: 14.50, maximum: 18.38}}
+  other_artifact: {weight: 1, coverage: {q1: 1.04, median: 2.04, q3: 3.09, maximum: 8.93}}
+  processing_material: {weight: 1, coverage: {q1: 9.14, median: 13.02, q3: 16.10, maximum: 23.19}}
+  bubble: {weight: 1, coverage: {q1: 0.72, median: 1.99, q3: 2.92, maximum: 4.03}}
+  focus: {weight: 1, coverage: {q1: 0.03, median: 0.03, q3: 0.04, maximum: 0.06}}
+  scratch_glass: {weight: 1, coverage: {q1: 0.001, median: 0.001, q3: 0.35, maximum: 0.70}}
+
+procedural:
+  illumination_gradient: {probability: 0.15, params: {strength: [0.10, 0.30]}}
+  local_blur: {probability: 0.12, params: {radius: [1.0, 3.5], area_fraction: [0.05, 0.30]}}

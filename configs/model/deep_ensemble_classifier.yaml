@@ -1,0 +1,47 @@
+_target_: src.models.ensemble.deep_ensemble_lit_module.DeepEnsembleLitModule
+
+name: deep_ensemble_resnet18
+
+# Deep Ensemble configuration
+num_estimators: 5  # Number of ensemble members
+train_strategy: sequential  # "sequential" or "all"
+uncertainty_type: variance  # "variance", "entropy", or "mutual_info"
+
+# Ensemble model (wraps multiple base models)
+net:
+  _target_: src.models.ensemble.deep_ensemble_model.DeepEnsemble
+  base_model_class:
+    _target_: src.models.baseline.baseline_models.BaselineClassifier
+    _partial_: true
+  base_model_kwargs:
+    arch: resnet18
+    num_classes: 8
+    dropout_p: 0.2
+    pretrained: true
+  num_estimators: 5
+  task: classification
+
+class_weights: null
+
+optimizer:
+  _target_: torch.optim.AdamW
+  _partial_: true
+  lr: 0.001
+  weight_decay: 0.0
+
+scheduler:
+  _target_: torch.optim.lr_scheduler.MultiStepLR
+  _partial_: true
+  milestones: [30, 70, 100]
+  gamma: 0.1
+
+# --- Training setup ---
+compile: false
+num_classes: 8
+hist_bins: 25
+test_name: "test_predictions_ensemble.csv"
+csv_save_path: "csv/"
+log_csv: false
+log_test_metrics: true
+class_freq: null
+label_smoothing: 0.0
