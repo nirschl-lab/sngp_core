@@ -1,0 +1,22 @@
+# @package _global_
+
+# configs/infer.yaml
+defaults:
+  - _self_
+  - paths: default
+  - data: ???
+  - infer/model: baseline_classifier
+  - infer/metrics: default
+  - infer/save: default
+
+task_name: "infer"
+
+tags: ["infer"]
+
+fold: test
+
+ckpt_path: ???
+
+save_path: ${paths.output_dir}
+
+seed: null

@@ -1,0 +1,19 @@
+# configs/data/artifact_image_classifier.yaml
+
+defaults:
+  - /img_augmentations: light_augmentations
+
+datamodule:
+  _target_: src.data.artifact_image_datamodule.ClassificationImageDataModule
+  dataset_name: nirschl-lab/acevedo_et_al_2020
+  num_classes: 8
+  batch_size: 64
+  num_workers: 32
+  pin_memory: true
+  test_all_folds: false
+  sample_rate: 0
+  dry_run_test_fold: test
+  simulate_artifacts_for_test: true
+  artifact_csv_path: ${paths.root_dir}/data/artifact/artifacts.csv
+  artifact_config_path: ${paths.root_dir}/configs/artifact/balanced.yaml
+  artifact_seed: 42

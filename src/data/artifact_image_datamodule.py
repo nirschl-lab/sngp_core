@@ -211,18 +211,14 @@ class ArtifactHFDataset(Dataset):
             if "Artifact mask is empty" not in str(exc):
                 raise
             logger.warning("Using the real image for dataset item {} because artifact mask was empty.", idx)
-            simulated = {"metadata": {}, "artifact_mask": None}
+            simulated = {"metadata": {}}
             artifact_simulated_image = real_image
-
-        artifact_mask = None
 
         return {
             "image_id": image_id,
             "real_image": real_image,
             "artifact_simulated_image": artifact_simulated_image,
             "target": label,
-            "artifact_mask": artifact_mask,
-            "artifact_metadata": simulated.get("metadata", {}),
             "fold": self.fold,
         }
     
@@ -351,7 +347,7 @@ class ClassificationImageDataModule(LightningDataModule):
             self.data_test = _build_dataset_for_split(data[self.dry_run_test_fold], self.dry_run_test_fold, self.test_transform, simulator)
 
         # set these indices for plotting
-        elif (self.trainer and self.trainer.state.stage == "test"):
+        elif stage == "test" or (self.trainer and self.trainer.state.stage == "test"):
             if self.test_all_folds:
                 self.log_.info('Testing on all folds - train, val and test')
                 eval_train = _build_dataset_for_split(data['train'], 'train', self.test_transform, simulator)
@@ -362,7 +358,7 @@ class ClassificationImageDataModule(LightningDataModule):
             else:
                 self.data_test = _build_dataset_for_split(data['test'], 'test', self.test_transform, simulator)
             # pdb.set_trace()
-            if not dry_run:
+            if not dry_run and self.trainer is not None:
                 data_test_ = data['test']
                 self.trainer.test_classes_to_idx = ast.literal_eval(data_test_[0]['classes_to_idx'])
                 self.trainer.test_idx_to_classes = {idx:cls for cls,idx in self.trainer.test_classes_to_idx.items()}

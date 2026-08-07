@@ -1,0 +1,9 @@
+# @package _global_
+
+infer:
+  save:
+    run_name: ""
+    save_csv: true
+    save_metrics_json: true
+    save_images: false
+    max_images_to_save: 64

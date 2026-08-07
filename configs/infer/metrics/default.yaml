@@ -1,0 +1,6 @@
+# @package _global_
+
+infer:
+  metrics:
+    enabled: true
+    items: [acc, ece, precision, recall, f1, nll]

@@ -1,0 +1,12 @@
+# @package _global_
+
+infer:
+  model:
+    model_cfg: sngp_classifier
+    model_overrides: {}
+    device: cuda
+    batch_size_override: null
+    checkpoint_override_model_hparams: true
+    strict_checkpoint_loading: false
+    use_mc_dropout: false
+    mc_passes: 10
