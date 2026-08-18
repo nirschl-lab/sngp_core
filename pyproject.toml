@@ -47,7 +47,6 @@ addopts = [
     "--color=yes",
     "--durations=0",
     "--strict-markers",
-    "--doctest-modules",
     "--showlocals"
 ]
 python_files = "test_*.py"
