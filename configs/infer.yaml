@@ -5,7 +5,7 @@ defaults:
   - _self_
   - paths: default
   - data: ???
-  - infer/model: baseline_classifier
+  - infer/runtime: default
   - infer/metrics: default
   - infer/save: default
 
@@ -13,7 +13,7 @@ task_name: "infer"
 
 tags: ["infer"]
 
-fold: test
+fold: test # train | validation | test | all
 
 ckpt_path: ???
 

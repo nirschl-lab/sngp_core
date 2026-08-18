@@ -27,13 +27,10 @@ rootutils.setup_root(__file__, indicator=".project-root", pythonpath=True)
 from src.models.outputs import ModelOutput  # noqa: E402
 
 
-DEFAULT_INFER_MODEL_CFG: Dict[str, Any] = {
-    "model_cfg": "sngp_classifier",
-    "model_overrides": {},
+DEFAULT_INFER_RUNTIME_CFG: Dict[str, Any] = {
     "device": "cuda",
     "batch_size_override": None,
-    "checkpoint_override_model_hparams": True,
-    "strict_checkpoint_loading": False,
+    "strict": False,
     "use_mc_dropout": False,
     "mc_passes": 10,
 }
@@ -56,9 +53,9 @@ def _resolve_sections(cfg: DictConfig) -> DictConfig:
     if "infer" not in cfg:
         cfg.infer = OmegaConf.create({})
 
-    cfg.infer.model = OmegaConf.merge(
-        OmegaConf.create(DEFAULT_INFER_MODEL_CFG),
-        cfg.infer.get("model") or OmegaConf.create({}),
+    cfg.infer.runtime = OmegaConf.merge(
+        OmegaConf.create(DEFAULT_INFER_RUNTIME_CFG),
+        cfg.infer.get("runtime") or OmegaConf.create({}),
     )
     cfg.infer.metrics = OmegaConf.merge(
         OmegaConf.create(DEFAULT_INFER_METRICS_CFG),
@@ -162,7 +159,7 @@ class BaseInferenceRunner:
         self.class_names = class_names or {}
         self.expected_num_classes = expected_num_classes
 
-        self.device = _resolve_device(str(self.cfg.infer.model.device))
+        self.device = _resolve_device(str(self.cfg.infer.runtime.device))
         self.model.to(self.device)
         self.model.eval()
 
@@ -306,8 +303,8 @@ class ClassificationInferenceRunner(BaseInferenceRunner):
             logits, probs, uncertainty = _extract_logits_probs(
                 model=self.model,
                 x=x,
-                use_mc_dropout=bool(self.cfg.infer.model.use_mc_dropout),
-                mc_passes=int(self.cfg.infer.model.mc_passes),
+                use_mc_dropout=bool(self.cfg.infer.runtime.use_mc_dropout),
+                mc_passes=int(self.cfg.infer.runtime.mc_passes),
             )
             if not torch.isfinite(logits).all():
                 raise RuntimeError("Encountered non-finite logits during inference.")
@@ -345,8 +342,8 @@ def _instantiate_datamodule(cfg: DictConfig):
     if not isinstance(dm_cfg, DictConfig):
         dm_cfg = OmegaConf.create(dm_cfg)
 
-    if cfg.infer.model.batch_size_override is not None:
-        dm_cfg.batch_size = cfg.infer.model.batch_size_override
+    if cfg.infer.runtime.batch_size_override is not None:
+        dm_cfg.batch_size = cfg.infer.runtime.batch_size_override
 
     datamodule = hydra.utils.instantiate(
         dm_cfg,
@@ -366,12 +363,17 @@ def _instantiate_model(cfg: DictConfig, device: torch.device):
     longer produce a checkpoint/model compatibility error, because there is no longer
     a second, independently-configured model in the loop to be incompatible with.
     """
-    from src.checkpointing.io import load_net
+    from src.checkpointing.io import load_net, read_meta
 
+    meta = read_meta(cfg.ckpt_path)
+    logger.info(
+        f"Loading checkpoint: lit_module={meta.lit_module}, net={meta.net_spec.get('name')}, "
+        f"arch={meta.net_spec.get('arch')}, num_classes={meta.num_classes}"
+    )
     return load_net(
         cfg.ckpt_path,
         device=str(device),
-        strict=bool(cfg.infer.model.strict_checkpoint_loading),
+        strict=bool(cfg.infer.runtime.strict),
     )
 
 
@@ -382,7 +384,7 @@ def run_inference(cfg: DictConfig) -> Dict[str, Any]:
     cfg = _resolve_sections(cfg)
     fold = _normalize_fold(str(cfg.get("fold", "test")))
 
-    device = _resolve_device(str(cfg.infer.model.device))
+    device = _resolve_device(str(cfg.infer.runtime.device))
 
     datamodule = _instantiate_datamodule(cfg)
 

@@ -1,0 +1,13 @@
+# @package _global_
+
+# Pure runtime knobs for inference. Model architecture is never configured here --
+# the checkpoint is authoritative for that (see src/checkpointing/io.py) -- so unlike
+# the old configs/infer/model/{baseline_classifier,sngp_classifier}.yaml split, one
+# runtime config works for every checkpoint.
+infer:
+  runtime:
+    device: cuda
+    batch_size_override: null
+    strict: false
+    use_mc_dropout: false
+    mc_passes: 10

@@ -23,7 +23,7 @@ def test_infer_datamodule_resolves_paths_root_dir(monkeypatch):
                     "artifact_config_path": "${paths.root_dir}/configs/artifact/balanced.yaml",
                 }
             },
-            "infer": {"model": {"batch_size_override": None}},
+            "infer": {"runtime": {"batch_size_override": None}},
             "paths": {"root_dir": "/tmp/fake-root"},
         }
     )

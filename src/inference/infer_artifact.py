@@ -121,7 +121,7 @@ class ArtifactInferenceRunner:
 		self.class_names = class_names or {}
 		self.expected_num_classes = expected_num_classes
 
-		self.device = _resolve_device(str(self.cfg.infer.model.device))
+		self.device = _resolve_device(str(self.cfg.infer.runtime.device))
 		self.model.to(self.device)
 		self.model.eval()
 
@@ -276,8 +276,8 @@ class ArtifactInferenceRunner:
 				logits, probs, uncertainty = _extract_logits_probs(
 					model=self.model,
 					x=x,
-					use_mc_dropout=bool(self.cfg.infer.model.use_mc_dropout),
-					mc_passes=int(self.cfg.infer.model.mc_passes),
+					use_mc_dropout=bool(self.cfg.infer.runtime.use_mc_dropout),
+					mc_passes=int(self.cfg.infer.runtime.mc_passes),
 				)
 				preds = torch.argmax(probs, dim=1)
 				num_classes = probs.shape[1]
