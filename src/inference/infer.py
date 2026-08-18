@@ -24,6 +24,8 @@ from torchmetrics.classification import (
 
 rootutils.setup_root(__file__, indicator=".project-root", pythonpath=True)
 
+from src.models.outputs import ModelOutput  # noqa: E402
+
 
 DEFAULT_INFER_MODEL_CFG: Dict[str, Any] = {
     "model_cfg": "sngp_classifier",
@@ -73,9 +75,9 @@ def _normalize_fold(fold: str) -> str:
     fold_norm = fold.strip().lower()
     if fold_norm == "val":
         return "validation"
-    if fold_norm in {"train", "validation", "test"}:
+    if fold_norm in {"train", "validation", "test", "all"}:
         return fold_norm
-    raise ValueError(f"Unsupported fold '{fold}'. Use train, val, or test.")
+    raise ValueError(f"Unsupported fold '{fold}'. Use train, val, test, or all.")
 
 
 def _resolve_device(device_name: str) -> torch.device:
@@ -110,8 +112,11 @@ def _extract_logits_probs(
     output = model(x)
 
     uncertainty = None
-    if isinstance(output, tuple):
-        # SNGP modules often return (mean_field_logits, raw_logits, pred_var)
+    if isinstance(output, ModelOutput):
+        logits = output.logits
+        uncertainty = output.variance
+    elif isinstance(output, tuple):
+        # Legacy nets returning a bare (mean_field_logits, raw_logits, pred_var) tuple.
         logits = output[0]
         if len(output) >= 3 and torch.is_tensor(output[2]):
             uncertainty = output[2]
@@ -304,6 +309,10 @@ class ClassificationInferenceRunner(BaseInferenceRunner):
                 use_mc_dropout=bool(self.cfg.infer.model.use_mc_dropout),
                 mc_passes=int(self.cfg.infer.model.mc_passes),
             )
+            if not torch.isfinite(logits).all():
+                raise RuntimeError("Encountered non-finite logits during inference.")
+            if not torch.isfinite(probs).all():
+                raise RuntimeError("Encountered non-finite probabilities during inference.")
             preds = torch.argmax(probs, dim=1)
 
             num_classes = probs.shape[1]
@@ -325,46 +334,6 @@ class ClassificationInferenceRunner(BaseInferenceRunner):
 
         return self._finalize()
 
-
-def _load_checkpoint_state_dict(ckpt_path: str, device: torch.device) -> Dict[str, torch.Tensor]:
-    checkpoint = torch.load(ckpt_path, map_location=device, weights_only=False)
-    if isinstance(checkpoint, dict) and "state_dict" in checkpoint:
-        return checkpoint["state_dict"]
-    if isinstance(checkpoint, dict):
-        return checkpoint
-    raise ValueError(f"Unsupported checkpoint format at {ckpt_path}")
-
-
-def _merge_checkpoint_hparams(model_cfg: DictConfig, ckpt_path: str) -> DictConfig:
-    checkpoint = torch.load(ckpt_path, map_location="cpu", weights_only=False)
-    if not isinstance(checkpoint, dict):
-        return model_cfg
-
-    hyper_parameters = checkpoint.get("hyper_parameters")
-    if not isinstance(hyper_parameters, dict):
-        return model_cfg
-
-    # Strip non-primitive values (e.g. instantiated nn.Module objects) that OmegaConf cannot wrap
-    _PRIMITIVE = (int, float, str, bool, type(None))
-    serializable = {k: v for k, v in hyper_parameters.items() if isinstance(v, _PRIMITIVE)}
-    # Checkpoint may store None as the string 'None'; convert back to avoid downstream truthy checks
-    serializable = {k: (None if v == "None" else v) for k, v in serializable.items()}
-    logger.debug(f"Checkpoint hyper_parameters keys: {list(hyper_parameters.keys())}")
-    logger.debug(f"Serializable (primitive) keys being merged: {serializable}")
-    if not serializable:
-        return model_cfg
-
-    merged = OmegaConf.merge(model_cfg, OmegaConf.create(serializable))
-
-    ckpt_num_classes = serializable.get("num_classes")
-    if isinstance(ckpt_num_classes, int):
-        if "net" in merged and isinstance(merged.net, DictConfig):
-            merged.net.num_classes = ckpt_num_classes
-        merged.num_classes = ckpt_num_classes
-        logger.info(f"Overrode net.num_classes with checkpoint num_classes={ckpt_num_classes}.")
-
-    logger.info("Merged model config with checkpoint hyper_parameters for inference.")
-    return merged
 
 
 def _instantiate_datamodule(cfg: DictConfig):
@@ -388,44 +357,22 @@ def _instantiate_datamodule(cfg: DictConfig):
     return datamodule
 
 
-def _load_model_cfg_from_infer(cfg: DictConfig) -> DictConfig:
-    if "model" in cfg:
-        model_cfg = OmegaConf.create(cfg.model)
-    else:
-        model_cfg_name = str(cfg.infer.model.model_cfg)
-        model_cfg_path = Path(__file__).resolve().parents[2] / "configs" / "model" / f"{model_cfg_name}.yaml"
-        if not model_cfg_path.exists():
-            raise FileNotFoundError(f"Model config not found: {model_cfg_path}")
-        model_cfg = OmegaConf.load(model_cfg_path)
-
-    overrides = cfg.infer.model.get("model_overrides")
-    if overrides:
-        model_cfg = OmegaConf.merge(model_cfg, overrides)
-
-    return model_cfg
-
-
 def _instantiate_model(cfg: DictConfig, device: torch.device):
-    model_cfg = _load_model_cfg_from_infer(cfg)
-    if bool(cfg.infer.model.checkpoint_override_model_hparams):
-        model_cfg = _merge_checkpoint_hparams(model_cfg, cfg.ckpt_path)
+    """Load the net directly from the checkpoint via the single canonical loader.
 
-    lit_model = hydra.utils.instantiate(model_cfg)
-    state_dict = _load_checkpoint_state_dict(cfg.ckpt_path, device)
-    missing, unexpected = lit_model.load_state_dict(
-        state_dict,
+    The checkpoint is authoritative for architecture identity (see
+    `src/checkpointing/io.py`) -- no separate `configs/infer/model/*.yaml` lookup or
+    hparams-merging is needed; a mismatched/unavailable Hydra model config can no
+    longer produce a checkpoint/model compatibility error, because there is no longer
+    a second, independently-configured model in the loop to be incompatible with.
+    """
+    from src.checkpointing.io import load_net
+
+    return load_net(
+        cfg.ckpt_path,
+        device=str(device),
         strict=bool(cfg.infer.model.strict_checkpoint_loading),
     )
-
-    if missing:
-        logger.warning(f"Missing keys when loading checkpoint: {missing}")
-    if unexpected:
-        logger.warning(f"Unexpected keys when loading checkpoint: {unexpected}")
-
-    model = lit_model.net
-    model.to(device)
-    model.eval()
-    return model, lit_model
 
 
 def run_inference(cfg: DictConfig) -> Dict[str, Any]:
@@ -439,7 +386,12 @@ def run_inference(cfg: DictConfig) -> Dict[str, Any]:
 
     datamodule = _instantiate_datamodule(cfg)
 
-    if fold == "train":
+    if fold == "all":
+        if hasattr(datamodule, "test_all_folds"):
+            datamodule.test_all_folds = True
+        datamodule.setup(stage="test")
+        dataloader = datamodule.test_dataloader()
+    elif fold == "train":
         datamodule.setup(stage="fit")
         dataloader = datamodule.train_dataloader()
     elif fold == "validation":
@@ -449,13 +401,17 @@ def run_inference(cfg: DictConfig) -> Dict[str, Any]:
         datamodule.setup(stage="test")
         dataloader = datamodule.test_dataloader()
 
-    model, lit_model = _instantiate_model(cfg, device=device)
+    model = _instantiate_model(cfg, device=device)
 
     class_names = {}
     if hasattr(datamodule, "trainer") and datamodule.trainer is not None:
         class_names = getattr(datamodule.trainer, "test_idx_to_classes", {})
-    elif hasattr(lit_model, "test_idx_to_classes"):
-        class_names = getattr(lit_model, "test_idx_to_classes", {})
+    if not class_names:
+        from src.checkpointing.io import read_meta
+
+        checkpoint_idx_to_class = read_meta(cfg.ckpt_path).idx_to_class
+        if checkpoint_idx_to_class:
+            class_names = checkpoint_idx_to_class
 
     expected_num_classes = None
     if hasattr(datamodule, "num_classes"):
@@ -466,12 +422,15 @@ def run_inference(cfg: DictConfig) -> Dict[str, Any]:
     if dataloader is None:
         raise RuntimeError("Datamodule returned no test dataloader.")
 
+    # import pdb; pdb.set_trace()
     try:
         first_batch = next(iter(dataloader))
     except StopIteration as exc:
         raise RuntimeError("Dataloader is empty for the selected fold.") from exc
 
-    if fold == "train":
+    if fold == "all":
+        dataloader = datamodule.test_dataloader()
+    elif fold == "train":
         dataloader = datamodule.train_dataloader()
     elif fold == "validation":
         dataloader = datamodule.val_dataloader()

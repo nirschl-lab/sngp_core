@@ -26,10 +26,10 @@ class DeepEnsembleLitModule(LitModuleBase):
     
     def __init__(
         self,
-        net: torch.nn.Module,  # Should be a DeepEnsemble instance
-        optimizer: torch.optim.Optimizer,
-        scheduler: torch.optim.lr_scheduler,
-        compile: bool,
+        net: Optional[torch.nn.Module] = None,  # Should be a DeepEnsemble instance
+        optimizer: Optional[torch.optim.Optimizer] = None,
+        scheduler: torch.optim.lr_scheduler = None,
+        compile: bool = False,
         num_estimators: int = 5,
         num_classes: int = 8,
         hist_bins: int = 10,

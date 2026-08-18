@@ -37,30 +37,27 @@ from omegaconf import OmegaConf
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.models.baseline_classification_lit_module import BaselineClassificationLitModule
-from src.models.sngp_classification_lit_module import SNGPClassificationLitModule
-from src.models.ensemble import DeepEnsembleLitModule
+from src.checkpointing.io import load_lit_module
 
 
 def load_models(args):
-    """Load all model checkpoints."""
+    """Load all model checkpoints via the single canonical loader -- the LightningModule
+    class is resolved from each checkpoint's own metadata, so callers don't need to
+    know in advance (or import) which model family a checkpoint holds."""
     models = {}
-    
+
     if args.baseline_ckpt:
         print(f"Loading Baseline model from {args.baseline_ckpt}")
-        models['Baseline'] = BaselineClassificationLitModule.load_from_checkpoint(args.baseline_ckpt)
-        models['Baseline'].eval()
-    
+        models['Baseline'] = load_lit_module(args.baseline_ckpt, device=args.device)
+
     if args.sngp_ckpt:
         print(f"Loading SNGP model from {args.sngp_ckpt}")
-        models['SNGP'] = SNGPClassificationLitModule.load_from_checkpoint(args.sngp_ckpt)
-        models['SNGP'].eval()
-    
+        models['SNGP'] = load_lit_module(args.sngp_ckpt, device=args.device)
+
     if args.ensemble_ckpt:
         print(f"Loading Deep Ensemble model from {args.ensemble_ckpt}")
-        models['DeepEnsemble'] = DeepEnsembleLitModule.load_from_checkpoint(args.ensemble_ckpt)
-        models['DeepEnsemble'].eval()
-    
+        models['DeepEnsemble'] = load_lit_module(args.ensemble_ckpt, device=args.device)
+
     return models
 
 
@@ -156,7 +153,7 @@ def evaluate_model(model, dataloader, device: str, model_name: str) -> Dict:
                 uncertainty = uncertainty.cpu().numpy()
                 all_uncertainties.extend(uncertainty)
             else:
-                logits = model(images)
+                logits = model(images).logits
                 probs = torch.softmax(logits, dim=1).cpu().numpy()
                 
                 # For SNGP, try to get uncertainty from variance

@@ -18,6 +18,8 @@ from torchmetrics.classification import (
 	MulticlassRecall,
 )
 
+from src.models.outputs import ModelOutput
+
 
 def _resolve_device(device_name: str) -> torch.device:
 	if device_name == "cuda" and not torch.cuda.is_available():
@@ -70,7 +72,10 @@ def _extract_logits_probs(
 	output = model(x)
 
 	uncertainty = None
-	if isinstance(output, tuple):
+	if isinstance(output, ModelOutput):
+		logits = output.logits
+		uncertainty = output.variance
+	elif isinstance(output, tuple):
 		logits = output[0]
 		if len(output) >= 3 and torch.is_tensor(output[2]):
 			uncertainty = output[2]

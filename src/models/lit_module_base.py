@@ -17,7 +17,9 @@ from torchmetrics.classification import \
     MulticlassF1Score
 from torchmetrics.classification.accuracy import Accuracy
 
+from src.checkpointing.spec import FORMAT_VERSION, build_meta
 from src.models.outputs import ModelOutput
+from src.models.registry import build_net
 from src.visualization.dempster_shafer_uncertainity_plot import DempsterShaferUncertaintyPlot
 from src.visualization.multi_class_ROC import plot_roc_curve
 from src.visualization.plot_ece import plot_calibration_curve
@@ -27,10 +29,11 @@ from src.visualization.plot_prob_histograms import single_model_probability_hist
 class LitModuleBase(LightningModule):
     def __init__(
         self,
-        net: torch.nn.Module,
-        optimizer: torch.optim.Optimizer,
-        scheduler: torch.optim.lr_scheduler,
-        compile: bool,
+        net: Optional[torch.nn.Module] = None,
+        net_spec: Optional[dict] = None,
+        optimizer: Optional[torch.optim.Optimizer] = None,
+        scheduler: torch.optim.lr_scheduler = None,
+        compile: bool = False,
         num_classes: int = 8,
         hist_bins: int = 10, #for histogram plotting
         calibration_curve_bins: int =10, #for ece plot
@@ -47,7 +50,26 @@ class LitModuleBase(LightningModule):
         **kwargs
     ) -> None:
         super().__init__()
-        self.save_hyperparameters(logger=False)
+
+        # `net` is a live nn.Module and must never be pickled into hparams -- that is
+        # exactly what made checkpoints depend on the code structure they were saved
+        # with. Instead we persist `net_spec` (plain data: registry name + ctor kwargs)
+        # and rebuild `net` from it when one isn't passed directly (e.g. when Lightning
+        # reconstructs this class from a checkpoint's saved hyperparameters).
+        if net is None:
+            if net_spec is None:
+                raise ValueError(f"{type(self).__name__} requires either `net` or `net_spec`.")
+            load_spec = dict(net_spec)
+            if "pretrained" in load_spec:
+                load_spec["pretrained"] = False  # weights are about to be overwritten by state_dict
+            net = build_net(load_spec)
+        net_spec = net.spec
+
+        self.save_hyperparameters(
+            ignore=["net", "optimizer", "scheduler", "calibration_cfg"], logger=False
+        )
+        self._optimizer_partial = optimizer
+        self._scheduler_partial = scheduler
 
         self.net = net
         self.num_classes = self.net.num_classes
@@ -397,6 +419,31 @@ class LitModuleBase(LightningModule):
         self.logger.experiment.log_artifact(artifact)
     
 
+    def on_save_checkpoint(self, checkpoint: Dict[str, Any]) -> None:
+        """Attach a plain-data, format-versioned metadata block so checkpoints are
+        self-describing without anyone needing to unpickle `hyper_parameters["net"]`."""
+        idx_to_class = getattr(self, "test_idx_to_classes", None)
+        dataset_name = None
+        datamodule = getattr(self._trainer, "datamodule", None) if self._trainer is not None else None
+        if datamodule is not None:
+            dataset_name = getattr(datamodule, "dataset_name", None)
+
+        checkpoint["sngp_core"] = build_meta(
+            self,
+            net_spec=self.net.spec,
+            num_classes=self.num_classes,
+            idx_to_class=idx_to_class,
+            dataset_name=dataset_name,
+        )
+
+    def on_load_checkpoint(self, checkpoint: Dict[str, Any]) -> None:
+        sngp_core = checkpoint.get("sngp_core")
+        if sngp_core is not None and sngp_core.get("format_version", 0) < FORMAT_VERSION:
+            raise ValueError(
+                f"Checkpoint format_version {sngp_core.get('format_version')} is older than "
+                f"{FORMAT_VERSION}. Run scripts/checkpoints/migrate_checkpoints.py to migrate it."
+            )
+
     def setup(self, stage: str) -> None:
         """Lightning hook that is called at the beginning of fit (train + validate), validate,
         test, or predict.
@@ -429,9 +476,16 @@ class LitModuleBase(LightningModule):
 
         :return: A dict containing the configured optimizers and learning-rate schedulers to be used for training.
         """
-        optimizer = self.hparams.optimizer(params=self.trainer.model.parameters())
-        if self.hparams.scheduler is not None:
-            scheduler = self.hparams.scheduler(optimizer=optimizer)
+        if self._optimizer_partial is None:
+            raise RuntimeError(
+                f"{type(self).__name__} was built without an optimizer (e.g. reconstructed from a "
+                "checkpoint via load_lit_module/load_from_checkpoint for inference). To resume "
+                "training, instantiate it via Hydra with `optimizer=...`/`scheduler=...` and use "
+                "trainer.fit(model, ckpt_path=...) instead."
+            )
+        optimizer = self._optimizer_partial(params=self.trainer.model.parameters())
+        if self._scheduler_partial is not None:
+            scheduler = self._scheduler_partial(optimizer=optimizer)
             return {
                 "optimizer": optimizer,
                 "lr_scheduler": {

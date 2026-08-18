@@ -27,6 +27,7 @@ rootutils.setup_root(__file__, indicator=".project-root", pythonpath=True)
 # more info: https://github.com/ashleve/rootutils
 # ------------------------------------------------------------------------------------ #
 
+from src.checkpointing.resolve import resolve_ckpt_uri
 from src.utils import (
     RankedLogger,
     extras,
@@ -57,30 +58,13 @@ def evaluate(cfg: DictConfig) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     logger: List[Logger] = instantiate_loggers(cfg.get("logger"))
 
     if not cfg.ckpt_path.endswith(".ckpt"):
-        import wandb
-        from lightning.pytorch.loggers import WandbLogger
-        
-        # Find the WandbLogger from instantiated loggers
-        wandb_logger = None
-        for lg in logger:
-            if isinstance(lg, WandbLogger):
-                wandb_logger = lg
-                break
-        
-        if wandb_logger is not None:
-            # Use the existing W&B run from the logger
-            run = wandb_logger.experiment
-            log.info(f"Using existing W&B run: {run.id}")
-        else:
-            # Fallback to creating new run if no WandbLogger found
-            project = cfg.get("logger")['wandb'].get('project', 'default-project')
-            job_type = cfg.get("logger")['wandb'].get('job_type', 'inference')
-            run = wandb.init(project=project, job_type=job_type)
-            log.info("Created new W&B run for artifact download")
-        
-        artifact = run.use_artifact(cfg.ckpt_path.replace("wandb-artifact://", ""), type='model')
-        artifact_dir = artifact.download()
-        cfg.ckpt_path = f"{artifact_dir}/model.ckpt"
+        wandb_cfg = cfg.get("logger", {}).get("wandb", {}) if cfg.get("logger") else {}
+        cfg.ckpt_path = resolve_ckpt_uri(
+            cfg.ckpt_path,
+            loggers=logger,
+            wandb_project=wandb_cfg.get("project", "default-project"),
+            wandb_job_type=wandb_cfg.get("job_type", "inference"),
+        )
         log.info(f"Using checkpoint from W&B artifact: {cfg.ckpt_path}")
 
     train_augmentations = None
