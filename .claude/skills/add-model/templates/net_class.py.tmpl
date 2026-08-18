@@ -1,0 +1,42 @@
+"""<ONE LINE: what this net is>."""
+import torch
+import torch.nn as nn
+
+from src.models.backbones import build_backbone
+from src.models.outputs import ModelOutput
+from src.models.registry import register_net
+
+
+@register_net("<registry_key>")
+class <ClassName>(nn.Module):
+    def __init__(
+        self,
+        arch: str = "resnet18",
+        num_classes: int = 2,
+        pretrained: bool = True,
+        # ... additional plain-data hyperparameters ...
+    ):
+        super().__init__()
+        self.arch = arch
+        self.num_classes = num_classes
+        self.pretrained = pretrained
+
+        self.feature_extractor, feat_dim = build_backbone(arch, pretrained)
+        self.head = nn.Linear(feat_dim, num_classes)
+
+    @property
+    def spec(self) -> dict:
+        """Plain-data description of this net, sufficient to rebuild it via
+        `src.models.registry.build_net`. Every value here must be JSON-serializable
+        (str/int/float/bool/None/dict/list) -- never a live object."""
+        return {
+            "name": self.registry_name,
+            "arch": self.arch,
+            "num_classes": self.num_classes,
+            "pretrained": self.pretrained,
+        }
+
+    def forward(self, x: torch.Tensor) -> ModelOutput:
+        feats = self.feature_extractor(x)
+        logits = self.head(feats)
+        return ModelOutput(logits=logits)
