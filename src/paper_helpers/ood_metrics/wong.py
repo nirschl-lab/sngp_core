@@ -1,59 +1,20 @@
-from src.metrics.auc import AUROC_across_dataset
-import pandas as pd
+"""Wong (in-distribution) vs. every other dataset (OOD) AUROC comparison across
+Baseline/MC-Dropout/SNGP, using entropy-based uncertainty (ISBI 2026 run). See
+src/paper_helpers/ood_metrics/runner.py.
+"""
+from pathlib import Path
 
-id_names = ['wong']
-ood_names = ['tang', 'kather2018', 'kather2016', 'jung', 'nirschl', 'acevedo']
-# fid_scores = {'tang':, 
-#               'kather2018:', 
-#               'kather2016:', 
-#               'jung:', 
-#               'nirschl:', 
-#               'acevedo:'}
+from src.paper_helpers.ood_metrics.runner import run_ood_comparison
 
-wong_file_names = {
-    'nirschl':'nirschl_et_al_2018.csv', 
-    'kather2016':'kather_et_al_2016.csv',
-    'acevedo':'acevedo_et_al_2020.csv',
-    'kather2018': 'kather_et_al_2018.csv',
-    'jung': 'jung_et_al_2022.csv',
-    'tang': 'tang_et_al_2019.csv',
-    'wong': 'wong_et_al_2022.csv'
-}
-
-baseline_csv_path = 'csv/final/wong_baseline'
-montae_carlo_csv_path = 'csv/final/wong_mc'
-sngp_csv_path = 'csv/final/wong_sngp'
-
-csv_data = []
-
-# print("----- Baseline Results -----")
-csv_path = baseline_csv_path
-res = AUROC_across_dataset(csv_path, wong_file_names, id_names, ood_names)
-# print(res)
-# Add method name as first column
-row_data = {'Method': 'Baseline'}
-row_data.update(res)
-csv_data.append(row_data)
-
-# print("----- MC Dropout Results -----")
-csv_path = montae_carlo_csv_path
-res = AUROC_across_dataset(csv_path, wong_file_names, id_names, ood_names)
-# print(res)
-row_data = {'Method': 'MC Dropout'}
-row_data.update(res)
-csv_data.append(row_data)
-
-# print("----- SNGP Results -----")
-csv_path = sngp_csv_path
-res = AUROC_across_dataset(csv_path, wong_file_names, id_names, ood_names)
-# print(res)
-row_data = {'Method': 'SNGP'}
-row_data.update(res)
-csv_data.append(row_data)
-
-# Create DataFrame and save to CSV
-df = pd.DataFrame(csv_data)
-df.to_csv('csv/final/wong_results.csv', index=False)
-print("\nResults saved to csv/final/wong_results.csv")
-print(df)
-
+run_ood_comparison(
+    dataset="wong",
+    methods={
+        "Baseline": Path("csv/isbi_test_files/wong_baseline"),
+        "MC Dropout": Path("csv/isbi_test_files/wong_mc"),
+        "SNGP": Path("csv/isbi_test_files/wong_sngp"),
+    },
+    ood_datasets=["tang", "kather2018", "kather2016", "jung", "nirschl", "acevedo"],
+    out_dir=Path("csv/isbi_test_files"),
+    score_mode="entropy",
+    out_filename="wong_results_entropy.csv",
+)

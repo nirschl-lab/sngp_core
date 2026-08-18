@@ -1,12 +1,8 @@
-import os
 from typing import Any, Dict, Tuple, List, Optional
 
-import matplotlib.pyplot as plt
 import numpy as np
-import pandas as pd
 import torch
 import torch.nn.functional as F
-import wandb
 from lightning import LightningModule
 from loguru import logger
 from torchmetrics import MaxMetric, MeanMetric
@@ -20,10 +16,6 @@ from torchmetrics.classification.accuracy import Accuracy
 from src.checkpointing.spec import FORMAT_VERSION, build_meta
 from src.models.outputs import ModelOutput
 from src.models.registry import build_net
-from src.visualization.dempster_shafer_uncertainity_plot import DempsterShaferUncertaintyPlot
-from src.visualization.multi_class_ROC import plot_roc_curve
-from src.visualization.plot_ece import plot_calibration_curve
-from src.visualization.plot_prob_histograms import single_model_probability_histogram
 
 
 class LitModuleBase(LightningModule):
@@ -122,6 +114,12 @@ class LitModuleBase(LightningModule):
         self._test_targets: List[torch.Tensor] = []
         self._test_image_ids: List[str] = []
         self._test_fold: List[str] = []
+
+        # Defaults so on_test_epoch_end / TestArtifactsCallback can rely on these
+        # always existing, even for a subclass that never sets them or a `setup()`
+        # call that never reaches the stage=="test" branch below.
+        self.inference_times: List[float] = []
+        self.test_idx_to_classes: Dict[int, str] = {}
 
         #plotting
         self.hist_bins = hist_bins
@@ -300,14 +298,14 @@ class LitModuleBase(LightningModule):
             self.test_f1(preds, targets)
     
     def on_test_epoch_end(self) -> None:
-        """Lightning hook that is called when a test epoch ends."""
+        """Lightning hook that is called when a test epoch ends.
 
-        logits_all = torch.cat(self._test_logits).numpy() # n x C
-        probs_all = torch.cat(self._test_probs).numpy() # n x C
-        targets = torch.cat(self._test_targets).numpy() # N x 1 (0-C)
-        prediction_prob_score = np.max(probs_all, axis=1)
-        prediction = np.argmax(probs_all, axis=-1)
-        true_bin_label = (np.argmax(probs_all, axis=-1) == targets)*1
+        CSV/figure artifact writing (and any wandb-specific logging of them) lives in
+        `src.callbacks.test_artifacts_callback.TestArtifactsCallback` instead of here,
+        so this module has no hard dependency on a particular logger backend -- it
+        used to call `self.logger.experiment.log(...)` unconditionally, which crashed
+        whenever no W&B logger was attached.
+        """
         if self.log_test_metrics:
 
             # Compute final metrics
@@ -345,79 +343,6 @@ class LitModuleBase(LightningModule):
                         self.log(f"test/recall_class_{i}", recall_per_class[i])
                         self.log(f"test/f1_class_{i}", f1_per_class[i])
 
-
-        if self.log_csv:
-            # Create DataFrame with all the data
-            data_dict = {
-                'image_id': self._test_image_ids,
-                'target': targets,
-                'prediction': prediction,
-                'prediction_prob_score': prediction_prob_score,
-                'true_bin_label': true_bin_label,
-                'class_logits': logits_all.tolist(),
-                'class_probs': probs_all.tolist(),
-                'fold': self._test_fold
-            }
-            self._log_csv_artifact(data_dict)
-
-        # fig, ax = rel_diagram_smoothed(prediction_prob_score, true_bin_label, n_bootstrap=100, num_mesh=200)
-        # self.logger.experiment.log({"test/smooth_ece_plot": wandb.Image(fig)})
-
-        # fig, ax = rel_diagram_binned(prediction_prob_score, true_bin_label)
-        # self.logger.experiment.log({"test/binned_ece_plot": wandb.Image(fig)})
-
-
-        data_classes = len(self.test_idx_to_classes)
-        if data_classes < self.num_classes:
-            for i in range(self.num_classes - data_classes):
-                self.test_idx_to_classes[
-                    data_classes + i
-                ] = f'No class {str(data_classes + i)}'
-                logger.info("Class names not found, using numbers for plotting.")
-
-        fig = plot_calibration_curve(preds=probs_all, \
-                                        targets=targets, \
-                                        num_classes=self.num_classes, \
-                                        n_bins=self.calibration_curve_bins, \
-                                        image_classes=self.test_idx_to_classes)
-
-        self.logger.experiment.log({"test/ece_plot": wandb.Image(fig)})
-        plt.close(fig)
-
-        fig = plot_roc_curve(probs_all, targets, num_classes=self.num_classes, class_names=self.test_idx_to_classes)
-        self.logger.experiment.log({"test/roc_curve": wandb.Image(fig)})
-        plt.close(fig)
-
-        fig = single_model_probability_histogram(prediction_prob_score, bins=self.hist_bins)
-        self.logger.experiment.log({"test/logits_distribution": wandb.Image(fig)})
-        plt.close(fig)
-
-        fig = DempsterShaferUncertaintyPlot(logits_all)
-        self.logger.experiment.log({"test/dempster_shafer_uncertainty": wandb.Image(fig)})
-        plt.close(fig)
-
-    def _log_csv_artifact(self, data_dict):
-
-        # pdb.set_trace()
-        dataset_name = self._trainer.datamodule.dataset_name if hasattr(self._trainer.datamodule, 'dataset_name') else None
-        if dataset_name:
-            dataset_name = dataset_name.split('/')[-1]
-        else:
-            dataset_name = 'test_predictions'
-
-        df = pd.DataFrame(data_dict)
-        os.makedirs(self.csv_save_path, exist_ok=True) 
-        csv_path = os.path.join(self.csv_save_path, dataset_name + ".csv")
-        df.to_csv(csv_path, index=False)
-        # Create and log wandb artifact
-        artifact = wandb.Artifact(
-            name=dataset_name,
-            type="predictions",
-            description="Test set predictions with probabilities and metadata"
-        )
-        artifact.add_file(csv_path)
-        self.logger.experiment.log_artifact(artifact)
-    
 
     def on_save_checkpoint(self, checkpoint: Dict[str, Any]) -> None:
         """Attach a plain-data, format-versioned metadata block so checkpoints are
