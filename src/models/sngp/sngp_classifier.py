@@ -1,29 +1,13 @@
-from torchvision.models import resnet18, resnet34, resnet50, ResNet18_Weights, ResNet34_Weights, ResNet50_Weights
-from torchvision.models import (
-    vit_b_16, vit_b_32, vit_l_16, vit_l_32, vit_h_14,
-    ViT_B_16_Weights, ViT_B_32_Weights, ViT_L_16_Weights, ViT_L_32_Weights, ViT_H_14_Weights
-)
+import math
+from typing import Optional, Tuple
+
 import torch
 import torch.nn as nn
-from torch.nn.utils import spectral_norm
-import torch.nn.utils.parametrize as parametrize
-from typing import Optional, Tuple
-import math
-from loguru import logger
 
-def apply_spectral_norm_to_convs(module: nn.Module, n_power_iterations: int = 1) -> None:
-    """
-    Recursively wrap Conv/Linear layers with spectral normalization.
-    Bias is left untouched. BatchNorm layers are skipped.
-    """
-    for name, child in module.named_children():
-        if isinstance(child, (nn.Conv2d, nn.Linear)):
-            # Avoid wrapping twice
-            if not hasattr(child, 'weight_u'):
-                sn = spectral_norm(child, n_power_iterations=n_power_iterations)
-                setattr(module, name, sn)
-        else:
-            apply_spectral_norm_to_convs(child, n_power_iterations=n_power_iterations)
+from src.models.backbones import BACKBONES, build_backbone
+from src.models.components.spectral_norm import apply_spectral_norm, assert_spectral_norm_compatible
+from src.models.outputs import ModelOutput
+from src.models.registry import register_net
 
 # ---------------------------
 # Random Fourier Feature GP head
@@ -158,6 +142,7 @@ class RandomFeatureGaussianProcess(nn.Module):
 # SNGP-ResNet wrapper
 # ---------------------------
 
+@register_net("sngp_classifier")
 class SNGPClassifier(nn.Module):
     """
     ResNet backbone (torchvision) with spectral normalization + RFF-GP head.
@@ -177,70 +162,25 @@ class SNGPClassifier(nn.Module):
     ):
         super().__init__()
         self.num_classes = num_classes
+        self.arch = arch
+        self.pretrained = pretrained
+        self.rff_dim = rff_dim
+        self.length_scale = length_scale
+        self.ridge_penalty = ridge_penalty
+        self.cov_momentum = cov_momentum
+        self.mean_field = mean_field
+        self.n_power_iterations_sn = n_power_iterations_sn
 
-        # --- Backbone ---
-        if arch in {"resnet18", "resnet34", "resnet50"}:
-            if arch == "resnet18":
-                weights = ResNet18_Weights.IMAGENET1K_V1 if pretrained else None
-                base = resnet18(weights=weights)
-                feat_dim = base.fc.in_features
-            elif arch == "resnet34":
-                weights = ResNet34_Weights.IMAGENET1K_V1 if pretrained else None
-                base = resnet34(weights=weights)
-                feat_dim = base.fc.in_features
-            elif arch == "resnet50":
-                weights = ResNet50_Weights.IMAGENET1K_V1 if pretrained else None
-                base = resnet50(weights=weights)
-                feat_dim = base.fc.in_features
+        if arch not in BACKBONES:
+            raise ValueError(f"Unsupported backbone: {arch}. Supported: {sorted(BACKBONES)}")
+        assert_spectral_norm_compatible(arch)
 
-            # Remove original classifier
-            modules = list(base.children())[:-1]  # keep up to global avgpool
-            self.backbone = nn.Sequential(*modules)  # outputs [B, feat_dim, 1, 1]
-
-            # Pool + flatten
-            self.pool = nn.Identity()  # resnet already has avgpool at [-2]
-            self.flatten = nn.Flatten()
-
-        elif arch in {"vit_b_16", "vit_b_32", "vit_l_16", "vit_l_32", "vit_h_14"}:
-            # Construct ViT with optional ImageNet weights
-            if arch == "vit_b_16":
-                weights = ViT_B_16_Weights.IMAGENET1K_V1 if pretrained else None
-                base = vit_b_16(weights=weights)
-            elif arch == "vit_b_32":
-                weights = ViT_B_32_Weights.IMAGENET1K_V1 if pretrained else None
-                base = vit_b_32(weights=weights)
-            elif arch == "vit_l_16":
-                weights = ViT_L_16_Weights.IMAGENET1K_V1 if pretrained else None
-                base = vit_l_16(weights=weights)
-            elif arch == "vit_l_32":
-                weights = ViT_L_32_Weights.IMAGENET1K_V1 if pretrained else None
-                base = vit_l_32(weights=weights)
-            elif arch == "vit_h_14":
-                weights = ViT_H_14_Weights.IMAGENET1K_V1 if pretrained else None
-                base = vit_h_14(weights=weights)
-
-            # Grab the incoming feature size from the existing head, then strip it
-            # torchvision ViT uses a Heads block -> final Linear; we read its in_features
-            feat_dim = None
-            for m in base.heads.modules():
-                if isinstance(m, nn.Linear):
-                    feat_dim = m.in_features
-                    break
-            if feat_dim is None:
-                # Fallback to hidden_dim if present
-                feat_dim = getattr(base, "hidden_dim", 768)
-
-            base.heads = nn.Identity()  # expose class-token representation [B, feat_dim]
-
-            self.backbone = base        # forward now returns [B, feat_dim]
-            self.pool = nn.Identity()   # no pooling for ViT
-            self.flatten = nn.Identity()
-        
-        else:
-            raise ValueError(f"Unsupported arch: {arch}")
+        # `build_backbone` returns a module whose forward already yields flat [B, feat_dim]
+        # features for both resnet and ViT archs.
+        self.backbone, feat_dim = build_backbone(arch, pretrained)
 
         # Apply spectral norm to all convs/linears in the backbone
-        apply_spectral_norm_to_convs(self.backbone, n_power_iterations=n_power_iterations_sn)
+        apply_spectral_norm(self.backbone, n_power_iterations=n_power_iterations_sn)
 
         # --- RFF-GP head ---
         self.gp_head = RandomFeatureGaussianProcess(
@@ -253,49 +193,34 @@ class SNGPClassifier(nn.Module):
             mean_field=mean_field,
         )
 
-    def forward(self, x: torch.Tensor, update_cov: bool = True):
-        """
-        Returns:
-        mean_field_logits, raw_logits, pred_var
-        """
+    @property
+    def spec(self) -> dict:
+        """Plain-data description of this net, sufficient to rebuild it via `build_net`."""
+        return {
+            "name": self.registry_name,
+            "num_classes": self.num_classes,
+            "arch": self.arch,
+            "pretrained": self.pretrained,
+            "rff_dim": self.rff_dim,
+            "length_scale": self.length_scale,
+            "ridge_penalty": self.ridge_penalty,
+            "cov_momentum": self.cov_momentum,
+            "mean_field": self.mean_field,
+            "n_power_iterations_sn": self.n_power_iterations_sn,
+        }
+
+    def forward(self, x: torch.Tensor, update_cov: bool = True) -> ModelOutput:
         feats = self.backbone(x)
 
         # Some backbones may return tuples (e.g., aux outputs). Keep the main tensor.
         if isinstance(feats, (tuple, list)):
             feats = feats[0]
 
-        # ResNet: [B, C, 1, 1]  -> flatten to [B, C]
+        # Safety net for any backbone that still returns a spatial [B, C, H, W] map.
         if feats.dim() == 4:
-            feats = self.pool(feats)    # no-op for your ResNet setup, keeps [B, C, 1, 1]
-            feats = self.flatten(feats) # -> [B, C]
-
-        # Transformer variants that might return sequences: [B, N, D]
+            feats = feats.flatten(1)
         elif feats.dim() == 3:
-            # Prefer class token if present; otherwise fallback to mean-pool the sequence
-            feats = feats[:, 0] if getattr(self, "use_cls_token", True) else feats.mean(dim=1)
+            feats = feats[:, 0]
 
-        # ViT (torchvision with heads=Identity) already returns [B, D]; nothing to do for dim()==2
-
-        return self.gp_head(feats, update_cov=update_cov)
-
-
-if __name__ == "__main__":
-    # simple test
-    for arch in ["resnet18", "resnet34", "resnet50", "vit_b_16", "vit_b_32", "vit_l_16", "vit_l_32", "vit_h_14"]:
-        print(f"Testing SNGPClassifier with arch={arch}")
-        model = SNGPClassifier(
-            num_classes=10,
-            arch=arch,
-            pretrained=False,
-            rff_dim=512,
-            length_scale=1.0,
-            ridge_penalty=1e-3,
-            cov_momentum=0.999,
-            mean_field=True,
-            n_power_iterations_sn=1,
-        )
-        x = torch.randn(4, 3, 224, 224)
-        mean_field_logits, raw_logits, pred_var = model(x)
-        assert mean_field_logits.shape == (4, 10)
-        assert raw_logits.shape == (4, 10)
-        assert pred_var.shape == (4, 1)
+        mean_field_logits, raw_logits, pred_var = self.gp_head(feats, update_cov=update_cov)
+        return ModelOutput(logits=mean_field_logits, raw_logits=raw_logits, variance=pred_var)

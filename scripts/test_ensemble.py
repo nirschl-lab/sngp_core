@@ -21,8 +21,8 @@ def test_ensemble_creation():
     print("Testing ensemble creation...")
     
     ensemble = DeepEnsemble(
-        base_model_class=BaselineClassifier,
-        base_model_kwargs={
+        base_model_spec={
+            'name': 'baseline_classifier',
             'arch': 'resnet18',
             'num_classes': 8,
             'dropout_p': 0.2,
@@ -49,8 +49,8 @@ def test_training_mode(ensemble):
     # Test each member
     for i in range(ensemble.num_estimators):
         ensemble.set_active_member(i)
-        output = ensemble(x)
-        
+        output = ensemble(x).logits
+
         assert output.shape == (batch_size, 8), f"Expected shape (4, 8), got {output.shape}"
         print(f"✓ Member {i+1} forward pass: output shape {output.shape}")
     
@@ -67,7 +67,7 @@ def test_inference_mode(ensemble):
     
     with torch.no_grad():
         # Test ensemble prediction
-        mean_output = ensemble(x)
+        mean_output = ensemble(x).logits
         assert mean_output.shape == (batch_size, 8), f"Expected shape (4, 8), got {mean_output.shape}"
         print(f"✓ Ensemble forward pass: output shape {mean_output.shape}")
         
@@ -142,7 +142,7 @@ def test_gradient_flow(ensemble):
         ensemble.set_active_member(i)
         
         # Forward pass
-        output = ensemble(x)
+        output = ensemble(x).logits
         loss = criterion(output, target)
         
         # Backward pass

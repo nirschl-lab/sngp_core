@@ -124,8 +124,8 @@ class DeepEnsembleLitModule(LitModuleBase):
                 prog_bar=False
             )
     
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """Forward pass through the ensemble."""
+    def forward(self, x: torch.Tensor):
+        """Forward pass through the ensemble. Returns a `ModelOutput`."""
         return self.net(x)
     
     def model_step(
@@ -147,7 +147,7 @@ class DeepEnsembleLitModule(LitModuleBase):
             start_time = time.time()
         
         # Forward pass
-        logits = self.forward(x)
+        logits = self.forward(x).logits
         probs = torch.softmax(logits, dim=1)
         
         if self.log_test_metrics and not self.training:

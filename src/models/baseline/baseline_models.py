@@ -1,10 +1,12 @@
-# pip install torch torchvision
-from typing import Literal, Tuple, Optional
+from typing import Literal
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torchvision import models
+
+from src.models.backbones import build_backbone
+from src.models.outputs import ModelOutput
+from src.models.registry import register_net
 
 Backbone = Literal[
     "resnet18", "resnet34", "resnet50",
@@ -13,6 +15,8 @@ Backbone = Literal[
     "vit_h_14",
 ]
 
+
+@register_net("baseline_classifier")
 class BaselineClassifier(nn.Module):
     """
     Classification model with selectable ResNet/ViT backbone.
@@ -33,119 +37,33 @@ class BaselineClassifier(nn.Module):
         self.dropout_p = dropout_p
         self.pretrained = pretrained
 
-        if arch.startswith("resnet"):
-            self.feature_extractor, feat_dim = self._build_resnet(arch, pretrained)
-        elif arch.startswith("vit_"):
-            self.feature_extractor, feat_dim = self._build_vit(arch, pretrained)
-        else:
-            raise ValueError(f"Unsupported backbone: {arch}")
+        self.feature_extractor, feat_dim = build_backbone(arch, pretrained)
 
         self.classifier = nn.Sequential(
             nn.Dropout(p=dropout_p, inplace=False),
             nn.Linear(feat_dim, num_classes),
         )
 
-    # -------------------------
-    # Backbones
-    # -------------------------
-    def _build_resnet(self, name: str, pretrained: bool) -> Tuple[nn.Module, int]:
-        ctor_map = {
-            "resnet18": models.resnet18,
-            "resnet34": models.resnet34,
-            "resnet50": models.resnet50,
+    @property
+    def spec(self) -> dict:
+        """Plain-data description of this net, sufficient to rebuild it via `build_net`."""
+        return {
+            "name": self.registry_name,
+            "arch": self.backbone_name,
+            "num_classes": self.num_classes,
+            "dropout_p": self.dropout_p,
+            "pretrained": self.pretrained,
         }
-        weights_enums = {
-            "resnet18": getattr(models, "ResNet18_Weights", None),
-            "resnet34": getattr(models, "ResNet34_Weights", None),
-            "resnet50": getattr(models, "ResNet50_Weights", None),
-        }
-        default_weights_attr = {
-            "resnet18": "IMAGENET1K_V1",
-            "resnet34": "IMAGENET1K_V1",
-            "resnet50": "IMAGENET1K_V2",
-        }
-
-        ctor = ctor_map[name]
-        weights = None
-        if pretrained:
-            enum = weights_enums[name]
-            if enum is not None:
-                # Try torchvision>=0.13-style enums
-                try:
-                    weights = getattr(enum, default_weights_attr[name])
-                except Exception:
-                    weights = None  # fallback to None on older APIs
-        # Older torchvision expects weights=None or pretrained=True.
-        try:
-            model = ctor(weights=weights if pretrained else None)
-        except TypeError:
-            model = ctor(pretrained=pretrained)
-
-        feat_dim = model.fc.in_features
-        model.fc = nn.Identity()  # expose pooled features
-        return model, feat_dim
-
-    def _build_vit(self, name: str, pretrained: bool) -> Tuple[nn.Module, int]:
-        ctor_map = {
-            "vit_b_16": models.vit_b_16,
-            "vit_b_32": models.vit_b_32,
-            "vit_l_16": models.vit_l_16,
-            "vit_l_32": models.vit_l_32,
-            "vit_h_14": models.vit_h_14,
-        }
-        weights_enums = {
-            "vit_b_16": getattr(models, "ViT_B_16_Weights", None),
-            "vit_b_32": getattr(models, "ViT_B_32_Weights", None),
-            "vit_l_16": getattr(models, "ViT_L_16_Weights", None),
-            "vit_l_32": getattr(models, "ViT_L_32_Weights", None),
-            "vit_h_14": getattr(models, "ViT_H_14_Weights", None),
-        }
-        # Most ViT enums use IMAGENET1K_V1 as the default classification pretrain
-        default_attr = "IMAGENET1K_V1"
-
-        ctor = ctor_map[name]
-        weights = None
-        if pretrained:
-            enum = weights_enums[name]
-            if enum is not None:
-                try:
-                    weights = getattr(enum, default_attr)
-                except Exception:
-                    weights = None
-
-        try:
-            vit = ctor(weights=weights if pretrained else None)
-        except TypeError:
-            vit = ctor(pretrained=pretrained)
-
-        # vit.heads is a Sequential; grab in_features of final linear
-        feat_dim: Optional[int] = None
-        if hasattr(vit, "heads") and hasattr(vit.heads, "head") and hasattr(vit.heads.head, "in_features"):
-            feat_dim = vit.heads.head.in_features
-        else:
-            last_linear = None
-            for m in vit.heads.modules():
-                if isinstance(m, nn.Linear):
-                    last_linear = m
-            if last_linear is not None:
-                feat_dim = last_linear.in_features
-        if feat_dim is None:
-            raise RuntimeError(f"Could not infer feature dimension for {name}")
-
-        vit.heads = nn.Identity()
-        return vit, feat_dim
 
     # -------------------------
     # Forward
     # -------------------------
-    def forward(self, x: torch.Tensor, return_features: bool = False):
+    def forward(self, x: torch.Tensor, return_features: bool = False) -> ModelOutput:
         feats = self.feature_extractor(x)
         if isinstance(feats, torch.Tensor) and feats.dim() == 4:
             feats = feats.flatten(1)  # safety for rare shapes
         logits = self.classifier(feats)
-        if return_features:
-            return logits, feats
-        return logits
+        return ModelOutput(logits=logits, features=feats if return_features else None)
 
     # -------------------------
     # MC Dropout utilities
@@ -185,7 +103,7 @@ class BaselineClassifier(nn.Module):
             all_logits = []
             all_probs = []
             for _ in range(T):
-                logits = self.forward(x)
+                logits = self.forward(x).logits
                 all_logits.append(logits)
                 all_probs.append(F.softmax(logits, dim=-1) if apply_softmax else logits)
 
@@ -199,25 +117,3 @@ class BaselineClassifier(nn.Module):
             return mean_logits, mean_probs
         finally:
             self.train(was_training)
-
-
-# -------------------------
-# Example usage
-# -------------------------
-if __name__ == "__main__":
-    for arch in ["resnet18", "resnet34", "resnet50", "vit_b_16", "vit_b_32", "vit_l_16", "vit_l_32", "vit_h_14"]:
-        print(f"Testing BaselineClassifier with arch={arch}")
-        model = BaselineClassifier(
-            backbone=arch,
-            num_classes=10,
-            dropout_p=0.3,
-            pretrained=False,
-        )
-        x = torch.randn(4, 3, 224, 224)
-
-        logits = model(x)  # standard forward
-        assert logits.shape == (4, 10)
-        mean_logits, mean_probs, std = model.mc_predict(x, T=5, return_std=True, apply_softmax=True)
-        assert mean_logits.shape == (4, 10)
-        assert mean_probs.shape == (4, 10)
-        assert std.shape == (4, 10)

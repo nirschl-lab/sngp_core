@@ -96,7 +96,7 @@ class BaselineClassificationLitModule(LitModuleBase):
             )
             logits, probs = self.net.mc_predict(x, T=self.mc_passes, return_std=False, apply_softmax=True)
         else:
-            logits = self.forward(x)
+            logits = self.forward(x).logits
             probs = torch.softmax(logits, dim=1)
 
         if self.log_test_metrics:

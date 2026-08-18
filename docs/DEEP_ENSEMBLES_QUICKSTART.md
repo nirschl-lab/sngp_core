@@ -86,7 +86,7 @@ This generates:
 ```bash
 uv run src/train.py \
     model=deep_ensemble_classifier \
-    model.net.base_model_kwargs.arch=resnet50
+    model.net.base_model_spec.arch=resnet50
 ```
 
 Supported architectures: `resnet18`, `resnet34`, `resnet50`, `vit_b_16`, `vit_l_16`, etc.
@@ -138,7 +138,7 @@ On a single GPU (e.g., NVIDIA RTX 3090):
 ### "Out of memory" error
 - Use `train_strategy: sequential` in config (should be default)
 - Reduce batch size: `data.datamodule.batch_size=16`
-- Use smaller backbone: `model.net.base_model_kwargs.arch=resnet18`
+- Use smaller backbone: `model.net.base_model_spec.arch=resnet18`
 
 ### "Model not converging"
 - Ensure each member gets enough epochs (total_epochs / num_estimators ≥ 20)

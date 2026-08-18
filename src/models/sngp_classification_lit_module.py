@@ -61,19 +61,14 @@ class SNGPClassificationLitModule(LitModuleBase):
 
         self.inference_times = []
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor):
         """Perform a forward pass through the model `self.net`.
 
         :param x: A tensor of images.
-        :return: A tensor of logits.
+        :return: A `ModelOutput` with mean-field-corrected `.logits`, raw `.raw_logits`,
+            and predictive `.variance`.
         """
-        if self.training:
-            mf_logits, _, _ = self.net(x, update_cov=True)
-        else:
-            # logger.debug('eval mode update cov is false')
-            mf_logits, _, _ = self.net(x, update_cov=False)
-
-        return mf_logits
+        return self.net(x, update_cov=self.training)
     
     def model_step(
             self, batch: Tuple[torch.Tensor, torch.Tensor]
@@ -96,7 +91,7 @@ class SNGPClassificationLitModule(LitModuleBase):
             torch.cuda.synchronize() if torch.cuda.is_available() else None
             start_time = time.time()
         
-        logits = self.forward(x)
+        logits = self.forward(x).logits
         probs = torch.softmax(logits, dim=1)
 
         if self.log_test_metrics:

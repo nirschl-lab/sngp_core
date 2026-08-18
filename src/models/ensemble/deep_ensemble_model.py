@@ -13,44 +13,58 @@ from typing import Tuple, Optional, List
 import torch
 import torch.nn as nn
 
+from src.models.outputs import ModelOutput
+from src.models.registry import build_net, register_net
 
+
+@register_net("deep_ensemble")
 class DeepEnsemble(nn.Module):
     """
     Deep Ensemble wrapper that manages multiple models.
-    
+
     During training, only one model is active (controlled by active_member_idx).
     During inference, all models make predictions and outputs are averaged.
-    
+
     Args:
-        base_model_class: Class to instantiate for each ensemble member
-        base_model_kwargs: Arguments to pass to base model constructor
+        base_model_spec: Plain-data `spec` dict (registry `name` + ctor kwargs) used to
+            build each ensemble member via `src.models.registry.build_net`.
         num_estimators: Number of ensemble members
         task: Task type ("classification" or "regression")
     """
-    
+
     def __init__(
         self,
-        base_model_class: type,
-        base_model_kwargs: dict,
+        base_model_spec: dict,
         num_estimators: int = 5,
         task: str = "classification",
     ):
         super().__init__()
-        
-        self.num_classes = base_model_kwargs.get('num_classes', None)
+
+        self.base_model_spec = dict(base_model_spec)
+        self.num_classes = self.base_model_spec.get('num_classes', None)
         self.num_estimators = num_estimators
         self.task = task
         self.active_member_idx = None  # Used during training
-        
+
         # Create ensemble members
         self.ensemble_members = nn.ModuleList([
-            base_model_class(**base_model_kwargs) 
+            build_net(self.base_model_spec)
             for _ in range(num_estimators)
         ])
-        
+
         # Initialize each member with different random weights
         for i, member in enumerate(self.ensemble_members):
             self._reset_parameters(member, seed=i)
+
+    @property
+    def spec(self) -> dict:
+        """Plain-data description of this net, sufficient to rebuild it via `build_net`."""
+        return {
+            "name": self.registry_name,
+            "base_model_spec": self.base_model_spec,
+            "num_estimators": self.num_estimators,
+            "task": self.task,
+        }
     
     def _reset_parameters(self, model: nn.Module, seed: int):
         """Reset model parameters with a specific seed for diversity."""
@@ -64,18 +78,19 @@ class DeepEnsemble(nn.Module):
         assert 0 <= idx < self.num_estimators, f"Invalid member index: {idx}"
         self.active_member_idx = idx
     
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor) -> ModelOutput:
         """
         Forward pass through the ensemble.
-        
+
         Training mode: Only the active member makes predictions
         Eval mode: All members predict and outputs are averaged
-        
+
         Args:
             x: Input tensor [batch_size, ...]
-            
+
         Returns:
-            logits: [batch_size, num_classes] for classification
+            ModelOutput with `logits` set; in eval mode `member_logits` and `variance`
+            (prediction variance across members) are set too.
         """
         if self.training:
             # During training, use only the active member
@@ -84,19 +99,21 @@ class DeepEnsemble(nn.Module):
                     "active_member_idx must be set during training. "
                     "Call set_active_member(idx) before forward pass."
                 )
-            return self.ensemble_members[self.active_member_idx](x)
+            return ModelOutput(logits=self.ensemble_members[self.active_member_idx](x).logits)
         else:
             # During inference, average predictions from all members
-            return self.ensemble_predict(x)
-    
+            mean_logits, individual_logits = self.ensemble_predict(x, return_individual=True)
+            variance = individual_logits.var(dim=0).mean(dim=-1, keepdim=True)
+            return ModelOutput(logits=mean_logits, member_logits=individual_logits, variance=variance)
+
     def ensemble_predict(self, x: torch.Tensor, return_individual: bool = False) -> torch.Tensor:
         """
         Get predictions from all ensemble members.
-        
+
         Args:
             x: Input tensor [batch_size, ...]
             return_individual: If True, return individual predictions
-            
+
         Returns:
             If return_individual=False:
                 Mean logits across ensemble [batch_size, num_classes]
@@ -105,19 +122,19 @@ class DeepEnsemble(nn.Module):
                 where individual_logits is [num_estimators, batch_size, num_classes]
         """
         individual_outputs = []
-        
+
         for member in self.ensemble_members:
             member.eval()
             with torch.no_grad():
-                output = member(x)
+                output = member(x).logits
                 individual_outputs.append(output)
-        
+
         # Stack: [num_estimators, batch_size, num_classes]
         individual_outputs = torch.stack(individual_outputs)
-        
+
         # Average across ensemble members
         mean_output = individual_outputs.mean(dim=0)
-        
+
         if return_individual:
             return mean_output, individual_outputs
         return mean_output

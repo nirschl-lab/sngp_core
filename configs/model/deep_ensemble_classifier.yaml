@@ -10,10 +10,8 @@ uncertainty_type: variance  # "variance", "entropy", or "mutual_info"
 # Ensemble model (wraps multiple base models)
 net:
   _target_: src.models.ensemble.deep_ensemble_model.DeepEnsemble
-  base_model_class:
-    _target_: src.models.baseline.baseline_models.BaselineClassifier
-    _partial_: true
-  base_model_kwargs:
+  base_model_spec:
+    name: baseline_classifier
     arch: resnet18
     num_classes: 8
     dropout_p: 0.2

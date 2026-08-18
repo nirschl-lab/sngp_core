@@ -17,6 +17,7 @@ from torchmetrics.classification import \
     MulticlassF1Score
 from torchmetrics.classification.accuracy import Accuracy
 
+from src.models.outputs import ModelOutput
 from src.visualization.dempster_shafer_uncertainity_plot import DempsterShaferUncertaintyPlot
 from src.visualization.multi_class_ROC import plot_roc_curve
 from src.visualization.plot_ece import plot_calibration_curve
@@ -134,11 +135,11 @@ class LitModuleBase(LightningModule):
             logger.info(f"No class weights provided, using unweighted CrossEntropyLoss and label smoothing: {self.label_smoothing}")
             return torch.nn.CrossEntropyLoss(label_smoothing=self.label_smoothing)
     
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor) -> ModelOutput:
         """Perform a forward pass through the model `self.net`.
 
         :param x: A tensor of images.
-        :return: A tensor of logits.
+        :return: A `ModelOutput` (see `src/models/outputs.py`); `.logits` is used for loss/argmax.
         """
         return self.net(x)
 
@@ -164,7 +165,7 @@ class LitModuleBase(LightningModule):
             - A tensor of target labels.
         """
         img_ids, x, targets, fold = batch
-        logits = self.forward(x)
+        logits = self.forward(x).logits
         probs = torch.softmax(logits, dim=1)
         loss = self.criterion(logits, targets)
         preds = torch.argmax(logits, dim=1)

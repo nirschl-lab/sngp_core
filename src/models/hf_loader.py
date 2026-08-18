@@ -278,9 +278,8 @@ def quick_inference(
     
     model.eval()
     with torch.no_grad():
+        output = model(input_tensor)
         if model_type == "sngp":
-            mean_field_logits, raw_logits, pred_var = model(input_tensor)
-            return mean_field_logits, raw_logits, pred_var
+            return output.logits, output.raw_logits, output.variance
         else:  # baseline
-            logits = model(input_tensor)
-            return logits
+            return output.logits
