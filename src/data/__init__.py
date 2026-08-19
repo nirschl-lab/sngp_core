@@ -1,2 +1,3 @@
-
-from src.data.classification_image_datamodule import HFDataset, ClassificationImageDataModule
+from src.data.components.hf_dataset import HFDataset
+from src.data.classification_image_datamodule import ClassificationImageDataModule
+from src.data.artifact_image_datamodule import ArtifactImageDataModule
