@@ -46,16 +46,14 @@ fi
 
 mkdir -p "${EXPERIMENTS_HOME}/${PROJECT_NAME}/optuna"
 
+# Only override what's genuinely different from configs/hydra/launcher/submitit_slurm.yaml's
+# defaults for an HPO sweep specifically: a typed GPU (all trials should run on the
+# same model for comparable wall-clock timing) and a short timeout (proxy-budget
+# trials are far shorter than the 24h default sized for a full production run).
 uv run python src/train.py -m \
   hparams_search="${FAMILY}" \
   experiment="${EXPERIMENT}" \
   hydra/launcher=submitit_slurm \
-  hydra.launcher.partition=shared \
   hydra.launcher.gres="gpu:nvidia_l40s:1" \
-  hydra.launcher.gpus_per_node=null \
-  hydra.launcher.nodes=1 \
-  hydra.launcher.cpus_per_task=8 \
-  hydra.launcher.mem_gb=32 \
   hydra.launcher.timeout_min=180 \
-  hydra.launcher.array_parallelism=8 \
   hydra.launcher.name="optuna_${EXPERIMENT}"

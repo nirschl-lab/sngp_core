@@ -6,23 +6,29 @@ _target_: hydra_plugins.hydra_submitit_launcher.submitit_launcher.SlurmLauncher
 # Where submitit stores per-job metadata
 submitit_folder: ${hydra.sweep.dir}/submitit/%j
 
-# SLURM resources
-timeout_min: 720          # 48h
+# SLURM resources -- defaults reflect this project's actual cluster usage (see
+# scripts/slurm/train.sh and scripts/hpo/sweep.sh for the confirmed working values);
+# override per-job on the CLI (hydra.launcher.<key>=...) for anything job-specific.
+timeout_min: 1440          # 24h -- a real full-length training run's budget
 nodes: 1
 tasks_per_node: 1
-cpus_per_task: 24
-mem_gb: 64
-gpus_per_node: 1
+cpus_per_task: 8            # matches data.datamodule.num_workers=8 used across this project
+mem_gb: 32
+# gres and gpus_per_node are two different ways submitit requests GPUs -- set only one
+# or SLURM sees conflicting requests. "gpu:1" is the portable default; use a typed
+# string (e.g. "gpu:nvidia_l40s:1", as scripts/hpo/sweep.sh does) to target a specific
+# GPU model, and leave gpus_per_node null whenever gres is set.
+gpus_per_node: null
 gres: "gpu:1"
 
 # SLURM specifics (adjust to your cluster)
-#partition: gpu
+partition: shared
 qos: normal
 # account: your_account_here   # uncomment if required
 
 # Job naming & retries
 name: ${hydra.job.name}
-array_parallelism: 4
+array_parallelism: 8        # matches this project's hparams_search n_jobs default
 max_num_timeout: 3
 
 # Optional cluster setup
