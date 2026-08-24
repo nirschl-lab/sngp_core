@@ -6,8 +6,8 @@
 #
 # Same protocol as hparams_search/baseline.yaml (see there and docs/HPO_GUIDE.md for
 # the full rationale): selects on macro-AUPRC, logs val/nll + val/ece as read-only
-# diagnostics only, proxy budget with fraction-matched milestones, retrain top-3 at
-# full length.
+# diagnostics only, proxy budget (CosineAnnealingLR auto-rescales via
+# model.scheduler.T_max: ${trainer.max_epochs}), retrain top-3 at full length.
 #
 # SNGP additionally searches its own head hyperparameters (length_scale, ridge_penalty,
 # rff_dim) alongside the shared lr/weight_decay/batch_size -- these shape the *fit*,
@@ -32,10 +32,6 @@ sweep_fail_safe: true
 trainer:
   min_epochs: 10
   max_epochs: 50
-
-model:
-  scheduler:
-    milestones: [10, 23, 33]
 
 data:
   datamodule:

@@ -100,16 +100,19 @@ a search that would likely land near the baseline optimum anyway.
 
 Identical across every sweep, never in the search space: `net.arch: resnet18`,
 `pretrained: false`, `img_augmentations: light_augmentations`, `cb_beta: 0.999`,
-`focal_gamma: 2.0`, `class_freq` (from the dataset's own config), the MultiStepLR
-family, `seed: 12345`, `test: False`.
+`focal_gamma: 2.0`, `class_freq` (from the dataset's own config), the
+`CosineAnnealingLR` family (`CosineAnnealingWarmRestarts` for Deep Ensemble, which
+resets per member -- see `configs/experiment/deep_ensemble_*.yaml`), `seed: 12345`,
+`test: False`.
 
 ## Budget
 
-- **Search runs at a shortened proxy budget**: `max_epochs: 50`, `min_epochs: 10`,
-  MultiStepLR milestones `[10, 23, 33]` -- the same fractions of the budget as the
-  production `[30, 70, 100]` of 150 (0.20 / 0.467 / 0.667). Matching the fractions
-  (not just shortening `max_epochs`) is what makes a tuned LR transfer to the full
-  150-epoch retrain; if you change the production milestones, rescale these to match.
+- **Search runs at a shortened proxy budget**: `max_epochs: 50`, `min_epochs: 10`.
+  Every experiment config wires `model.scheduler.T_max: ${trainer.max_epochs}`, so
+  `CosineAnnealingLR` rescales to the proxy budget automatically -- no separate
+  schedule override is needed here (unlike the old `MultiStepLR` setup, which required
+  hand-rescaling `milestones` to match fractions of the budget). This is a real
+  advantage of the cosine schedule over a milestone-based one for this protocol.
 - Early stopping is the pruner: `monitor: val/auprc`, `mode: max`, `patience: 8`,
   `min_delta: 0.0`. (`hydra-optuna-sweeper==1.2.0` pins optuna 2.x, which exposes no
   Optuna-native pruner -- early stopping is the only mechanism available to kill bad

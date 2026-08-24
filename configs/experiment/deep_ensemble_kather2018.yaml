@@ -48,18 +48,17 @@ model:
   scheduler:
     # A single scheduler steps continuously across the whole 750-epoch run --
     # set_active_member() only routes the forward pass, it does not reset the
-    # optimizer/scheduler per member. Plain MultiStepLR decays *cumulatively*, so
-    # repeating [30,70,100] once per member window would compound to gamma**15 by the
-    # last member (effectively frozen). LambdaLR instead re-applies the [30,70,100]
-    # decay pattern fresh within each 150-epoch window -- see
-    # src/models/components/schedulers.py::cyclical_multistep_lr_lambda.
-    _target_: torch.optim.lr_scheduler.LambdaLR
+    # optimizer/scheduler per member. CosineAnnealingWarmRestarts handles this
+    # natively: it anneals to eta_min over T_0 epochs, then jumps back to the base LR
+    # and repeats -- exactly the fresh-start-per-member behavior each new (randomly
+    # initialized) member needs. T_0 must equal trainer.max_epochs // num_estimators
+    # (150 here); Hydra has no arithmetic resolver, so keep these in sync by hand if
+    # either changes.
+    _target_: torch.optim.lr_scheduler.CosineAnnealingWarmRestarts
     _partial_: true
-    lr_lambda:
-      _target_: src.models.components.schedulers.cyclical_multistep_lr_lambda
-      epochs_per_member: 150
-      milestones: [30, 70, 100]
-      gamma: 0.1
+    T_0: 150
+    T_mult: 1
+    eta_min: 0.0
 
   num_classes: ${num_classes}
   class_freq: ${data.class_freq}

@@ -1,11 +1,10 @@
-_target_: src.models.ensemble.deep_ensemble_lit_module.DeepEnsembleLitModule
+_target_: src.models.deep_ensemble_lit_module.DeepEnsembleLitModule
 
 name: deep_ensemble_resnet18
 
 # Deep Ensemble configuration
 num_estimators: 5  # Number of ensemble members
-train_strategy: sequential  # "sequential" or "all"
-uncertainty_type: variance  # "variance", "entropy", or "mutual_info"
+train_strategy: sequential  # "sequential" only; "all" raises NotImplementedError, see DeepEnsembleLitModule
 
 # Ensemble model (wraps multiple base models)
 net:
@@ -28,18 +27,24 @@ optimizer:
   weight_decay: 0.0
 
 scheduler:
-  _target_: torch.optim.lr_scheduler.MultiStepLR
+  # Fallback only for a bare `model=deep_ensemble_classifier` composition (one restart
+  # spanning the whole run, since num_estimators isn't known at this layer). Every
+  # real deep-ensemble experiment config overrides T_0 to
+  # trainer.max_epochs // num_estimators for a fresh-start cosine cycle per member.
+  # Deliberately the SAME _target_/key-set as those overrides: Hydra config merging is
+  # per-key, not a subtree replace, so a differently-shaped base (e.g. CosineAnnealingLR
+  # with a T_max key) would leak a stray kwarg into CosineAnnealingWarmRestarts's
+  # constructor, which doesn't accept one.
+  _target_: torch.optim.lr_scheduler.CosineAnnealingWarmRestarts
   _partial_: true
-  milestones: [30, 70, 100]
-  gamma: 0.1
+  T_0: ${trainer.max_epochs}
+  T_mult: 1
+  eta_min: 0.0
 
 # --- Training setup ---
 compile: false
 num_classes: 8
-hist_bins: 25
-test_name: "test_predictions_ensemble.csv"
-csv_save_path: "csv/"
-log_csv: false
-log_test_metrics: true
 class_freq: null
+cb_beta: 0.999 # effective-number-of-samples reweighting; 0 = uniform, closer to 1 = more aggressive
+focal_gamma: 2.0 # focal-loss focusing parameter; 0 = plain class-balanced CE
 label_smoothing: 0.0

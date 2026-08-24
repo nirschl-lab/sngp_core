@@ -10,11 +10,11 @@
 # here -- calibration/uncertainty stay the evaluation axis, never the training-time
 # selection axis, so a tuned model's generalization claim isn't compromised.
 #
-# Runs at a shortened proxy budget (max_epochs=50) with milestones scaled to the same
-# fractions as the production 150-epoch schedule ([30,70,100] -> [10,23,33]), so a
-# tuned LR transfers to the full-length retrain. Retrain the top-3 trials (not just the
-# winner -- proxy-budget rankings are noisy) at the experiment's full max_epochs=150
-# before picking a final config.
+# Runs at a shortened proxy budget (max_epochs=50). model.scheduler.T_max is wired to
+# ${trainer.max_epochs} in every experiment config, so CosineAnnealingLR rescales to
+# the proxy budget automatically -- no manual schedule rescaling needed here. Retrain
+# the top-3 trials (not just the winner -- proxy-budget rankings are noisy) at the
+# experiment's full max_epochs=150 before picking a final config.
 
 defaults:
   - override /hydra/sweeper: optuna
@@ -25,10 +25,6 @@ sweep_fail_safe: true
 trainer:
   min_epochs: 10
   max_epochs: 50
-
-model:
-  scheduler:
-    milestones: [10, 23, 33]
 
 data:
   datamodule:

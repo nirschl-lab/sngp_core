@@ -1,8 +1,4 @@
-defaults:
-  - calibration@calibration_cfg: default
-  - _self_
-
-_target_: src.models.baseline_classification_lit_module.BaselineClassificationLitModule
+_target_: src.models.baseline_lit_module.BaselineLitModule
 
 name: timm_mc_baseline
 # backbone
@@ -29,23 +25,16 @@ optimizer:
 #   patience: 10
 
 scheduler:
-    _target_: torch.optim.lr_scheduler.MultiStepLR
+    _target_: torch.optim.lr_scheduler.CosineAnnealingLR
     _partial_: true
-    milestones: [30, 70, 100]
-    gamma: 0.1
+    T_max: ${trainer.max_epochs}
+    eta_min: 0.0
 
 # --- Training setup ---
 compile: false # compile model for faster training with pytorch 2.0
 num_classes: 8
-hist_bins: 25 # no of bins for drawing histogram at the end of training on testset
-test_name: "test_predictions.csv" # test csv name
-csv_save_path: "csv/" # path to save csv files
-log_csv: false
-log_test_metrics: true
 class_freq: null
-use_mc: false # mc for testing/inference (double check)
+cb_beta: 0.999 # effective-number-of-samples reweighting; 0 = uniform, closer to 1 = more aggressive
+focal_gamma: 2.0 # focal-loss focusing parameter; 0 = plain class-balanced CE
+use_mc: false # MC-Dropout at test/predict time only
 mc_passes: 10
-
-# Calibration loss weights/config: see configs/model/calibration/default.yaml
-log_calibration_terms: true
-compute_calibration_on_val: true
