@@ -1,0 +1,87 @@
+# @package _global_
+
+# Hyperparameter search for the SNGP family, dataset-agnostic -- compose with
+# `experiment=` to pick the dataset:
+#   uv run src/train.py -m hparams_search=sngp experiment=sngp_tang
+#
+# Same protocol as hparams_search/baseline.yaml (see there and docs/HPO_GUIDE.md for
+# the full rationale): selects on macro-AUPRC, logs val/nll + val/ece as read-only
+# diagnostics only, proxy budget with fraction-matched milestones, retrain top-3 at
+# full length.
+#
+# SNGP additionally searches its own head hyperparameters (length_scale, ridge_penalty,
+# rff_dim) alongside the shared lr/weight_decay/batch_size -- these shape the *fit*,
+# not just the reported uncertainty: with mean_field=True (the project default), the
+# CE loss is computed on the mean-field-corrected logits
+# (logits / sqrt(1 + predictive_variance)), so ridge_penalty genuinely affects
+# training, not only calibration. mean_field and cov_momentum stay fixed -- those are
+# pure uncertainty-mechanism knobs, and tuning them against a discriminative objective
+# would be exactly the kind of calibration-driven training this protocol avoids.
+#
+# rff_dim costs O(d^3) per forward (a Cholesky solve on a rff_dim x rff_dim matrix runs
+# on every batch) -- 2048 is ~8x the head cost of 1024, so equal *trial* budget across
+# this space is not equal *compute* budget. Drop 2048 from the choice list below if
+# wall-clock becomes the binding constraint on your cluster.
+
+defaults:
+  - override /hydra/sweeper: optuna
+
+optimized_metric: "val/auprc_best"
+sweep_fail_safe: true
+
+trainer:
+  min_epochs: 10
+  max_epochs: 50
+
+model:
+  scheduler:
+    milestones: [10, 23, 33]
+
+data:
+  datamodule:
+    num_workers: 8 # keep <= hydra.launcher.cpus_per_task when using submitit_slurm
+
+callbacks:
+  early_stopping:
+    monitor: "val/auprc"
+    mode: "max"
+    patience: 8
+    min_delta: 0.0
+  model_checkpoint:
+    monitor: "val/auprc"
+    mode: "max"
+    save_top_k: 1
+
+logger:
+  wandb:
+    log_model: False # a 48-trial sweep must not upload 48 checkpoints as W&B artifacts
+    group: "${name}_hpo"
+    job_type: "sweep"
+
+hydra:
+  mode: "MULTIRUN"
+  sweeper:
+    _target_: hydra_plugins.hydra_optuna_sweeper.optuna_sweeper.OptunaSweeper
+    # sqlite persistence: gives the study resume + a durable record of every trial.
+    # Safe under a submitit_slurm fan-out because only the single sweeper process
+    # (not the worker jobs) opens the study for writing.
+    storage: sqlite:///${paths.log_dir}/optuna/${name}_hpo.db
+    study_name: "${name}_hpo"
+    n_jobs: 8
+    direction: maximize
+    n_trials: 48
+    sampler:
+      _target_: optuna.samplers.TPESampler
+      seed: 1234
+      # n_startup_trials should track n_jobs (how many trials run per batch), not
+      # n_trials -- the old baseline_tang/sngp_tang configs set this equal to n_trials,
+      # so TPE never actually engaged and every trial was pure random search.
+      n_startup_trials: 10
+      multivariate: true # lr and batch_size are coupled (LR scaling rule); model that
+    params:
+      model.optimizer.lr: tag(log, interval(0.00001, 0.01))
+      model.optimizer.weight_decay: tag(log, interval(0.000001, 0.01))
+      data.datamodule.batch_size: choice(64, 128, 256)
+      model.net.length_scale: tag(log, interval(0.25, 16.0))
+      model.net.ridge_penalty: tag(log, interval(0.0001, 0.1))
+      model.net.rff_dim: choice(512, 1024, 2048)

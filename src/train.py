@@ -152,12 +152,35 @@ def main(cfg: DictConfig) -> Optional[float]:
     # (e.g. ask for tags if none are provided in cfg, print cfg tree, etc.)
     extras(cfg)
 
+    optimized_metric = cfg.get("optimized_metric")
+    if optimized_metric and str(optimized_metric).startswith("test/"):
+        # `train()`'s metric_dict merges train_metrics and test_metrics into one dict,
+        # so optimizing a "test/*" metric is one typo away from selecting
+        # hyperparameters using the test set. Refuse outright rather than leak silently.
+        raise ValueError(
+            f"optimized_metric={optimized_metric!r} looks like a test-time metric. "
+            "Hyperparameter search must select on a validation metric (e.g. "
+            "'val/auprc_best'), never a 'test/*' metric -- that would be tuning "
+            "against the test set."
+        )
+
     # train the model
-    metric_dict, _ = train(cfg)
+    if cfg.get("sweep_fail_safe"):
+        # Hyperparameter-search safety net: one OOM or divergent trial should not abort
+        # the whole Optuna study. Only active when a hparams_search config opts in
+        # (never for a normal single run) -- task_wrapper's own `raise ex` still
+        # applies for everything else, this only guards the top-level sweep entrypoint.
+        try:
+            metric_dict, _ = train(cfg)
+        except Exception:
+            log.exception(f"Sweep trial failed; returning floor value for {optimized_metric!r}.")
+            return 0.0
+    else:
+        metric_dict, _ = train(cfg)
 
     # safely retrieve metric value for hydra-based hyperparameter optimization
     metric_value = get_metric_value(
-        metric_dict=metric_dict, metric_name=cfg.get("optimized_metric")
+        metric_dict=metric_dict, metric_name=optimized_metric
     )
 
     # return optimized metric

@@ -1,24 +1,37 @@
-from typing import Any, Dict, Tuple, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
-import numpy as np
 import torch
 import torch.nn.functional as F
 from lightning import LightningModule
 from loguru import logger
-from torchmetrics import MaxMetric, MeanMetric
-from torchmetrics.classification import \
-    MulticlassCalibrationError, \
-    MulticlassPrecision, \
-    MulticlassRecall, \
-    MulticlassF1Score
-from torchmetrics.classification.accuracy import Accuracy
+from torchmetrics import MaxMetric, MeanMetric, MetricCollection
+from torchmetrics.classification import (
+    Accuracy,
+    MulticlassAveragePrecision,
+    MulticlassCalibrationError,
+    MulticlassF1Score,
+    MulticlassPrecision,
+    MulticlassRecall,
+)
 
 from src.checkpointing.spec import FORMAT_VERSION, build_meta
+from src.models.components.losses import ClassBalancedFocalLoss
 from src.models.outputs import ModelOutput
 from src.models.registry import build_net
 
 
 class LitModuleBase(LightningModule):
+    """Shared train/val loop for classification model families.
+
+    Deliberately lean: this class only trains on the train set and validates on the
+    val set (loss/acc/precision/recall/F1, used for checkpointing and early stopping).
+    Rich test-time analysis (per-class metrics, calibration, uncertainty, CSV/figure
+    export) lives entirely in
+    `src.callbacks.test_artifacts_callback.TestArtifactsCallback` -- `test_step` here
+    only produces raw batch outputs for that callback to accumulate via
+    `on_test_batch_end`.
+    """
+
     def __init__(
         self,
         net: Optional[torch.nn.Module] = None,
@@ -27,19 +40,12 @@ class LitModuleBase(LightningModule):
         scheduler: torch.optim.lr_scheduler = None,
         compile: bool = False,
         num_classes: int = 8,
-        hist_bins: int = 10, #for histogram plotting
-        calibration_curve_bins: int =10, #for ece plot
-        test_name: str = "test_predictions",
-        log_csv: bool = False,
-        csv_save_path: str = "csv/",
-        log_metrics_per_class: bool = False,
-        log_test_metrics: bool = True,
-        log_calibration_terms: bool = True,
-        compute_calibration_on_val: bool = False,
-        class_freq: Optional[dict] = None,
+        class_freq: Optional[List[float]] = None,
         class_weights: Optional[List[float]] = None,
-        label_smoothing: float = 0.0, # recommend avoiding with SNGP and calibration losses, if needed set alpha low [0.01, 0.05].
-        **kwargs
+        cb_beta: float = 0.999,
+        focal_gamma: float = 2.0,
+        label_smoothing: float = 0.0,
+        **kwargs,
     ) -> None:
         super().__init__()
 
@@ -57,95 +63,71 @@ class LitModuleBase(LightningModule):
             net = build_net(load_spec)
         net_spec = net.spec
 
-        self.save_hyperparameters(
-            ignore=["net", "optimizer", "scheduler", "calibration_cfg"], logger=False
-        )
+        self.save_hyperparameters(ignore=["net", "optimizer", "scheduler"], logger=False)
         self._optimizer_partial = optimizer
         self._scheduler_partial = scheduler
 
         self.net = net
         self.num_classes = self.net.num_classes
 
-        #loss criterion parameters
+        # loss criterion parameters
         self.class_freq = class_freq
         self.class_weights = class_weights
+        self.cb_beta = cb_beta
+        self.focal_gamma = focal_gamma
         self.label_smoothing = label_smoothing
         self.criterion = self._init_criterion()
 
-        # metric objects for calculating and averaging accuracy across batches
+        # train/val metrics only -- test-time metrics live in TestArtifactsCallback
         self.train_acc = Accuracy(task="multiclass", num_classes=self.num_classes)
-        self.val_acc = Accuracy(task="multiclass", num_classes=self.num_classes)
-        self.test_acc = Accuracy(task="multiclass", num_classes=self.num_classes)
-
-        # for calculating ece
-        self.test_ece = MulticlassCalibrationError(num_classes=self.num_classes, n_bins=10, norm='l1')
-        self.val_ece = MulticlassCalibrationError(num_classes=self.num_classes, n_bins=10, norm='l1')
-
-        # Add precision, recall, and F1 metrics
-        self.test_precision = MulticlassPrecision(num_classes=self.num_classes, average='macro')
-        self.val_precision = MulticlassPrecision(num_classes=self.num_classes, average='macro')
-        self.test_recall = MulticlassRecall(num_classes=self.num_classes, average='macro')
-        self.val_recall = MulticlassRecall(num_classes=self.num_classes, average='macro')
-        self.test_f1 = MulticlassF1Score(num_classes=self.num_classes, average='macro')
-        self.val_f1 = MulticlassF1Score(num_classes=self.num_classes, average='macro')
-
-        # Per-class metrics for detailed analysis
-        self.test_precision_per_class = MulticlassPrecision(num_classes=self.num_classes, average=None)
-        self.test_recall_per_class = MulticlassRecall(num_classes=self.num_classes, average=None)
-        self.test_f1_per_class = MulticlassF1Score(num_classes=self.num_classes, average=None)
-
-        # for averaging loss across batches
+        self.val_metrics = MetricCollection(
+            {
+                "acc": Accuracy(task="multiclass", num_classes=self.num_classes),
+                "precision": MulticlassPrecision(num_classes=self.num_classes, average="macro"),
+                "recall": MulticlassRecall(num_classes=self.num_classes, average="macro"),
+                "f1": MulticlassF1Score(num_classes=self.num_classes, average="macro"),
+            },
+            prefix="val/",
+        )
         self.train_loss = MeanMetric()
         self.val_loss = MeanMetric()
-        self.test_loss = MeanMetric()
 
-        # Add NLL loss metrics
+        # Selection-metric family: probability-based, updated alongside val_metrics but
+        # kept out of that MetricCollection deliberately -- val_metrics is updated with
+        # hard `preds`, and mixing metric input types under one `.update()` call would
+        # silently change what val/f1 measures. These never feed early stopping or
+        # checkpointing during normal training; they exist so hparams_search sweeps can
+        # select on macro-AUPRC (threshold-free, imbalance-robust) while NLL/ECE stay
+        # visible as read-only calibration diagnostics -- never the selection axis.
+        self.val_auprc = MulticlassAveragePrecision(num_classes=self.num_classes, average="macro")
+        self.val_ece = MulticlassCalibrationError(num_classes=self.num_classes, n_bins=10, norm="l1")
         self.val_nll = MeanMetric()
-        self.test_nll = MeanMetric()
-
-        # for tracking best so far validation accuracy
-        self.val_acc_best = MaxMetric()
-        self.val_precision_best = MaxMetric()
-        self.val_recall_best = MaxMetric()
-        self.val_f1_best = MaxMetric()
-
-        self._test_logits: List[torch.Tensor] = []
-        self._test_probs: List[torch.Tensor] = []
-        self._test_targets: List[torch.Tensor] = []
-        self._test_image_ids: List[str] = []
-        self._test_fold: List[str] = []
-
-        # Defaults so on_test_epoch_end / TestArtifactsCallback can rely on these
-        # always existing, even for a subclass that never sets them or a `setup()`
-        # call that never reaches the stage=="test" branch below.
-        self.inference_times: List[float] = []
-        self.test_idx_to_classes: Dict[int, str] = {}
-
-        #plotting
-        self.hist_bins = hist_bins
-        self.calibration_curve_bins = calibration_curve_bins
-
-        # csv logging
-        self.test_name = test_name
-        self.log_csv = log_csv
-        self.csv_save_path = csv_save_path
-        self.log_test_metrics = log_test_metrics
-        self.log_metrics_per_class = log_metrics_per_class
+        self.val_auprc_best = MaxMetric()
 
     def _init_criterion(self):
-        '''Initialize the loss criterion with class weights and label smoothing if provided.'''
+        """Initialize the loss criterion.
 
-        # set class weights, if provided
-        if self.class_weights:
-            assert len(self.class_weights) == self.num_classes, "Length of class_weights must match num_classes"
-        elif self.class_freq:
+        `class_freq` (per-class training-split sample counts) is the standard,
+        data-driven path: builds a `ClassBalancedFocalLoss` so every model family
+        gets identical imbalance handling for a given dataset. `class_weights` (an
+        explicit weight vector, no `class_freq`) is a manual-override escape hatch
+        that falls back to plain weighted `CrossEntropyLoss`. Neither given means
+        unweighted `CrossEntropyLoss`.
+        """
+        if self.class_freq:
             assert len(self.class_freq) == self.num_classes, "Length of class_freq must match num_classes"
-            weights = torch.tensor([1.0 / self.class_freq[k] for k in self.class_freq], dtype=torch.float32)
-            self.class_weights = weights / weights.sum()
-        else:
-            self.class_weights = None
-
-        if self.class_weights is not None:
+            logger.info(
+                f"Using class-balanced focal loss: class_freq={self.class_freq}, "
+                f"beta={self.cb_beta}, gamma={self.focal_gamma}, label_smoothing={self.label_smoothing}"
+            )
+            return ClassBalancedFocalLoss(
+                class_freq=self.class_freq,
+                beta=self.cb_beta,
+                gamma=self.focal_gamma,
+                label_smoothing=self.label_smoothing,
+            )
+        elif self.class_weights:
+            assert len(self.class_weights) == self.num_classes, "Length of class_weights must match num_classes"
             logger.info(f"Using class weights for CrossEntropyLoss: {self.class_weights} and label smoothing: {self.label_smoothing}")
             class_weights_tensor = torch.tensor(self.class_weights, device=self.device)
             return torch.nn.CrossEntropyLoss(
@@ -154,7 +136,7 @@ class LitModuleBase(LightningModule):
         else:
             logger.info(f"No class weights provided, using unweighted CrossEntropyLoss and label smoothing: {self.label_smoothing}")
             return torch.nn.CrossEntropyLoss(label_smoothing=self.label_smoothing)
-    
+
     def forward(self, x: torch.Tensor) -> ModelOutput:
         """Perform a forward pass through the model `self.net`.
 
@@ -163,32 +145,41 @@ class LitModuleBase(LightningModule):
         """
         return self.net(x)
 
+    def _predict_forward(self, x: torch.Tensor) -> ModelOutput:
+        """Forward pass used only by `test_step`/`predict_step`. Override this (not
+        `forward`/`model_step`) for test-time-only behavior -- e.g. MC-Dropout
+        averaging -- without affecting the train/val path."""
+        return self.forward(x)
 
     def on_train_start(self) -> None:
         """Lightning hook that is called when training begins."""
         # by default lightning executes validation step sanity checks before training starts,
         # so it's worth to make sure validation metrics don't store results from these checks
         self.val_loss.reset()
-        self.val_acc.reset()
-        self.val_acc_best.reset()
-    
+        self.val_metrics.reset()
+        self.val_auprc.reset()
+        self.val_ece.reset()
+        self.val_nll.reset()
+        # val_auprc_best tracks a running max ACROSS epochs by design -- without this
+        # reset, a sanity-check AUPRC computed on a barely-initialized model would
+        # become a spurious early high-water mark that real training could never beat.
+        self.val_auprc_best.reset()
+
     def model_step(
         self, batch: Tuple[torch.Tensor, torch.Tensor]
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        """Perform a single model step on a batch of data.
+    ) -> Tuple[Any, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, Any]:
+        """Perform a single train/val model step on a batch of data -- plain
+        cross-entropy classification, shared by every family unless a subclass
+        genuinely needs a different training-time loss.
 
-        :param batch: A batch of data (a tuple) containing the input tensor of images and target labels.
-
-        :return: A tuple containing (in order):
-            - A tensor of losses.
-            - A tensor of predictions.
-            - A tensor of target labels.
+        :param batch: A batch of data (img_ids, images, targets, fold).
+        :return: (img_ids, loss, logits, probs, preds, targets, fold).
         """
         img_ids, x, targets, fold = batch
         logits = self.forward(x).logits
         probs = torch.softmax(logits, dim=1)
         loss = self.criterion(logits, targets)
-        preds = torch.argmax(logits, dim=1)
+        preds = torch.argmax(probs, dim=1)
 
         return img_ids, loss, logits, probs, preds, targets, fold
 
@@ -202,10 +193,7 @@ class LitModuleBase(LightningModule):
         :param batch_idx: The index of the current batch.
         :return: A tensor of losses between model predictions and targets.
         """
-        # self.log_.info('------------------->< * * ><-------------')
         img_ids, loss, logits, probs, preds, targets, _ = self.model_step(batch)
-
-        # pdb.set_trace()
 
         # update and log metrics
         self.train_loss(loss)
@@ -216,9 +204,6 @@ class LitModuleBase(LightningModule):
 
         # return loss or backpropagation will fail
         return loss
-
-    def on_train_epoch_end(self) -> None:
-        "Lightning hook that is called when a training epoch ends."
 
     def validation_step(self, batch: Tuple[torch.Tensor, torch.Tensor], batch_idx: int) -> None:
         """Perform a single validation step on a batch of data from the validation set.
@@ -234,124 +219,91 @@ class LitModuleBase(LightningModule):
 
         img_ids, loss, logits, probs, preds, targets, fold = self.model_step(batch)
 
-        # update and log metrics
+        # update and log metrics. val_metrics (acc/precision/recall/f1) streams via
+        # log_dict as before -- Lightning computes/resets it automatically at epoch
+        # end. val_auprc/val_ece/val_nll are updated here too but computed explicitly
+        # in on_validation_epoch_end instead (see there for why).
         self.val_loss(loss)
-        self.val_acc(preds, targets)
-        self.val_ece(probs, targets)
-        self.val_precision(preds, targets)
-        self.val_recall(preds, targets)
-        self.val_f1(preds, targets)
-        
+        self.val_metrics.update(preds, targets)
+        self.val_auprc.update(probs, targets)
+        self.val_ece.update(probs, targets)
+        self.val_nll(F.cross_entropy(logits, targets))
         self.log("val/loss", self.val_loss, on_step=False, on_epoch=True, prog_bar=True)
-        self.log("val/acc", self.val_acc, on_step=False, on_epoch=True, prog_bar=True)
-        self.log("val/ece", self.val_ece, on_step=False, on_epoch=True, prog_bar=True)
-        self.log("val/precision", self.val_precision, on_step=False, on_epoch=True, prog_bar=True)
-        self.log("val/recall", self.val_recall, on_step=False, on_epoch=True, prog_bar=True)
-        self.log("val/f1", self.val_f1, on_step=False, on_epoch=True, prog_bar=True)
-    
+        self.log_dict(self.val_metrics, on_step=False, on_epoch=True, prog_bar=True)
+
     def on_validation_epoch_end(self) -> None:
-        "Lightning hook that is called when a validation epoch ends."
+        """Compute and log the probability-based validation metrics that back
+        hparams-search selection (`val/auprc`, `val/auprc_best`) and read-only
+        calibration diagnostics (`val/nll`, `val/ece`).
 
-        acc = self.val_acc.compute()  # get current val acc
-        precision = self.val_precision.compute()
-        recall = self.val_recall.compute()
-        f1 = self.val_f1.compute()
-        loss = self.val_loss.compute()
+        Computed explicitly (rather than logged as streaming Metric objects the way
+        `val_metrics` is) because `val_auprc_best` needs the already-*computed* epoch
+        value to update against -- logging the Metric object directly and reading it
+        back in the same hook would race with Lightning's own compute/reset cycle.
 
-        self.log("val/acc", acc, sync_dist=True, prog_bar=True)
-        self.log("val/precision", precision, sync_dist=True, prog_bar=True)
-        self.log("val/recall", recall, sync_dist=True, prog_bar=True)
-        self.log("val/f1", f1, sync_dist=True, prog_bar=True)
-        self.log("val/loss", loss, sync_dist=True, prog_bar=True)
-    
-    def test_step(self, batch: Tuple[torch.Tensor, torch.Tensor], batch_idx: int) -> None:
-        """Perform a single test step on a batch of data from the test set.
+        `val/nll` is deliberately a plain (unweighted) cross-entropy, not `val/loss`
+        (the class-balanced focal loss) -- NLL is only a proper scoring rule when it
+        isn't reweighted. Neither `val/nll` nor `val/ece` ever feeds selection, early
+        stopping, or checkpointing -- calibration/uncertainty are the evaluation axis
+        for this project, never the training-selection axis.
+        """
+        if self.val_auprc.update_count == 0:
+            # No validation batches were actually processed this epoch -- e.g.
+            # `trainer.fast_dev_run=True` (exactly 1 val batch total, which is also
+            # epoch 0's batch_idx 0, always skipped by validation_step above) or any
+            # run whose only available val batch is that same skipped one.
+            # MulticlassAveragePrecision/MulticlassCalibrationError accumulate raw
+            # preds/targets and raise ValueError on an empty state; there is nothing
+            # meaningful to log here, so skip rather than crash or log a misleading NaN.
+            return
+
+        auprc = self.val_auprc.compute()
+        ece = self.val_ece.compute()
+        nll = self.val_nll.compute()
+        self.val_auprc_best.update(auprc)
+
+        self.log("val/auprc", auprc, prog_bar=True)
+        self.log("val/auprc_best", self.val_auprc_best.compute(), prog_bar=True)
+        self.log("val/nll", nll, prog_bar=False)
+        self.log("val/ece", ece, prog_bar=False)
+
+        self.val_auprc.reset()
+        self.val_ece.reset()
+        self.val_nll.reset()
+
+    def test_step(self, batch: Tuple[torch.Tensor, torch.Tensor], batch_idx: int) -> Dict[str, Any]:
+        """Minimal test step: forward pass plus raw outputs for
+        `TestArtifactsCallback` to accumulate and analyze via `on_test_batch_end`. No
+        loss computation, no metric `.update()`, no CSV/figure logic here -- see
+        `src.callbacks.test_artifacts_callback.TestArtifactsCallback`.
 
         :param batch: A batch of data (a tuple) containing the input tensor of images and target
             labels.
         :param batch_idx: The index of the current batch.
         """
-        
-        # pdb.set_trace()
-        img_ids, loss, logits, probs, preds, targets, fold = self.model_step(batch)
+        img_ids, x, targets, fold = batch
+        output = self._predict_forward(x)
+        probs = torch.softmax(output.logits, dim=1)
+        preds = torch.argmax(probs, dim=1)
 
-        
-        # update and log metrics
-        self._test_logits.append(logits.detach().cpu())
-        self._test_probs.append(probs.detach().cpu())
-        self._test_targets.append(targets.detach().cpu())
-        self._test_image_ids.extend(img_ids)  # Assuming img_ids is a list of strings
-        self._test_fold.extend(fold)  # Assuming fold is a list of strings
-
-        if self.log_test_metrics:
-            # Calculate NLL loss
-            log_probs = torch.log(probs + 1e-8)  # Add small epsilon to avoid log(0)
-            nll_loss = F.nll_loss(log_probs, targets)
-            self.test_loss(loss)
-            self.test_nll(nll_loss)
-            self.test_acc(preds, targets)
-            self.test_ece(probs, targets)
-
-            # Update precision, recall, and F1 metrics
-            self.test_precision(preds, targets)
-            self.test_recall(preds, targets)
-            self.test_f1(preds, targets)
-    
-    def on_test_epoch_end(self) -> None:
-        """Lightning hook that is called when a test epoch ends.
-
-        CSV/figure artifact writing (and any wandb-specific logging of them) lives in
-        `src.callbacks.test_artifacts_callback.TestArtifactsCallback` instead of here,
-        so this module has no hard dependency on a particular logger backend -- it
-        used to call `self.logger.experiment.log(...)` unconditionally, which crashed
-        whenever no W&B logger was attached.
-        """
-        if self.log_test_metrics:
-
-            # Compute final metrics
-            precision_macro = self.test_precision.compute()
-            recall_macro = self.test_recall.compute()
-            f1_macro = self.test_f1.compute()
-            loss = self.test_loss.compute()
-            nll = self.test_nll.compute()
-            acc = self.test_acc.compute()
-            ece = self.test_ece.compute()
-
-            # Log macro-averaged metrics
-            self.log("test/precision_final", precision_macro, prog_bar=True)
-            self.log("test/recall_final", recall_macro, prog_bar=True)
-            self.log("test/f1_final", f1_macro, prog_bar=True)
-            self.log("test/loss_final", loss, on_step=False, on_epoch=True, prog_bar=True)
-            self.log("test/nll_final", nll, on_step=False, on_epoch=True, prog_bar=True)
-            self.log("test/acc_final", acc, on_step=False, on_epoch=True, prog_bar=True)
-            self.log("test/ece_final", ece, on_step=False, on_epoch=True, prog_bar=True)
-            self.log("test/inference_time_per_sample_avg", np.mean(self.inference_times), prog_bar=True)
-
-            # Log per-class metrics
-            if self.log_metrics_per_class:
-                precision_per_class = self.test_precision_per_class.compute()
-                recall_per_class = self.test_recall_per_class.compute()
-                f1_per_class = self.test_f1_per_class.compute()
-                if hasattr(self, 'test_idx_to_classes') and self.test_idx_to_classes:
-                    for i, class_name in self.test_idx_to_classes.items():
-                        self.log(f"test/precision_{class_name}", precision_per_class[i])
-                        self.log(f"test/recall_{class_name}", recall_per_class[i])
-                        self.log(f"test/f1_{class_name}", f1_per_class[i])
-                else:
-                    for i in range(self.num_classes):
-                        self.log(f"test/precision_class_{i}", precision_per_class[i])
-                        self.log(f"test/recall_class_{i}", recall_per_class[i])
-                        self.log(f"test/f1_class_{i}", f1_per_class[i])
-
+        return {
+            "img_ids": list(img_ids),
+            "fold": list(fold),
+            "logits": output.logits.detach(),
+            "probs": probs.detach(),
+            "preds": preds.detach(),
+            "targets": targets.detach(),
+            "variance": output.variance.detach() if output.variance is not None else None,
+            "member_logits": output.member_logits.detach() if output.member_logits is not None else None,
+        }
 
     def on_save_checkpoint(self, checkpoint: Dict[str, Any]) -> None:
         """Attach a plain-data, format-versioned metadata block so checkpoints are
         self-describing without anyone needing to unpickle `hyper_parameters["net"]`."""
-        idx_to_class = getattr(self, "test_idx_to_classes", None)
-        dataset_name = None
         datamodule = getattr(self._trainer, "datamodule", None) if self._trainer is not None else None
-        if datamodule is not None:
-            dataset_name = getattr(datamodule, "dataset_name", None)
+        dataset_name = getattr(datamodule, "dataset_name", None) if datamodule is not None else None
+        class_to_idx = getattr(datamodule, "class_to_idx", None) if datamodule is not None else None
+        idx_to_class = {idx: cls for cls, idx in class_to_idx.items()} if class_to_idx else None
 
         checkpoint["sngp_core"] = build_meta(
             self,
@@ -380,17 +332,6 @@ class LitModuleBase(LightningModule):
         """
         if self.hparams.compile and stage == "fit":
             self.net = torch.compile(self.net)
-        
-        #indexing classes
-        logger.info(f'Trainer initialized - {self._trainer is not None}')
-        if self._trainer is not None and self._trainer.state.stage == "test":
-            # self.log_.info('------------------********-------------------')
-            # self.train_classes_to_idx = self._trainer.train_classes_to_idx
-            # self.train_idx_to_classes = self._trainer.train_idx_to_classes
-            # self.val_classes_to_idx = self._trainer.val_classes_to_idx
-            # self.val_idx_to_classes = self._trainer.val_idx_to_classes
-            self.test_classes_to_idx = self._trainer.test_classes_to_idx
-            self.test_idx_to_classes = self._trainer.test_idx_to_classes
 
     def configure_optimizers(self) -> Dict[str, Any]:
         """Choose what optimizers and learning-rate schedulers to use in your optimization.
@@ -428,23 +369,23 @@ class LitModuleBase(LightningModule):
         :param batch: A batch of data (a tuple) containing the input tensor and target labels.
         :param batch_idx: The index of the current batch.
         """
-        img_ids, loss, logits, probs, preds, targets, fold = self.model_step(batch)
-        
-        return loss, probs, preds, targets
+        img_ids, x, targets, fold = batch
+        output = self._predict_forward(x)
+        probs = torch.softmax(output.logits, dim=1)
+        preds = torch.argmax(probs, dim=1)
 
-    
+        return {"img_ids": img_ids, "probs": probs, "preds": preds, "targets": targets, "fold": fold}
+
     def load_state_dict(self, state_dict, strict=True):
         """Custom state dict loading to handle mismatched criterion.weight"""
         # Create a copy to avoid modifying the original
         filtered_state_dict = {}
-        
+
         for key, value in state_dict.items():
             # Skip criterion.weight if we don't have class weights
             if key == "criterion.weight" and self.class_weights is None:
                 print(f"Skipping {key} from checkpoint as model has no class weights")
                 continue
             filtered_state_dict[key] = value
-        
-        return super().load_state_dict(filtered_state_dict, strict=strict)
 
-    
+        return super().load_state_dict(filtered_state_dict, strict=strict)

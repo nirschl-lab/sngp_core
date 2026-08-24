@@ -15,3 +15,19 @@ LOGGING_LEVEL=INFO
 PYTHONFAULTHANDLER=1
 
 HYDRA_FULL_ERROR=1
+
+# Where this project's logs/checkpoints/Hydra multirun output go:
+# configs/paths/default.yaml resolves log_dir as ${EXPERIMENTS_HOME}/${PROJECT_NAME} --
+# created automatically on first run if it doesn't exist yet. PROJECT_ROOT is NOT set
+# here -- rootutils.setup_root() (called at the top of src/train.py etc.) detects it
+# automatically from the repo's `.project-root` file and exports it itself.
+EXPERIMENTS_HOME=<path, e.g. /data1/<you>/experiments>
+PROJECT_NAME=<this project's folder name under EXPERIMENTS_HOME, e.g. sngp-core>
+
+# Hugging Face cache -- read directly by the `datasets`/`huggingface_hub` libraries,
+# no Hydra config involved. See configs/paths/default.yaml.
+HF_TOKEN=<your-hf-api-token>
+HF_HOME=<path>
+HF_HUB_CACHE=<path>/hub
+TRANSFORMERS_CACHE=<path>/transformers
+HF_DATASETS_CACHE=<path>/datasets

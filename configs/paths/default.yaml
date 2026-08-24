@@ -6,9 +6,13 @@ root_dir: ${oc.env:PROJECT_ROOT}
 # path to data directory
 data_dir: ${paths.root_dir}/data/
 
-# path to logging directory
-# log_dir: ${paths.root_dir}/logs/
-log_dir: /data1/maheswararao/sngp_logs
+# path to logging directory -- every run's logs, checkpoints, and Hydra multirun sweep
+# output live under here (see configs/hydra/default.yaml for the
+# ${task_name}/runs|multiruns/... layout underneath it). Driven entirely by
+# EXPERIMENTS_HOME/PROJECT_NAME (see .env / env_example) so this is never a
+# machine-specific hardcoded path -- Hydra creates the directory itself (including a
+# not-yet-existing PROJECT_NAME folder) the first time a run needs to write into it.
+log_dir: ${oc.env:EXPERIMENTS_HOME}/${oc.env:PROJECT_NAME}
 
 # path to output directory, created dynamically by hydra
 # path generation pattern is specified in `configs/hydra/default.yaml`
@@ -17,13 +21,3 @@ output_dir: ${hydra:runtime.output_dir}
 
 # path to working directory
 work_dir: ${hydra:runtime.cwd}
-
-# feature cache path
-feature_cache_dir: '/data1/shared/cache/feature_cache/'
-
-# datasets cache path
-# data_cache_dir: '/data1/jjnirschl/huggingface/datasets/kather_et_al_2016/all-fe66984be50ec44e/0.1.0/dc8b3e49b65d7eb6dd7b3b7908a520d82c8e43685f9e5896622dd81dec8daec6'
-data_cache_dir: '/data1/jjnirschl/huggingface/datasets/acevedo_et_al_2020/all-1f51a8afb579d3ad/0.1.0/6aef94a26d798a6587bf6687e67ddca30840000857f5e024cad9fb2a014076e8'
-
-#timm/hugging face model cache_path
-model_cache_dir: 'timm_cache_dir'

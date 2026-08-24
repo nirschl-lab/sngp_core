@@ -10,8 +10,6 @@ from rich.logging import RichHandler
 
 load_dotenv(find_dotenv())
 PROJECT_ROOT = Path(__file__).parents[2]
-LOG_DIR = PROJECT_ROOT.joinpath("logs")
-LOG_DIR.mkdir(exist_ok=True)
 MODULE_ROOT = Path(__file__).parent
 DATA_ROOT = os.getenv("DATA_ROOT", None)
 

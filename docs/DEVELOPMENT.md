@@ -1,382 +1,346 @@
-<div align="center">
-  <h1>🧬 SNGP Lightning + Hydra Experimentation Framework</h1>
-  <p><em>A flexible framework for training and evaluating Spectral-normalized Neural Gaussian Processes on medical imaging datasets</em></p>
-  
-  [![Python](https://img.shields.io/badge/Python-3.8+-blue.svg)](https://python.org)
-  [![PyTorch Lightning](https://img.shields.io/badge/PyTorch%20Lightning-2.0+-purple.svg)](https://lightning.ai)
-  [![Hydra](https://img.shields.io/badge/Hydra-1.3+-orange.svg)](https://hydra.cc)
-  [![W&B](https://img.shields.io/badge/Weights%20&%20Biases-tracking-yellow.svg)](https://wandb.ai)
-</div>
+# Development Guide
+
+This is the architecture and methodology reference for developing in this repo — how
+training, models, inference, and Hugging Face publishing fit together, and where to
+extend each. For *what* datasets and model architectures are currently supported, see
+[docs/DATASETS.md](DATASETS.md) and [docs/SUPPORTED_MODELS.md](SUPPORTED_MODELS.md) —
+kept separate so they can change without touching this document's structure.
+
+## Table of Contents
+- [Environment Setup](#environment-setup)
+- [Architecture Overview](#architecture-overview)
+- [Model Methodology](#model-methodology)
+- [Configuration System](#configuration-system)
+- [Training](#training)
+- [Checkpointing](#checkpointing)
+- [Evaluation vs. Inference](#evaluation-vs-inference)
+- [Publishing to Hugging Face](#publishing-to-hugging-face)
+- [Metrics & Visualization](#metrics--visualization)
+- [Testing](#testing)
+- [Extending the Framework](#extending-the-framework)
+- [Contributing](#contributing)
 
 ---
 
-## 📋 Table of Contents
-- [Overview](#-overview)
-- [Quick Start](#-quick-start)
-- [Project Structure](#-project-structure)
-- [Training](#️-training)
-- [Evaluation](#-evaluation)
-- [Configuration](#️-configuration)
-- [Datasets](#-datasets)
-- [Experiment Tracking](#-experiment-tracking)
+## Environment Setup
+
+This project uses **uv** exclusively — never bare `python`/`pip install`.
+`requirements.txt`/`environment.yaml` exist for legacy reasons only; `uv.lock` /
+`pyproject.toml` are authoritative.
+
+```bash
+curl -Ls https://astral.sh/uv/install.sh | sh   # install uv, if needed
+uv sync                                          # install locked dependencies
+```
+
+Copy `env_example` to `.env` and set `PROJECT_ROOT` — `configs/paths/default.yaml`
+resolves `root_dir` from it. `log_dir`, `feature_cache_dir`, `data_cache_dir` in that
+same file point at absolute cluster paths under `/data1/...`; they're
+machine-specific, not portable, and not controlled by `.env`.
+
+W&B and HF Hub auth are handled by their own CLIs, not `.env` variables:
+
+```bash
+wandb login
+huggingface-cli login
+```
 
 ---
 
-## 🎯 Overview
+## Architecture Overview
 
-<div align="center">
-  <img src="../images/DNN_vs_SNGP.png" alt="SNGP Architecture" />
-</div>
-
-<!-- This repository provides a comprehensive experimentation framework for **Spectral-normalized Neural Gaussian Processes (SNGP)** models using PyTorch Lightning and Hydra. The framework enables:
-
-- 🔬 **Modular experimentation** with easy configuration management
-- 📊 **Automatic experiment tracking** via Weights & Biases
-- 🔄 **Reproducible research** with locked dependencies
-- 🏥 **Medical imaging focus** with multiple histopathology datasets
-- 🎯 **Out-of-distribution detection** for uncertainty quantification
-
-### Key Features
-- **SNGP vs Baseline comparisons** on medical imaging datasets
-- **Uncertainty quantification** for reliable predictions
-- **Multi-dataset evaluation** including OOD detection
-- **Flexible configuration** via Hydra
-- **Reproducible environments** with uv package manager
-
---- -->
-
-## 🚀 Quick Start
-
-### Prerequisites
-- Python 3.8+
-- CUDA-compatible GPU (recommended)
-
-### 1. Clone & Setup Environment
-
-```bash
-# Clone the repository
-git clone <repository-url>
-cd sngp_core
-
-# Install uv package manager
-curl -Ls https://astral.sh/uv/install.sh | sh
-
-# Install dependencies (exact versions from lock file)
-uv sync
+```
+src/
+  models/            net architectures + Lightning training strategies (see below)
+  checkpointing/      the plain-data checkpoint contract (see Checkpointing)
+  inference/           the one canonical inference entrypoint
+  metrics/            offline/research metrics (AUROC-OOD, smooth-ECE, Dempster-Shafer)
+  visualization/       reusable plotting (live during training + offline for figures)
+  paper_helpers/       per-paper/per-dataset analysis scripts consuming metrics CSVs
+  data/                datamodules (dataset-agnostic, config-driven)
+  train.py / eval.py    Hydra entrypoints for training / test-set evaluation
+configs/               Hydra config tree (see Configuration System)
+scripts/                cluster jobs, HF export/upload, checkpoint migration
 ```
 
-### 2. Configure Environment Variables
+The full directory-level map lives in `CLAUDE.md` §3 — this document is the narrative
+version: *why* it's shaped this way, not a file listing.
 
-Create a `.env` file in the project root:
+### Hard contracts
+
+A small number of invariants hold across every model family and every checkpoint in
+the project. New code should be checked against these before anything else:
+
+- **Every net's `forward()` returns a `ModelOutput`**
+  (`src/models/outputs.py`) — `.logits` for loss/argmax, `.variance` for uncertainty,
+  `.raw_logits`/`.features`/`.member_logits` where relevant. Never a bare tensor,
+  never a family-specific tuple. This is what lets `LitModuleBase` and
+  `src/inference/infer.py` stay ignorant of which model family they're driving.
+- **Every net has a `.spec` property** (plain JSON-serializable dict: registry `name`
+  + constructor kwargs) and registers into `NET_REGISTRY` via `@register_net(...)`
+  (`src/models/registry.py`). Architecture identity is data, not a Python import path
+  — a checkpoint's `net_spec` is enough to rebuild the exact net that produced it.
+- **`LitModuleBase.save_hyperparameters()` never pickles `net`/`optimizer`/
+  `scheduler`** — those aren't JSON-serializable, and pickling a
+  live object into hparams is what used to make checkpoints depend on the exact code
+  structure they were saved with (unpickling required the original class's import
+  path to still resolve). `tests/checkpointing/test_hparams_are_primitive.py` is a
+  permanent regression guard for this.
+- **All checkpoint I/O goes through `src/checkpointing/io.py`** — never raw
+  `torch.load` + manual state-dict surgery, never a bare
+  `LightningModule.load_from_checkpoint()` scattered across scripts.
+
+---
+
+## Model Methodology
+
+Three model families share the same backbone factory
+(`src/models/backbones.py::build_backbone`) and the same `ModelOutput`/registry/
+checkpoint contracts above — they differ only in the *head* on top of the backbone and
+the *training strategy* around it:
+
+- **Baseline** (`src/models/baseline/baseline_models.py`) — a plain classification
+  head. Optional MC-Dropout at inference time trades zero retraining cost for a rough
+  uncertainty estimate.
+- **SNGP** (`src/models/sngp/sngp_classifier.py`) — wraps the backbone in spectral
+  normalization (`src/models/components/spectral_norm.py`) and adds a random-feature
+  Gaussian Process head, trading a more involved forward pass for a principled
+  predictive variance. Backbone choice is restricted at construction time (resnet
+  only) — see [docs/SUPPORTED_MODELS.md](SUPPORTED_MODELS.md#sngp--vit-compatibility)
+  for why.
+- **Deep Ensemble** (net in `src/models/ensemble/`, training strategy in
+  `src/models/deep_ensemble_lit_module.py`) — trains `N` independently-initialized
+  baseline-family members and derives uncertainty from their disagreement, trading
+  `N`x training/inference cost for an uncertainty estimate that needs no architectural
+  change to the underlying net.
+
+Each family's training loop is a thin `LitModuleBase` subclass
+(`src/models/<family>_lit_module.py`) that overrides only `forward`/`_predict_forward`
+(and `model_step` only if the family's training loss genuinely isn't plain CE) — the
+shared, lean train/val loop and checkpoint hooks live once in
+`src/models/lit_module_base.py` (`LitModuleBase`) and don't get re-implemented per
+family. Rich test-time analysis (per-class metrics, calibration, uncertainty, CSV/
+figure export) lives entirely in
+`src/callbacks/test_artifacts_callback.py::TestArtifactsCallback`, not in the
+LightningModule.
+
+See [docs/SUPPORTED_MODELS.md](SUPPORTED_MODELS.md) for the concrete backbone list and
+compatibility matrix. To add a new backbone, net, or training strategy, use the
+`add-model` / `add-lightning-module` skills — see
+[Extending the Framework](#extending-the-framework).
+
+---
+
+## Configuration System
+
+Three separate Hydra config roots, each composing the same underlying config groups
+(`data/`, `model/`, `callbacks/`, `trainer/`, `paths/`, ...):
+
+| Root | Purpose |
+|---|---|
+| `configs/train.yaml` | Composes `data`, `model`, `callbacks`, `logger`, `trainer`, `paths`, `extras`, optional `experiment` override, `hparams_search`, `debug`. |
+| `configs/eval.yaml` | Same shape, test-only; also resolves `wandb-artifact://` checkpoint URIs (`src/checkpointing/resolve.py`). |
+| `configs/infer.yaml` | Composes `data`, `infer/runtime` (device/batch-size/MC-dropout knobs), `infer/metrics`, `infer/save`. Deliberately has **no** model-architecture config group — the checkpoint is authoritative for that (see [Checkpointing](#checkpointing)), so inference never needs to be told what architecture to build. |
+
+The preferred way to define a run is an `experiment/*.yaml` override — it patches
+`data`, `model`, `trainer`, hyperparameters, and logger group/name in one file, rather
+than a long CLI override string:
 
 ```bash
-cp .env.example .env
-# Edit .env with your credentials
+uv run src/train.py experiment=baseline_tang
 ```
 
-Required variables:
+Per-dataset variation is config-only (`dataset_name` + `num_classes`), never
+per-dataset Python — see [docs/DATASETS.md](DATASETS.md) for the dataset list and how
+to add one.
+
+---
+
+## Training
+
 ```bash
-WANDB_API_KEY=your_wandb_api_key_here
-HF_TOKEN=your_huggingface_token_here
+uv run src/train.py experiment=sngp_wong
 ```
 
-### 3. Run Your Experiment
+or compose the pieces directly instead of using an experiment preset:
 
 ```bash
-# Train baseline model on Acevedo dataset
-uv run src/train.py experiment=baseline_acevedo
-
-#or customize training 
 uv run src/train.py \
   model=sngp_classifier \
-  data=image_classifier \
-  trainer.max_epochs=50 \
-  model.optimizer.lr=1e-4 \
-  callbacks=default \
+  data=acevedo \
+  data.datamodule.dataset_name=nirschl-lab/tang_et_al_2019 \
+  data.datamodule.num_classes=4 \
+  trainer.max_epochs=150 \
+  model.optimizer.lr=2e-4 \
   logger=wandb
 ```
 
-### 4. Model Evaluation
-
-Evaluate trained models using checkpoints from W&B artifacts or local training logs.
-
-#### Option 1: Using Bash Scripts (Recommended)
-```bash
-# Use pre-configured evaluation scripts
-bash scripts/eval/acevedo_baseline.sh
-# Check the script files for specific configurations and checkpoint paths
-```
-
-#### Option 2: Manual Configuration
-```bash
-uv run src/eval.py \
-    logger=wandb \
-    ckpt_path="<your-checkpoint-path>" \
-    data="image_classifier" \
-    data.datamodule.batch_size=2048 \
-    data.datamodule.dataset_name="nirschl-lab/acevedo_et_al_2020" \
-    data.datamodule.num_classes=8 \
-    data.datamodule.test_all_folds=true \
-    model="baseline_classifier" \
-    model.class_weights=null \
-    model.use_mc=false \
-    model.mc_passes=10 \
-    logger.wandb.group="<WANDB_GROUP>" \
-    +logger.wandb.name="<EXPERIMENT_NAME>" \
-    ++logger.wandb.project="<WANDB_PROJECT>" \
-    model.log_csv=true \
-    model.csv_save_path="<csv_save_path>" \
-    logger.wandb.tags="<TAGS>" \
-    model.log_test_metrics=true
-```
-
-#### Parameter Explanations
-
-| Parameter | Description | Example Values |
-|-----------|-------------|----------------|
-| `ckpt_path` | Path to model checkpoint | `logs/runs/2024-11-24_10-30-45/checkpoints/best.ckpt` |
-| `data` | Data configuration file name | `image_classifier` |
-| `data.datamodule.batch_size` | Inference batch size | `2048`, `1024`, `512` |
-| `data.datamodule.test_all_folds` | Test all data splits | `true` (all splits), `false` (test only) |
-| `model.use_mc` | Enable Monte Carlo dropout | `true`, `false` |
-| `model.mc_passes` | Number of MC forward passes | `10`, `50`, `100` |
-| `model.log_csv` | Save results to CSV | `true`, `false` |
-| `model.log_test_metrics` | Compute detailed metrics | `true` (in-domain), `false` (OOD) |
-
-#### Evaluation Examples
-
-<details>
-<summary><b>Baseline model evaluation</b></summary>
+Resume from a checkpoint by passing `ckpt_path`:
 
 ```bash
-uv run src/eval.py \
-    ckpt_path="logs/runs/latest/checkpoints/best.ckpt" \
-    data="image_classifier" \
-    model="baseline_classifier"
+uv run src/train.py experiment=sngp_wong ckpt_path=logs/train/runs/<run>/checkpoints/last.ckpt
 ```
-</details>
 
-<details>
-<summary><b>Monte-Carlo evaluation</b></summary>
-
-```bash
-uv run src/eval.py \
-    ckpt_path="path/to/sngp_checkpoint.ckpt" \
-    data="image_classifier" \
-    model="baseline_classifier" \
-    model.use_mc=true \
-    model.mc_passes=50
-```
-</details>
-
-<details>
-<summary><b>SNGP Model evaluation</b></summary>
-
-```bash
-uv run src/eval.py \
-    ckpt_path="path/to/sngp_checkpoint.ckpt" \
-    data="image_classifier" \
-    model="sngp_classifier" \
-```
-</details>
-
-
-<details>
-<summary><b>Out-of-distribution evaluation</b></summary>
-
-```bash
-uv run src/eval.py \
-    ckpt_path="checkpoints/acevedo_trained.ckpt" \
-    data="image_classifier" \
-    data.datamodule.dataset_name="nirschl-lab/tang_et_al_2019" \
-    model="baseline_classifier" \
-    model.log_test_metrics=false
-```
-</details>
-
-<details>
-<summary><b>use multi runs for evaluating on different datasets</b></summary>
-
-```bash
-uv run src/eval.py \
-    -m \
-    ckpt_path="checkpoints/acevedo_trained.ckpt" \
-    data="image_classifier" \
-    data.datamodule.dataset_name="nirschl-lab/tang_et_al_2019","nirschl-lab/kather_et_al_2018" \
-    model="baseline_classifier" \
-    model.log_test_metrics=false
-```
-</details>
-
-
-
-> **💡 Tips:**
-> - Use `test_all_folds=false` for faster evaluation on test set only
-> - Set `log_test_metrics=false` for OOD evaluation to avoid class mismatch errors
-> - Increase `batch_size` for faster inference if GPU memory allowss
----
-
-## 📁 Project Structure
-
-```
-lightning-hydra-template/
-├── 📁 configs/                  # Hydra configuration files
-│   ├── callbacks/               # Training callbacks (EarlyStopping, ModelCheckpoint, etc.)
-│   ├── data/                    # Dataset configurations
-│   ├── experiment/              # Pre-configured experiments
-|	├── img_augmentations/       # data augmentations
-│   ├── model/                   # Model architectures (SNGP, baseline)
-│   ├── trainer/                 # Lightning trainer settings
-│   ├── logger/                  # Logging configurations
-│   └── train.yaml               # Main training configuration
-│
-├── 📁 src/                       # Source code
-│   ├── data/                    # Data loading and preprocessing
-│   ├── models/                  # Model implementations
-│   ├── utils/                   # Utility functions
-│   ├── train.py                # Training script
-│   └── eval.py                 # Evaluation script
-│
-├── 📁 data/                      # Downloaded datasets
-├── 📁 logs/                      # Training logs and checkpoints
-├── 📁 notebooks/                 # Jupyter notebooks for analysis
-├── 📁 tests/                     # Unit tests
-├── 📊 pyproject.toml            # Project dependencies and settings
-├── 🔒 uv.lock                   # Locked dependency versions
-└── 📖 README.md                 # This file
-```
+Deep Ensembles use one extra axis — a sequential training schedule across members
+(`model.train_strategy=sequential`, the default) so `trainer.max_epochs` is divided
+across `model.num_estimators` members rather than each seeing the full epoch count.
+See [docs/DEEP_ENSEMBLES_GUIDE.md](DEEP_ENSEMBLES_GUIDE.md) for the schedule math and
+tuning notes.
 
 ---
 
-<!-- ### Advanced Options
+## Checkpointing
 
-```bash
-# Multi-GPU training
-uv run src/train.py trainer.devices=2 trainer.strategy=ddp
+Every checkpoint carries a `checkpoint["sngp_core"]` metadata block
+(`src/checkpointing/spec.py::CheckpointMeta`) alongside Lightning's own
+`hyper_parameters`/`state_dict` — pure primitives (`format_version`, `lit_module`
+dotted path, `net_spec`, `num_classes`, `idx_to_class`, `dataset_name`). This is what
+lets `read_meta()` (`src/checkpointing/io.py`) tell you a checkpoint's architecture
+without unpickling a live `net` object, and lets inference (§ below) skip needing a
+model-architecture config entirely.
 
-# Resume from checkpoint
-uv run src/train.py ckpt_path=logs/runs/YYYY-MM-DD_HH-MM-SS/checkpoints/last.ckpt
+```python
+from src.checkpointing.io import read_meta, load_net, load_lit_module
 
-# Debug mode (fast training for testing)
-uv run src/train.py debug=default
+meta = read_meta(ckpt_path)          # architecture/format, no unpickling
+net = load_net(ckpt_path)             # just the net, for inference
+lit_model = load_lit_module(ckpt_path)  # full LightningModule (net + hparams)
 ```
 
----
-
-## 🧪 Evaluation
-
-### Evaluate on Test Sets
+Checkpoints below `FORMAT_VERSION` (`src/checkpointing/spec.py`) are refused outright,
+not silently degraded — migrate once:
 
 ```bash
-# Evaluate on specific dataset
-uv run src/eval.py data.dataset=tang_et_al_2019
-
-# Evaluate with custom checkpoint
-uv run src/eval.py ckpt_path=path/to/checkpoint.ckpt data.dataset=wong_et_al_2022
+uv run scripts/checkpoints/migrate_checkpoints.py --in <glob> --out <dir>
 ```
 
-### Out-of-Distribution Detection
+There is no dual-format reading anywhere in production code; `src/checkpointing/legacy.py`
+exists only to support that one migration script.
+
+---
+
+## Evaluation vs. Inference
+
+Two distinct entrypoints, not interchangeable:
+
+- **`src/eval.py`** — Hydra-composed, mirrors `train.yaml`'s shape (needs `model=` and
+  `data=` groups). Test-set evaluation against the training-loop's own metrics/logger
+  setup, and the only place `wandb-artifact://` checkpoint URIs get resolved.
+- **`src/inference/infer.py`** — the **one** canonical inference entrypoint for
+  everything else: single/batch prediction, checkpoint sweeps, and artifact
+  (paired real/simulated) inference, driven by `configs/infer.yaml`. It reads the
+  architecture straight from the checkpoint (see Checkpointing), so a call only ever
+  needs a checkpoint path and a dataset:
 
 ```bash
-# Test OOD detection capabilities
-uv run src/eval.py \
-  data.dataset=tang_et_al_2019 \
-  model.uncertainty_method=sngp \
-  eval.compute_ood_metrics=true
-``` -->
-
----
-
-## ⚙️ Configuration
-
-### Configuration Hierarchy
-
-1. **Base configs**: `configs/train.yaml`, `configs/eval.yaml`
-2. **Component configs**: `configs/{model,data,trainer,callbacks}/`
-3. **Experiment configs**: `configs/experiment/` (combines multiple components)
-4. **Command-line overrides**: Highest priority
-
-### Key Configuration Files
-
-| Config Type | Location | Purpose |
-|-------------|----------|---------|
-| Models | `configs/model/` | SNGP, baseline architectures |
-| Data | `configs/data/` | Dataset loading, augmentations |
-| Experiments | `configs/experiment/` | Pre-configured experiment setups |
-| Callbacks | `configs/callbacks/` | Training callbacks (checkpointing, early stopping) |
-| Trainers | `configs/trainer/` | Lightning trainer settings |
-
----
-
-## 📊 Datasets
-
-This framework supports multiple histopathology datasets for comprehensive evaluation:
-
-### Training used for training and evauation; OOD detection is evaluated by training on one dataset and testing on other datasets
-- **[Acevedo et al. 2020](https://huggingface.co/datasets/nirschl-lab/acevedo_et_al_2020)**: White Blood cells
-- **[Wong et al. 2022](https://huggingface.co/datasets/nirschl-lab/wong_et_al_2022)**: Amyloid Plaques
-- **[Tang et al. 2019](https://huggingface.co/datasets/nirschl-lab/tang_et_al_2019)**: Amyloid Plaques
-- **[Jung et al. 2022](https://huggingface.co/datasets/nirschl-lab/jung_et_al_2022)**: White Blood cells
-- **[Nirschl et al. 2018](https://huggingface.co/datasets/nirschl-lab/nirschl_et_al_2018)**: Cardiac tissue
-- **[Kather et al. 2016/2018](https://huggingface.co/datasets/nirschl-lab/kather_et_al_2016)**: Colorectal pathology
-
-> 📚 **Reference**: All datasets are curated from [this paper](https://huggingface.co/papers/2407.01791)
-
----
-
-## 📈 Experiment Tracking
-
-### Weights & Biases Integration
-
-Monitor your experiments in real-time:
-- **Project Dashboard**: [SNGP Core Project](https://wandb.ai/nirschl-lab/final_experiments)
-- **Automatic logging**: Metrics, hyperparameters, model checkpoints
-- **Visualization**: Training curves, confusion matrices, uncertainty plots
-
-### Local Logging
-
-All runs are also saved locally in `logs/runs/` with:
-- Hydra configuration files
-- Model checkpoints
-- Training metrics
-- Generated plots
-
----
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create a feature branch: `git checkout -b feature-name`
-3. Make your changes and add tests
-4. Run pre-commit hooks: `pre-commit run --all-files`
-5. Submit a pull request
-
-### Development Setup
-
-```bash
-# Install development dependencies
-uv sync --dev
-
-# Install pre-commit hooks
-pre-commit install
-
-# Run tests
-pytest tests/
+uv run src/inference/infer.py \
+  ckpt_path=/absolute/path/to/model.ckpt \
+  data=acevedo \
+  save_path=/absolute/path/to/output
 ```
 
----
-
-## 📄 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
----
-
-## 🙏 Acknowledgments
-
-- Built on [PyTorch Lightning](https://lightning.ai) for scalable training
-- Configuration management via [Hydra](https://hydra.cc)
-- Experiment tracking with [Weights & Biases](https://wandb.ai)
-- Package management with [uv](https://github.com/astral-sh/uv)
+Artifact-paired inference is triggered by pointing `data` at
+`artifact_image_classifier` — no separate script; the artifact code path is selected
+automatically when the dataloader returns paired artifact batches. Full flag reference
+in [docs/INFERENCE_GUIDE.md](INFERENCE_GUIDE.md), or use the `inference` skill for
+guided/multi-checkpoint runs. **Don't add a second inference script** — every request
+in scope is expressible as an `infer.py` invocation.
 
 ---
+
+## Publishing to Hugging Face
+
+One export path, driven off a checkpoint's own `net_spec` (nothing to retype by hand):
+
+| Script | Format | Use when |
+|---|---|---|
+| `scripts/hf/export_to_hub.py` | Self-contained `trust_remote_code` bundle (`modeling_<family>.py` assembled from `src/models/backbones.py` + `outputs.py` + the net class + a `transformers.PreTrainedModel` wrapper). | You want `AutoModel.from_pretrained(..., trust_remote_code=True)` compatibility for external consumers. |
+
+```bash
+uv run scripts/hf/export_to_hub.py --ckpt path/to/model.ckpt --out hf_export/my-model \
+  --push-to-hub org/my-model --hf-token $HF_TOKEN
+```
+
+`export_to_hub.py`'s generated module has **zero `src.*` imports** — it's assembled by
+concatenating the source of the dependency-light net modules
+(`src/models/backbones.py` is deliberately kept free of `hydra`/`lightning`/other
+`src.*` imports for exactly this reason). Edit those source files, not the generated
+`modeling_*.py`; re-run the export script to regenerate it.
+
+`tests/hf/test_export_bundle.py` verifies the full round trip — train one real step,
+save, export, and check `AutoModel.from_pretrained(trust_remote_code=True)` reproduces
+identical outputs. This caught a real `transformers`/`spectral_norm` interaction bug
+during development; treat that test as load-bearing, not a formality.
+
+---
+
+## Metrics & Visualization
+
+Two-tier split:
+
+- **Online/per-step metrics** — `torchmetrics` objects inside `LitModuleBase`
+  (accuracy, precision/recall/F1, macro-AUPRC, ECE, NLL), automatic during
+  training/eval, logged via `self.log(...)`. `val/auprc_best` is the hyperparameter
+  -search selection metric (see [docs/HPO_GUIDE.md](HPO_GUIDE.md)) — `val/nll`/
+  `val/ece` are read-only calibration diagnostics, never a training-time selection
+  target.
+- **Offline/research metrics** — `src/metrics/` (cross-dataset OOD-AUROC, smooth-ECE,
+  Dempster-Shafer uncertainty), driven by prediction CSVs from inference/eval runs.
+  Use the `metrics` skill.
+
+Publication figures go through `src/visualization/style.py` for consistent styling;
+use the `visualizations` skill rather than one-off plotting code.
+
+---
+
+## Testing
+
+Four tiers, matched to what's being changed — not blanket coverage:
+
+1. **Unit** (always run, no network/GPU): pure functions in `src/metrics/*`,
+   `build_backbone`/registry/spec round-trips, checkpoint-hparams-are-JSON.
+2. **Config smoke** (`tests/test_configs.py`): each config subtree composes and
+   instantiates without error, checked per-group so failures are attributable.
+3. **Integration** (`@pytest.mark.slow`): real (truncated) Hydra-composed training
+   loops, plus full checkpoint/HF-export round trips.
+4. **Untested by policy**: notebooks, `src/paper_helpers/**` plotting, cluster `.sh`
+   scripts, W&B interaction — a smoke test (import + one call on synthetic data) is
+   enough when touched.
+
+```bash
+make test        # fast tests, no network/GPU, no @pytest.mark.slow
+make test-full     # full suite including slow/integration tests
+```
+
+Full tier definitions and current known flaky tests are in `CLAUDE.md` §7 — check
+there before adding a test for something that already has a documented caveat.
+
+---
+
+## Extending the Framework
+
+| Task | Use |
+|---|---|
+| New dataset | Copy an `configs/experiment/baseline_<name>.yaml`, change `dataset_name`/`num_classes` — see [docs/DATASETS.md](DATASETS.md). |
+| New backbone / net family | `add-model` skill. |
+| New training strategy (different loss, multi-stage training) | `add-lightning-module` skill. |
+| Run inference / checkpoint sweeps / artifact inference | `inference` skill, or `src/inference/infer.py` directly per [docs/INFERENCE_GUIDE.md](INFERENCE_GUIDE.md). |
+| Tune hyperparameters (fair cross-model comparison) | `scripts/hpo/sweep.sh <baseline\|sngp> <dataset>` — see [docs/HPO_GUIDE.md](HPO_GUIDE.md). |
+| Offline/research metrics | `metrics` skill. |
+| Publication figures | `visualizations` skill. |
+| Publish a trained model to HF Hub | See [Publishing to Hugging Face](#publishing-to-hugging-face). |
+
+---
+
+## Contributing
+
+```bash
+git checkout -b feature-name
+# make changes
+make format     # pre-commit run -a
+make test        # before opening a PR
+make test-full     # before considering the work done
+```
+
+Known out-of-scope items and pre-existing test flakiness (not to be re-litigated per
+change) are tracked in `CLAUDE.md` §6.

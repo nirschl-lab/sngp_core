@@ -22,12 +22,14 @@ the same schema, differing only in class count and content:
 | Tang et al. 2019 | `nirschl-lab/tang_et_al_2019` | 4 |
 | Wong et al. 2022 | `nirschl-lab/wong_et_al_2022` | 4 |
 | Kather et al. 2018 | `nirschl-lab/kather_et_al_2018` | 9 |
-| Jung et al. 2022 | `nirschl-lab/jung_et_al_2022` | — |
-| Nirschl et al. 2018 | `nirschl-lab/nirschl_et_al_2018` | — |
-| Kather et al. 2016 | `nirschl-lab/kather_et_al_2016` | — |
+| Jung et al. 2022 | `nirschl-lab/jung_et_al_2022` | 5 |
+| Nirschl et al. 2018 | `nirschl-lab/nirschl_et_al_2018` | 2 |
+| Kather et al. 2016 | `nirschl-lab/kather_et_al_2016` | 8 |
 
-Only the first four have `configs/experiment/*.yaml` presets today; the rest run via
-`configs/data/image_classifier.yaml` overrides (see §5).
+Each dataset has its own `configs/data/<dataset>.yaml` (`acevedo`, `tang`, `wong`,
+`kather2018`, `kather2016`, `jung`, `nirschl2018`) carrying `dataset_name`/
+`num_classes`/`class_to_idx`. Only the first four have `configs/experiment/*.yaml`
+presets today; the rest are used via `data=<dataset>` CLI composition (see §5).
 
 The paper (ISBI 2026, arXiv:2602.02370) is accepted; ongoing work evaluates
 robustness to simulated imaging artifacts (external `histo-artifact-sim` package) and
@@ -68,9 +70,13 @@ src/
     components/spectral_norm.py   spectral-norm wrapping + the SNGP/ViT compatibility guard
     baseline/baseline_models.py   BaselineClassifier (+ MC-Dropout)
     sngp/sngp_classifier.py       SNGPClassifier (spectral-normed backbone + RFF-GP head)
-    ensemble/                     DeepEnsemble net + DeepEnsembleLitModule
-    lit_module_base.py            shared LightningModule: train/val/test loop, torchmetrics, checkpoint hooks
-    *_classification_lit_module.py  thin per-family subclasses (model_step/forward overrides only)
+    ensemble/deep_ensemble_model.py  DeepEnsemble net
+    lit_module_base.py            shared LightningModule: lean train/val loop only, torchmetrics, checkpoint hooks
+    <family>_lit_module.py        thin per-family subclasses (BaselineLitModule / SNGPLitModule /
+                                   DeepEnsembleLitModule) -- override forward()/_predict_forward() only
+  callbacks/
+    test_artifacts_callback.py    ALL test-time analysis: per-class metrics, calibration, uncertainty,
+                                   prediction CSV, diagnostic figures -- not in the LightningModule
   checkpointing/
     spec.py     CheckpointMeta / FORMAT_VERSION -- the plain-data checkpoint metadata contract
     io.py       read_meta / load_net / load_lit_module -- the ONLY sanctioned way to read a checkpoint
@@ -99,8 +105,8 @@ against them:
 - **Every net has a `.spec` property** (plain JSON-serializable dict: registry `name` +
   ctor kwargs) and is registered in `NET_REGISTRY` via `@register_net("...")`. Backbone
   construction lives in exactly one place, `src/models/backbones.py`.
-- **`LitModuleBase.save_hyperparameters()` ignores `net`/`optimizer`/`scheduler`/
-  `calibration_cfg`** — none of those are JSON-serializable. `checkpoint["hyper_parameters"]`
+- **`LitModuleBase.save_hyperparameters()` ignores `net`/`optimizer`/`scheduler`**
+  — none of those are JSON-serializable. `checkpoint["hyper_parameters"]`
   must always be JSON-serializable; `tests/checkpointing/test_hparams_are_primitive.py`
   is a permanent regression guard for this. This is the fix for the historical
   "checkpoints expect the same code structure they were saved with" problem: the old
@@ -132,16 +138,22 @@ Preferred way to define a run: an `experiment/*.yaml` override (patches `data`,
 strings. Per-dataset variation is **config-only** — `dataset_name` + `num_classes` —
 never per-dataset Python; keep it that way when adding a dataset (§5).
 
-Config groups: `data/`, `model/` (+ `model/calibration/`, shared calibration-loss
-weights), `callbacks/`, `logger/`, `trainer/`, `paths/`, `experiment/`,
-`hparams_search/`, `debug/`, `img_augmentations/`, `infer/`, `artifact/` (external
-`histo-artifact-sim` sampling profiles).
+Config groups: `data/`, `model/`, `callbacks/`, `logger/`, `trainer/`, `paths/`,
+`experiment/`, `hparams_search/`, `debug/`, `img_augmentations/`, `infer/`,
+`artifact/` (external `histo-artifact-sim` sampling profiles).
 
 ## 5. Common workflows
 
-- **Add a dataset**: copy an existing `configs/experiment/baseline_<name>.yaml`,
-  change `dataset_name`/`num_classes`. No new Python — the datamodule schema is
-  uniform across all 7 HF datasets.
+- **Add a dataset**: add a `configs/data/<dataset>.yaml` (copy an existing one, e.g.
+  `configs/data/tang.yaml`, and change `dataset_name`/`num_classes`/`class_to_idx`) —
+  that's the single source of truth for dataset identity now, not something set inline
+  per experiment file. Reference it from an experiment file via
+  `override /data: <dataset>` (or compose ad hoc on the CLI,
+  `data=<dataset> model=baseline_classifier`, for a dataset with no experiment preset
+  yet). No new Python — the datamodule schema is uniform across all 7 HF datasets.
+- **Add a new DataModule variant** (a new way of loading/pairing/filtering samples,
+  not just a new dataset with the existing schema — e.g. real+simulated image
+  pairing): use the `add-datamodule` skill.
 - **Add a model / backbone**: use the `add-model` skill.
 - **Add a new training strategy (Lightning module)**: use the `add-lightning-module`
   skill.
@@ -150,11 +162,13 @@ weights), `callbacks/`, `logger/`, `trainer/`, `paths/`, `experiment/`,
   entrypoint — don't add a second.
 - **Compute offline/research metrics** (AUROC-OOD, calibration, artifact
   quantification): use the `metrics` skill.
+- **Tune hyperparameters** for a fair cross-model comparison: `scripts/hpo/sweep.sh
+  <baseline|sngp> <dataset>` (Hydra + Optuna, `configs/hparams_search/`). Selects on
+  `val/auprc_best`, never on calibration/uncertainty metrics — see
+  `docs/HPO_GUIDE.md` for the full protocol and rationale.
 - **Produce a publication figure**: use the `visualizations` skill.
 - **Publish a trained model to HF Hub**: `scripts/hf/export_to_hub.py` (self-contained
-  `trust_remote_code` bundle, `AutoModel.from_pretrained` compatible) or
-  `scripts/upload_to_hf.py` (lighter raw-state_dict format, no `transformers`
-  dependency, consumed by `src/models/hf_loader.py`).
+  `trust_remote_code` bundle, `AutoModel.from_pretrained` compatible).
 
 ## 6. Known issues / roadmap
 
@@ -175,7 +189,6 @@ re-litigated per session):
 - `histo-artifact-sim`'s own roadmap (tissue-aware placement, multi-instance coverage,
   stain-space effects, elastic deformation, a real-vs-simulated validation report) —
   see `configs/artifact/README.md`. External package, not this repo's scope.
-- `src/models/sngp_gpt.py` and other loose experimental modules — not yet triaged.
 
 **Known test flakiness** (pre-existing, not caused by this migration, verified against
 an untouched baseline): `tests/metrics/test_smooth_ece.py` has order-dependent

@@ -4,7 +4,7 @@
 # python train.py experiment=deep_ensemble_wong
 
 defaults:
-  - override /data: image_classifier
+  - override /data: wong
   - override /model: deep_ensemble_classifier
   - override /callbacks: default
   - override /trainer: default
@@ -17,27 +17,22 @@ tags: ["wong_et_al_2022", "resnet18", "training", "deep_ensemble", "uncertainty"
 
 seed: 12345
 
-base_lr: 1e-3
-curr_batch_size: 128
 num_classes: 4
 num_estimators: 5  # Number of ensemble members
 
 trainer:
-  min_epochs: 30
-  max_epochs: 150  # With 5 members, each gets ~30 epochs
+  min_epochs: 150
+  max_epochs: 750  # 5 members x 150 epochs each -- matches the baseline's per-model budget
   accelerator: "gpu"
 
 model:
   num_estimators: ${num_estimators}
   train_strategy: sequential  # Train one member at a time
-  uncertainty_type: variance  # Options: "variance", "entropy", "mutual_info"
-  
+
   optimizer:
-    lr: ${base_lr}
+    lr: 1e-3
     weight_decay: 1e-3
-  
-  hist_bins: 10
-  
+
   net:
     base_model_spec:
       name: baseline_classifier
@@ -51,20 +46,27 @@ model:
   compile: false
   
   scheduler:
-    _target_: torch.optim.lr_scheduler.MultiStepLR
+    # A single scheduler steps continuously across the whole 750-epoch run --
+    # set_active_member() only routes the forward pass, it does not reset the
+    # optimizer/scheduler per member. Plain MultiStepLR decays *cumulatively*, so
+    # repeating [30,70,100] once per member window would compound to gamma**15 by the
+    # last member (effectively frozen). LambdaLR instead re-applies the [30,70,100]
+    # decay pattern fresh within each 150-epoch window -- see
+    # src/models/components/schedulers.py::cyclical_multistep_lr_lambda.
+    _target_: torch.optim.lr_scheduler.LambdaLR
     _partial_: true
-    milestones: [30, 70, 100]
-    gamma: 0.1
+    lr_lambda:
+      _target_: src.models.components.schedulers.cyclical_multistep_lr_lambda
+      epochs_per_member: 150
+      milestones: [30, 70, 100]
+      gamma: 0.1
   
   num_classes: ${num_classes}
-  class_weights: null
-  test_name: "test_predictions_ensemble_wong.csv"
+  class_freq: ${data.class_freq}
 
 data:
   datamodule:
-    dataset_name: "nirschl-lab/wong_et_al_2022"
-    num_classes: ${num_classes}
-    batch_size: ${curr_batch_size}
+    batch_size: 128
 
 logger:
   wandb:
@@ -78,15 +80,21 @@ logger:
 
 callbacks:
   early_stopping:
-    monitor: "val/loss"
-    patience: 20
-    mode: "min"
-    min_delta: 0.005
+    # Disabled: validation runs the FULL ensemble, so val/f1 dips every time a fresh,
+    # untrained member becomes active (see DeepEnsembleLitModule.on_train_epoch_start).
+    # A patience-based monitor would kill the run mid-cycle. The per-member epoch
+    # budget is fixed by design instead (trainer.max_epochs / num_estimators).
+    _target_: lightning.pytorch.callbacks.EarlyStopping
+    monitor: "val/f1"
+    patience: 999999
+    mode: "max"
   model_checkpoint:
-    monitor: "val/loss"
-    mode: "min"
+    monitor: "val/f1"
+    mode: "max"
     save_top_k: 1
     save_last: True
     verbose: True
     filename: "epoch_{epoch:03d}"
     auto_insert_metric_name: False
+  test_artifacts:
+    hist_bins: 10
