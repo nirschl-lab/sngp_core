@@ -246,3 +246,7 @@ work done.
 - Every new net registers via `@register_net(...)` and returns `ModelOutput`; every
   new LightningModule keeps `net`/`optimizer`/`scheduler`/anything non-primitive out
   of `save_hyperparameters()`. See the `add-model`/`add-lightning-module` skills.
+- After making code/config/doc changes for a task, stage and commit them (no need to
+  ask first). Stage only the specific files touched for that task, by name — this
+  repo's working tree routinely carries unrelated pre-existing modifications/deletions
+  (scratch notebooks, WIP scripts, etc.) that must not be swept in with `git add -A`/`.`.
