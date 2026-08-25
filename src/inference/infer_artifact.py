@@ -18,6 +18,7 @@ from torchmetrics.classification import (
 	MulticlassRecall,
 )
 
+from src.inference.infer import _resolve_output_root
 from src.models.outputs import ModelOutput
 
 
@@ -114,6 +115,7 @@ class ArtifactInferenceRunner:
 		cfg: DictConfig,
 		class_names: Optional[Dict[int, str]] = None,
 		expected_num_classes: Optional[int] = None,
+		default_run_name: str = "",
 	) -> None:
 		self.model = model
 		self.dataloader = dataloader
@@ -125,10 +127,7 @@ class ArtifactInferenceRunner:
 		self.model.to(self.device)
 		self.model.eval()
 
-		save_root = Path(str(self.cfg.save_path))
-		run_name = str(self.cfg.infer.save.run_name)
-		self.output_root = save_root / run_name if run_name else save_root
-		self.output_root.mkdir(parents=True, exist_ok=True)
+		self.output_root = _resolve_output_root(cfg, default_run_name)
 
 		self._records: List[Dict[str, Any]] = []
 		# per-stream metric states, e.g. {"real": {"acc": ..., ...}, "artifact": {...}}

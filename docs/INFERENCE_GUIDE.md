@@ -83,10 +83,22 @@ uv run src/inference/infer.py \
 
 ## Outputs
 
-Outputs are written to:
+By default, outputs are written to:
 
-- save_path from [configs/infer.yaml](configs/infer.yaml)
-- optional infer.save.run_name subfolder
+```
+save_path/<run_name>/
+```
+
+- `save_path` defaults to `${paths.log_dir}/infer/${data.name}` (dataset-scoped; override with
+  `save_path=...` or `--save-path` to point elsewhere).
+- `<run_name>` defaults to an auto-derived `<model>_<ckpt_run_id>_<fold>`, read straight from the
+  checkpoint (`<model>` is the checkpoint's own architecture identity, `<ckpt_run_id>` is the
+  training run's timestamp extracted from `ckpt_path`) -- set `infer.save.run_name=...` explicitly
+  to override it.
+
+See [docs/OUTPUT_LAYOUT.md](OUTPUT_LAYOUT.md) for the full picture, including how this fits
+alongside train/eval output directories and a note on the one architecture-family whose
+auto-derived name looks different from its `model.name`.
 
 Files produced (depending on infer.save flags):
 

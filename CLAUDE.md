@@ -145,12 +145,14 @@ Config groups: `data/`, `model/`, `callbacks/`, `logger/`, `trainer/`, `paths/`,
 ## 5. Common workflows
 
 - **Add a dataset**: add a `configs/data/<dataset>.yaml` (copy an existing one, e.g.
-  `configs/data/tang.yaml`, and change `dataset_name`/`num_classes`/`class_to_idx`) —
-  that's the single source of truth for dataset identity now, not something set inline
-  per experiment file. Reference it from an experiment file via
-  `override /data: <dataset>` (or compose ad hoc on the CLI,
-  `data=<dataset> model=baseline_classifier`, for a dataset with no experiment preset
-  yet). No new Python — the datamodule schema is uniform across all 7 HF datasets.
+  `configs/data/tang.yaml`, and change `dataset_name`/`num_classes`/`class_to_idx`/`name`
+  — the last is a short, path-safe identifier distinct from `dataset_name`, used for
+  output-directory naming, see `docs/OUTPUT_LAYOUT.md`) — that's the single source of
+  truth for dataset identity now, not something set inline per experiment file.
+  Reference it from an experiment file via `override /data: <dataset>` (or compose ad
+  hoc on the CLI, `data=<dataset> model=baseline_classifier`, for a dataset with no
+  experiment preset yet). No new Python — the datamodule schema is uniform across all
+  7 HF datasets.
 - **Add a new DataModule variant** (a new way of loading/pairing/filtering samples,
   not just a new dataset with the existing schema — e.g. real+simulated image
   pairing): use the `add-datamodule` skill.

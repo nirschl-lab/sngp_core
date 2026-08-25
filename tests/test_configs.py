@@ -140,6 +140,19 @@ class TestDatasetConfigDrift:
             f"duplicate dataset_name across configs/data/*.yaml: {dataset_names}"
         )
 
+    def test_data_short_names_are_distinct(self):
+        """`data.name` drives task_name/output-directory naming (see
+        docs/OUTPUT_LAYOUT.md) -- a duplicate would make two datasets share one
+        output tree."""
+        short_names = {}
+        for data_config_name in _dataset_config_names():
+            with hydra.initialize(version_base="1.3", config_path="../configs"):
+                cfg = hydra.compose(config_name="train.yaml", overrides=[f"data={data_config_name}"])
+            short_names[data_config_name] = cfg.data.name
+        assert len(set(short_names.values())) == len(short_names), (
+            f"duplicate data.name across configs/data/*.yaml: {short_names}"
+        )
+
 
 class TestExperimentClassFreqConsistency:
     """Regression guard for fair cross-model-family comparison: every model family's

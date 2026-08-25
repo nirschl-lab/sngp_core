@@ -154,6 +154,10 @@ Per-dataset variation is config-only (`dataset_name` + `num_classes`), never
 per-dataset Python — see [docs/DATASETS.md](DATASETS.md) for the dataset list and how
 to add one.
 
+`task_name` (and therefore where a run's output directory lands under `$EXPERIMENTS_HOME`)
+is derived from `model.name`/`data.name` — see [docs/OUTPUT_LAYOUT.md](OUTPUT_LAYOUT.md)
+for the full directory layout and how training/eval/inference outputs relate to each other.
+
 ---
 
 ## Training
@@ -178,7 +182,7 @@ uv run src/train.py \
 Resume from a checkpoint by passing `ckpt_path`:
 
 ```bash
-uv run src/train.py experiment=sngp_wong ckpt_path=logs/train/runs/<run>/checkpoints/last.ckpt
+uv run src/train.py experiment=sngp_wong ckpt_path=logs/train/sngp_classifier_wong/runs/<run>/checkpoints/last.ckpt
 ```
 
 Deep Ensembles use one extra axis — a sequential training schedule across members
@@ -238,6 +242,10 @@ uv run src/inference/infer.py \
   data=acevedo \
   save_path=/absolute/path/to/output
 ```
+
+`save_path` is optional — left unset, it defaults to a dataset-scoped location under
+`$EXPERIMENTS_HOME` with a run folder auto-derived from the checkpoint itself (see
+[docs/OUTPUT_LAYOUT.md](OUTPUT_LAYOUT.md)).
 
 Artifact-paired inference is triggered by pointing `data` at
 `artifact_image_classifier` — no separate script; the artifact code path is selected

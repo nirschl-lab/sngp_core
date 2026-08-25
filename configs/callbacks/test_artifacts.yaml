@@ -1,7 +1,12 @@
 # configs/callbacks/test_artifacts.yaml
-# Writes the test-time prediction CSV and diagnostic figures (calibration curve, ROC
-# curve, confidence histogram, Dempster-Shafer uncertainty). See
-# src/callbacks/test_artifacts_callback.py.
+# Computes final test metrics and writes the test-time prediction CSV and diagnostic
+# figures (calibration curve, ROC curve, confidence histogram, Dempster-Shafer
+# uncertainty). See src/callbacks/test_artifacts_callback.py.
 
 test_artifacts:
   _target_: src.callbacks.test_artifacts_callback.TestArtifactsCallback
+  log_csv: false
+  csv_save_path: ${paths.output_dir}/csv
+  log_metrics_per_class: false
+  hist_bins: 25
+  calibration_curve_bins: 10

@@ -38,8 +38,10 @@ Every dataset serves double duty:
 ## Adding a dataset
 
 Add a `configs/data/<dataset>.yaml` (copy an existing one and change `dataset_name`,
-`num_classes`, `class_to_idx`), then reference it from an experiment file via
-`override /data: <dataset>` — or compose ad hoc on the CLI for a dataset with no
+`num_classes`, `class_to_idx`, and the top-level `name:` — a short, path-safe
+identifier used for output-directory naming, see
+[docs/OUTPUT_LAYOUT.md](OUTPUT_LAYOUT.md)), then reference it from an experiment file
+via `override /data: <dataset>` — or compose ad hoc on the CLI for a dataset with no
 preset yet. No new Python is needed — the datamodule
 (`src/data/classification_image_datamodule.py`) is dataset-agnostic. See CLAUDE.md §5
 for the full workflow and §6 for the two known `ClassificationImageDataModule`

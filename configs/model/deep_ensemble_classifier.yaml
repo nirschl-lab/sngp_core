@@ -1,6 +1,6 @@
 _target_: src.models.deep_ensemble_lit_module.DeepEnsembleLitModule
 
-name: deep_ensemble_resnet18
+name: deep_ensemble_classifier
 
 # Deep Ensemble configuration
 num_estimators: 5  # Number of ensemble members

@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
+from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple, Union
 
 import hydra
 from hydra import compose, initialize_config_dir
@@ -47,6 +49,39 @@ DEFAULT_INFER_SAVE_CFG: Dict[str, Any] = {
     "save_images": False,
     "max_images_to_save": 64,
 }
+
+_RUN_ID_PATTERN = re.compile(r"\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}")
+
+
+def _extract_ckpt_run_id(ckpt_path: Union[str, Path]) -> str:
+    """This project's run-id stamp (`${now:%Y-%m-%d}_${now:%H-%M-%S}`, see
+    `configs/hydra/default.yaml`) if present in `ckpt_path`, else the current time in
+    the same format."""
+    match = _RUN_ID_PATTERN.search(str(ckpt_path))
+    if match:
+        return match.group(0)
+    fallback = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    logger.warning(f"No run-id timestamp found in ckpt_path={ckpt_path!r}; using current time {fallback!r}.")
+    return fallback
+
+
+def derive_default_run_name(ckpt_path: Union[str, Path], net_name: str, fold: str) -> str:
+    """Default `infer.save.run_name` when left blank: '<net_spec name>_<ckpt_run_id>_<fold>'.
+
+    `net_name` is `read_meta(ckpt_path).net_spec["name"]` -- the `NET_REGISTRY` key,
+    which is NOT the same as `configs/model/*.yaml`'s `name:` field (they differ for
+    deep ensembles: "deep_ensemble" vs "deep_ensemble_classifier").
+    """
+    return f"{net_name}_{_extract_ckpt_run_id(ckpt_path)}_{fold}"
+
+
+def _resolve_output_root(cfg: DictConfig, default_run_name: str) -> Path:
+    """Shared `save_path`/`run_name` resolution used by both inference runners."""
+    save_root = Path(str(cfg.save_path))
+    run_name = str(cfg.infer.save.run_name) or default_run_name
+    output_root = save_root / run_name if run_name else save_root
+    output_root.mkdir(parents=True, exist_ok=True)
+    return output_root
 
 
 def _resolve_sections(cfg: DictConfig) -> DictConfig:
@@ -152,6 +187,7 @@ class BaseInferenceRunner:
         cfg: DictConfig,
         class_names: Optional[Dict[int, str]] = None,
         expected_num_classes: Optional[int] = None,
+        default_run_name: str = "",
     ) -> None:
         self.model = model
         self.dataloader = dataloader
@@ -163,10 +199,7 @@ class BaseInferenceRunner:
         self.model.to(self.device)
         self.model.eval()
 
-        save_root = Path(str(self.cfg.save_path))
-        run_name = str(self.cfg.infer.save.run_name)
-        self.output_root = save_root / run_name if run_name else save_root
-        self.output_root.mkdir(parents=True, exist_ok=True)
+        self.output_root = _resolve_output_root(cfg, default_run_name)
 
         self._records: List[Dict[str, Any]] = []
         self._metric_states: Dict[str, Any] = {}
@@ -362,6 +395,10 @@ def _instantiate_model(cfg: DictConfig, device: torch.device):
     hparams-merging is needed; a mismatched/unavailable Hydra model config can no
     longer produce a checkpoint/model compatibility error, because there is no longer
     a second, independently-configured model in the loop to be incompatible with.
+
+    Returns `(model, meta)` -- the caller reuses `meta` (already-loaded, no extra
+    unpickling) for both the `idx_to_class` fallback and the default inference
+    output-folder name.
     """
     from src.checkpointing.io import load_net, read_meta
 
@@ -370,11 +407,12 @@ def _instantiate_model(cfg: DictConfig, device: torch.device):
         f"Loading checkpoint: lit_module={meta.lit_module}, net={meta.net_spec.get('name')}, "
         f"arch={meta.net_spec.get('arch')}, num_classes={meta.num_classes}"
     )
-    return load_net(
+    model = load_net(
         cfg.ckpt_path,
         device=str(device),
         strict=bool(cfg.infer.runtime.strict),
     )
+    return model, meta
 
 
 def run_inference(cfg: DictConfig) -> Dict[str, Any]:
@@ -403,17 +441,19 @@ def run_inference(cfg: DictConfig) -> Dict[str, Any]:
         datamodule.setup(stage="test")
         dataloader = datamodule.test_dataloader()
 
-    model = _instantiate_model(cfg, device=device)
+    model, ckpt_meta = _instantiate_model(cfg, device=device)
 
     class_names = {}
     if hasattr(datamodule, "trainer") and datamodule.trainer is not None:
         class_names = getattr(datamodule.trainer, "test_idx_to_classes", {})
-    if not class_names:
-        from src.checkpointing.io import read_meta
+    if not class_names and ckpt_meta.idx_to_class:
+        class_names = ckpt_meta.idx_to_class
 
-        checkpoint_idx_to_class = read_meta(cfg.ckpt_path).idx_to_class
-        if checkpoint_idx_to_class:
-            class_names = checkpoint_idx_to_class
+    default_run_name = derive_default_run_name(
+        ckpt_path=cfg.ckpt_path,
+        net_name=str(ckpt_meta.net_spec.get("name", "model")),
+        fold=fold,
+    )
 
     expected_num_classes = None
     if hasattr(datamodule, "num_classes"):
@@ -449,6 +489,7 @@ def run_inference(cfg: DictConfig) -> Dict[str, Any]:
             cfg=cfg,
             class_names=class_names,
             expected_num_classes=expected_num_classes,
+            default_run_name=default_run_name,
         )
     else:
         logger.info("Detected standard classification dataloader format. Using ClassificationInferenceRunner.")
@@ -458,6 +499,7 @@ def run_inference(cfg: DictConfig) -> Dict[str, Any]:
             cfg=cfg,
             class_names=class_names,
             expected_num_classes=expected_num_classes,
+            default_run_name=default_run_name,
         )
 
     metrics = runner.run()
@@ -487,7 +529,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "overrides",
         nargs="*",
-        help="Any OmegaConf dotlist overrides, e.g. ckpt_path=... data=image_classifier infer.model=sngp_classifier",
+        help="Any OmegaConf dotlist overrides, e.g. ckpt_path=... data=acevedo infer.model=sngp_classifier",
     )
     return parser.parse_args()
 

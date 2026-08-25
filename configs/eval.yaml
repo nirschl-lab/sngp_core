@@ -3,7 +3,7 @@
 # specify here default configuration
 # order of defaults determines the order in which configs override each other
 defaults:
-  - data: image_classifier
+  - data: ???
   - model: sngp_classifier
   - callbacks: default
   - logger: wandb # set logger here or use command line (e.g. `python train.py logger=tensorboard`)
@@ -14,8 +14,9 @@ defaults:
 #  - override /hydra/launcher: submitit_slurm # uncomment if using submitit_slurm
   - _self_
 
-# task name, determines output directory path
-task_name: "predict"
+# task name, determines output directory path -- includes model family + dataset so
+# runs are distinguishable on disk, not just by timestamp (see docs/OUTPUT_LAYOUT.md)
+task_name: "eval/${model.name}_${data.name}"
 tags: ["eval", "sngp", "isbi2026"]
 
 # flag for torch precision: 'medium', 'high' or 'highest'

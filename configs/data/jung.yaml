@@ -1,6 +1,11 @@
 defaults:
   - /img_augmentations: light_augmentations #albumentations #torchvision #default
 
+# Short, path-safe dataset identifier -- drives task_name/output-directory naming
+# (see docs/OUTPUT_LAYOUT.md). Distinct from datamodule.dataset_name below, which is
+# the full HuggingFace repo id and unsafe to use as a directory segment.
+name: jung
+
 datamodule:
   _target_: src.data.classification_image_datamodule.ClassificationImageDataModule
   dataset_name: nirschl-lab/jung_et_al_2022

@@ -3,6 +3,11 @@
 defaults:
   - /img_augmentations: light_augmentations
 
+# Short, path-safe dataset identifier -- drives task_name/output-directory naming
+# (see docs/OUTPUT_LAYOUT.md). Wraps the same HF dataset as acevedo.yaml via
+# ArtifactImageDataModule, so this is disambiguated as the artifact-paired variant.
+name: acevedo_artifact
+
 datamodule:
   _target_: src.data.artifact_image_datamodule.ArtifactImageDataModule
   dataset_name: nirschl-lab/acevedo_et_al_2020

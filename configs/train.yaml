@@ -3,7 +3,7 @@
 # specify here default configuration
 # order of defaults determines the order in which configs override each other
 defaults:
-  - data: image_classifier
+  - data: ???
   - model: sngp_classifier
   - callbacks: default
   - logger: wandb # set logger here or use command line (e.g. `python train.py logger=tensorboard`)
@@ -32,8 +32,9 @@ defaults:
 
   - _self_
 
-# task name, determines output directory path
-task_name: "train"
+# task name, determines output directory path -- includes model family + dataset so
+# runs are distinguishable on disk, not just by timestamp (see docs/OUTPUT_LAYOUT.md)
+task_name: "train/${model.name}_${data.name}"
 
 # tags to help you identify your experiments
 # you can overwrite this in experiment configs

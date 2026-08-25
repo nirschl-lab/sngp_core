@@ -1,6 +1,11 @@
 defaults:
   - /img_augmentations: light_augmentations #albumentations #torchvision #default
 
+# Short, path-safe dataset identifier -- drives task_name/output-directory naming
+# (see docs/OUTPUT_LAYOUT.md). Distinct from datamodule.dataset_name below, which is
+# the full HuggingFace repo id and unsafe to use as a directory segment.
+name: wong
+
 # Train-split counts, ordered by class_to_idx; see scripts/data/compute_class_freq.py.
 # Kept outside `datamodule:` -- everything under `datamodule:` is passed as a
 # ClassificationImageDataModule constructor kwarg via Hydra `_target_` instantiation.
