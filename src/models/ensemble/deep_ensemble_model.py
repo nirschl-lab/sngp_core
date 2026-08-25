@@ -9,7 +9,7 @@ Reference:
     Lakshminarayanan et al. "Simple and Scalable Predictive Uncertainty Estimation 
     using Deep Ensembles" (NeurIPS 2017)
 """
-from typing import Tuple, Optional, List
+from typing import Tuple
 import torch
 import torch.nn as nn
 
