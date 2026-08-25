@@ -20,6 +20,9 @@ import os
 from pathlib import Path
 
 import optuna
+from dotenv import find_dotenv, load_dotenv
+
+load_dotenv(find_dotenv())
 
 
 def resolve_default_storage(study_name: str) -> str:
