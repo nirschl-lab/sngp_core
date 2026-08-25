@@ -16,4 +16,9 @@ job_logging:
   handlers:
     file:
       # Incorporates fix from https://github.com/facebookresearch/hydra/pull/2242
-      filename: ${hydra.runtime.output_dir}/${task_name}.log
+      # A flat filename, not ${task_name} -- task_name can contain "/" (e.g.
+      # "train/<model>_<dataset>", see docs/OUTPUT_LAYOUT.md), and this handler
+      # doesn't create intermediate directories, so a slash here breaks logging with
+      # a FileNotFoundError. The run directory itself already encodes the full task
+      # identity, so a flat name loses nothing.
+      filename: ${hydra.runtime.output_dir}/run.log

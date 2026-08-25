@@ -24,7 +24,7 @@ dataset it belongs to, not just a timestamp:
 ```
 $EXPERIMENTS_HOME/$PROJECT_NAME/
 ├── train/<model.name>_<data.name>/runs/<run_id>/
-│   ├── train.log
+│   ├── run.log
 │   ├── .hydra/                    # resolved config snapshot
 │   ├── wandb/                     # local wandb run files (if logger=wandb)
 │   ├── csv/                       # test_artifacts prediction CSV, if log_csv=true
@@ -32,7 +32,7 @@ $EXPERIMENTS_HOME/$PROJECT_NAME/
 │       ├── best.ckpt
 │       └── last.ckpt
 ├── eval/<model.name>_<data.name>/runs/<run_id>/
-│   ├── eval.log
+│   ├── run.log
 │   ├── .hydra/
 │   └── csv/
 └── infer/<data.name>/<run_name>/
@@ -73,6 +73,13 @@ above `runs/`:
 `${model.name}` and `${data.name}` are plain config fields resolved at Hydra composition time --
 see [§6](#6-three-name-fields----dont-conflate) for exactly which fields these are and which ones
 they are *not*.
+
+Because `task_name` now contains `/`, the job log file itself (`run.log`) is a flat, fixed name
+rather than `${task_name}.log` -- [`configs/hydra/default.yaml`](../configs/hydra/default.yaml)'s
+`job_logging.handlers.file.filename` doesn't create intermediate directories, so a slash in that
+value raises `FileNotFoundError` at job-logging setup, before the task function ever runs. The run
+directory's own path already fully encodes the task identity, so nothing is lost by the log
+filename being generic.
 
 ## 3. Training outputs
 

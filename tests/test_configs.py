@@ -1,12 +1,15 @@
 """test_configs.py in tests."""
 
 import glob
+import logging
+import logging.config
 import os
 
 import hydra
 import pytest
 from hydra.core.hydra_config import HydraConfig
-from omegaconf import DictConfig
+from hydra.core.utils import configure_log
+from omegaconf import DictConfig, OmegaConf, open_dict, read_write
 
 _DATA_CONFIG_DIR = os.path.join(os.path.dirname(__file__), "..", "configs", "data")
 
@@ -151,6 +154,56 @@ class TestDatasetConfigDrift:
             short_names[data_config_name] = cfg.data.name
         assert len(set(short_names.values())) == len(short_names), (
             f"duplicate data.name across configs/data/*.yaml: {short_names}"
+        )
+
+
+class TestJobLoggingConfig:
+    """Regression guard: `task_name` now contains "/" (e.g.
+    "train/baseline_classifier_acevedo"), and `configs/hydra/default.yaml`'s
+    `job_logging.handlers.file.filename` doesn't create intermediate directories, so a
+    slash there raises FileNotFoundError during job-logging setup -- before the task
+    function ever runs, and before `hydra.utils.instantiate` touches anything, so
+    TestTrainConfig/TestEvalConfig's per-group instantiation checks don't exercise
+    this path at all. Calls Hydra's own `configure_log` (the exact function
+    `run_job()` calls) directly against a real, resolved job_logging config."""
+
+    @pytest.mark.parametrize(
+        "config_name,overrides",
+        [
+            ("train.yaml", ["data=acevedo", "model=deep_ensemble_classifier"]),
+            ("eval.yaml", ["data=acevedo", "model=baseline_classifier", "ckpt_path=."]),
+        ],
+    )
+    def test_job_logging_configures_without_error(self, config_name, overrides, tmp_path):
+        with hydra.initialize(version_base="1.3", config_path="../configs"):
+            cfg = hydra.compose(config_name=config_name, overrides=overrides, return_hydra_config=True)
+        with open_dict(cfg):
+            cfg.paths.log_dir = str(tmp_path)
+
+        # Mirrors hydra.core.utils.run_job's own sequence: resolve hydra.run.dir into
+        # hydra.runtime.output_dir, register the config, then create the directory --
+        # all *before* configure_log runs, exactly as it happens in a real job.
+        output_dir = str(OmegaConf.select(cfg, "hydra.run.dir"))
+        with read_write(cfg.hydra.runtime):
+            with open_dict(cfg.hydra.runtime):
+                cfg.hydra.runtime.output_dir = os.path.abspath(output_dir)
+        HydraConfig.instance().set_config(cfg)
+        os.makedirs(output_dir, exist_ok=True)
+
+        root_logger = logging.getLogger()
+        saved_handlers = list(root_logger.handlers)
+        saved_level = root_logger.level
+        try:
+            configure_log(cfg.hydra.job_logging, cfg.hydra.verbose)
+        finally:
+            for handler in root_logger.handlers:
+                if handler not in saved_handlers:
+                    handler.close()
+            root_logger.handlers = saved_handlers
+            root_logger.setLevel(saved_level)
+
+        assert os.path.isfile(os.path.join(output_dir, "run.log")), (
+            f"expected a flat run.log directly under {output_dir}"
         )
 
 
