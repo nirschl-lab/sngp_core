@@ -11,8 +11,9 @@ called "name."
 3. [Training outputs](#3-training-outputs)
 4. [Eval outputs](#4-eval-outputs)
 5. [Inference outputs](#5-inference-outputs)
-6. [Three "name" fields -- don't conflate](#6-three-name-fields----dont-conflate)
-7. [Known quirks](#7-known-quirks)
+6. [Ensemble-member parallel training outputs](#6-ensemble-member-parallel-training-outputs)
+7. [Three "name" fields -- don't conflate](#7-three-name-fields----dont-conflate)
+8. [Known quirks](#8-known-quirks)
 
 ## 1. Directory layout
 
@@ -35,15 +36,25 @@ $EXPERIMENTS_HOME/$PROJECT_NAME/
 │   ├── run.log
 │   ├── .hydra/
 │   └── csv/
-└── infer/<data.name>/<run_name>/
-    ├── predictions.csv
-    ├── metrics.json
-    └── images/                    # artifact mode only, if infer.save.save_images=true
+├── infer/<data.name>/<run_name>/
+│   ├── predictions.csv
+│   ├── metrics.json
+│   └── images/                    # artifact mode only, if infer.save.save_images=true
+└── ensemble_members/<model.name>_<data.name>_<run_id>/
+    ├── member_0/
+    │   ├── run.log
+    │   ├── .hydra/
+    │   └── checkpoints/best.ckpt
+    ├── member_1/
+    │   └── ...
+    └── member_1.log, member_2.log, ...   # each member's captured stdout/stderr
 ```
 
 `train/` and `eval/` multirun/HPO sweeps (`scripts/hpo/sweep.sh`) land at the equivalent
 `multiruns/<run_id>/<job.num>/` shape automatically -- `hydra.sweep.dir` interpolates the same
 `${task_name}` as `hydra.run.dir`, so no separate configuration was needed for that.
+`ensemble_members/` is its own fourth tree, deliberately outside this `task_name` mechanism --
+see [§6](#6-ensemble-member-parallel-training-outputs).
 
 ## 2. How `task_name` and run-id are generated
 
@@ -68,10 +79,10 @@ above `runs/`:
 - **Inference** -- [`configs/infer.yaml`](../configs/infer.yaml):
   `task_name: "infer/${data.name}"`. This field is set for a clean printed/logged config only --
   `src/inference/infer.py` never runs a real `@hydra.main` job (see
-  [§7](#7-known-quirks)), so it does **not** drive `hydra.run.dir` the way it does for train/eval.
+  [§8](#8-known-quirks)), so it does **not** drive `hydra.run.dir` the way it does for train/eval.
 
 `${model.name}` and `${data.name}` are plain config fields resolved at Hydra composition time --
-see [§6](#6-three-name-fields----dont-conflate) for exactly which fields these are and which ones
+see [§7](#7-three-name-fields----dont-conflate) for exactly which fields these are and which ones
 they are *not*.
 
 Because `task_name` now contains `/`, the job log file itself (`run.log`) is a flat, fixed name
@@ -118,7 +129,7 @@ run-folder name from the checkpoint itself
 ```
 
 - `<net_spec name>` comes from `read_meta(ckpt_path).net_spec["name"]` -- the checkpoint's own
-  `NET_REGISTRY` key (see [§6](#6-three-name-fields----dont-conflate) for why this can differ from
+  `NET_REGISTRY` key (see [§7](#7-three-name-fields----dont-conflate) for why this can differ from
   `model.name`).
 - `<ckpt_run_id>` is this project's own run-id timestamp
   (`\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}`), regex-extracted from `ckpt_path` -- since a checkpoint's
@@ -132,7 +143,38 @@ run-folder name from the checkpoint itself
 `infer.save.run_name` remains a manual override -- set it explicitly to bypass the auto-derived
 name entirely.
 
-## 6. Three "name" fields -- don't conflate
+## 6. Ensemble-member parallel training outputs
+
+[`scripts/ensemble/train_members_parallel.sh`](../scripts/ensemble/train_members_parallel.sh)
+trains N Deep Ensemble members as independent, fully parallel `baseline_classifier` runs (one
+ordinary `train.py` invocation per GPU) instead of `DeepEnsembleLitModule`'s sequential
+single-run cycling, then
+[`scripts/ensemble/assemble_ensemble_checkpoint.py`](../scripts/ensemble/assemble_ensemble_checkpoint.py)
+combines the resulting checkpoints into one `DeepEnsemble` checkpoint. This deliberately does
+**not** use the `train/<model.name>_<data.name>/runs/<run_id>/` pattern: each member call passes
+`hydra.run.dir=<explicit path>` directly, bypassing `task_name` entirely, so that all N members
+from one invocation land together under one shared root instead of scattering across N separate
+`train/.../runs/<own-timestamp>/` directories -- co-location is what lets
+`assemble_ensemble_checkpoint.py --members-dir <root>` auto-discover `member_0/`, `member_1/`, ...
+without being told each one's path individually.
+
+The root's naming key still matches train/eval's convention -- `<model.name>_<data.name>_<run_id>`
+-- resolved by composing the experiment config once at the top of the script (not reused from
+`$EXPERIMENT`, the experiment config's filename, since that can differ from the model/dataset it
+actually points at). Each `member_<i>/` subdirectory is an ordinary Hydra run dir (same
+`checkpoints/`, `.hydra/`, `run.log` shape as [§3](#3-training-outputs)), plus a
+`member_<i>.log` one level up capturing that member's full stdout/stderr (the script's own
+process-supervision log, separate from Hydra's `run.log` inside each member's directory).
+
+The assembled `ensemble.ckpt` itself isn't placed in any of these trees automatically --
+`--out` is an explicit path the caller chooses (the script's own final message suggests
+`<members-root>/ensemble.ckpt`). Its `net_spec["name"]` is `"deep_ensemble"` (assembled via
+`DeepEnsemble.spec`, the same registry key a real `DeepEnsembleLitModule` run produces), even
+though every member checkpoint underneath it is individually a `"baseline_classifier"` --
+consistent with the [§7](#7-three-name-fields----dont-conflate) asymmetry, just constructed
+by hand here instead of by `DeepEnsembleLitModule`.
+
+## 7. Three "name" fields -- don't conflate
 
 | Field | Where | Example | Drives |
 |---|---|---|---|
@@ -148,7 +190,7 @@ training run lands at `train/deep_ensemble_classifier_<dataset>/...`, but that s
 auto-derived inference folder reads `infer/<dataset>/deep_ensemble_<ckpt_run_id>_<fold>/` -- the
 "deep_ensemble" vs "deep_ensemble_classifier" difference there is expected, not a bug.
 
-## 7. Known quirks
+## 8. Known quirks
 
 - **`infer.yaml`'s `task_name` is inert for `hydra.run.dir` purposes.** `src/inference/infer.py`
   composes its config via `hydra.compose(..., return_hydra_config=False)` inside
@@ -156,7 +198,9 @@ auto-derived inference folder reads `infer/<dataset>/deep_ensemble_<ckpt_run_id>
   `${paths.log_dir}/infer/.../runs/<run_id>/` bookkeeping directory the way train/eval get one.
   `task_name` is kept for a clean printed/logged config, but the actual inference *results* tree
   is entirely determined by `save_path`/`infer.save.run_name` as described in [§5](#5-inference-outputs).
-- **The deep-ensemble name asymmetry** described in [§6](#6-three-name-fields----dont-conflate).
+- **The deep-ensemble name asymmetry** described in [§7](#7-three-name-fields----dont-conflate).
+- **`ensemble_members/` bypasses `task_name` entirely** -- described in
+  [§6](#6-ensemble-member-parallel-training-outputs); deliberate, not an oversight.
 - **HPO sweep dirs inherit the new layout for free.** `configs/hparams_search/*.yaml` only
   reference the unrelated top-level `name` field for their Optuna storage path
   (`${paths.log_dir}/optuna/${name}_hpo.db`); the sweep *output* directory
