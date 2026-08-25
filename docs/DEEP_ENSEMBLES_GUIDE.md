@@ -19,7 +19,7 @@ The implementation consists of three main components:
    - Handles ensemble predictions and uncertainty quantification
    - Supports different uncertainty metrics (variance, entropy, mutual information)
 
-2. **`DeepEnsembleLitModule`** (`src/models/ensemble/deep_ensemble_lit_module.py`)
+2. **`DeepEnsembleLitModule`** (`src/models/deep_ensemble_lit_module.py`)
    - Lightning module for training and evaluation
    - Manages sequential training of ensemble members
    - Integrates with existing metrics and logging
@@ -51,26 +51,14 @@ python src/train.py model=deep_ensemble_classifier \
     model.net.base_model_spec.arch=resnet50
 ```
 
-### 4. Change Uncertainty Type
-
-```bash
-# Use entropy-based uncertainty
-python src/train.py model=deep_ensemble_classifier \
-    model.uncertainty_type=entropy
-
-# Or mutual information (epistemic uncertainty)
-python src/train.py model=deep_ensemble_classifier \
-    model.uncertainty_type=mutual_info
-```
-
 ## ⚙️ Configuration Options
 
 ### Key Parameters in `deep_ensemble_classifier.yaml`:
 
 ```yaml
 num_estimators: 5              # Number of ensemble members
-train_strategy: sequential     # How to train: "sequential" or "all"
-uncertainty_type: variance     # Uncertainty metric: "variance", "entropy", "mutual_info"
+train_strategy: sequential     # Only "sequential" is implemented; anything else
+                                # raises NotImplementedError at construction time
 
 net:
   base_model_spec:
@@ -88,11 +76,19 @@ net:
   - Better for limited GPU memory
   - Epochs are divided equally among members
   
-- **`all`** (experimental): Trains all members simultaneously
-  - Faster if you have enough memory
-  - May require gradient accumulation
+- **`all`**: not implemented — `DeepEnsembleLitModule` raises `NotImplementedError` at
+  construction time if you set this. Simultaneous multi-member training is a future TODO.
 
 ### Uncertainty Types:
+
+The live training/test path reports ensemble disagreement generically via
+`ModelOutput.variance` (variance of per-member logits) as `test/uncertainty_mean`,
+the same field every uncertainty-aware family (SNGP included) populates — no
+per-run configuration needed.
+
+For offline/notebook analysis with a specific uncertainty formulation, call
+`DeepEnsemble.get_predictive_uncertainty(x, uncertainty_type=...)` directly on the
+net (see [Programmatic Usage](#programmatic-usage) below) — it supports:
 
 1. **`variance`**: Variance of predicted probabilities across ensemble
    - Captures disagreement between models
@@ -141,15 +137,14 @@ python src/eval.py model=deep_ensemble_classifier \
 
 ### Access Uncertainty Estimates
 
-During testing, the model automatically computes and logs:
-- Mean predictions across ensemble
-- Uncertainty scores per sample
-- Average uncertainty across test set
-
-Logged metrics:
-- `test/acc`: Ensemble accuracy
-- `test/loss`: Ensemble loss
-- `test/uncertainty_mean`: Average uncertainty
+`src/eval.py`'s `trainer.test()` run computes final metrics via
+`TestArtifactsCallback` (see `src/callbacks/test_artifacts_callback.py`), not the
+LightningModule itself. Logged metrics include:
+- `test/acc_final`, `test/precision_final`, `test/recall_final`, `test/f1_final`
+- `test/uncertainty_mean`: mean of `ModelOutput.variance` (per-member logit variance)
+  across the test set
+- Per-sample logits/probs/predictions/variance in the prediction CSV, when
+  `callbacks.test_artifacts.log_csv=true`
 
 ## 📈 Comparing with Other Methods
 

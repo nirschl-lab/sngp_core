@@ -50,7 +50,7 @@ Select a data config from [configs/data](configs/data):
 ```bash
 uv run src/inference/infer.py \
   ckpt_path=/absolute/path/to/model.ckpt \
-  data=image_classifier
+  data=acevedo
 ```
 
 Choose split/fold:

@@ -1,0 +1,60 @@
+# Supported Models
+
+This is a reference for what the framework can currently build — architectures,
+backbones, and their compatibility constraints. For *why* the framework is structured
+this way (shared contracts, registry, checkpoint identity), see
+[DEVELOPMENT.md](DEVELOPMENT.md#model-methodology). For which trained checkpoints have
+actually been published, see the root [README.md](../README.md#-available-models).
+
+## Model families
+
+| Family | Config | LightningModule | Notes |
+|---|---|---|---|
+| **Baseline** | `configs/model/baseline_classifier.yaml` | `BaselineLitModule` | Deterministic classifier. Optional MC-Dropout at inference (`use_mc=true`, `mc_passes=N`) for a cheap uncertainty estimate without retraining. |
+| **SNGP** | `configs/model/sngp_classifier.yaml` | `SNGPLitModule` | Spectral-normalized backbone + a random-feature Gaussian Process head. Produces a predictive `variance` alongside `logits`. **resnet backbones only** — see [ViT compatibility](#sngp--vit-compatibility) below. |
+| **Deep Ensemble** | `configs/model/deep_ensemble_classifier.yaml` | `DeepEnsembleLitModule` | Wraps `num_estimators` independently-initialized baseline members (any registered net as the member architecture). Uncertainty from member disagreement (`variance`, `entropy`, or `mutual_info`). See [docs/DEEP_ENSEMBLES_GUIDE.md](DEEP_ENSEMBLES_GUIDE.md) for training-schedule and tuning details. |
+
+All three return the same `ModelOutput` shape (`src/models/outputs.py`) and register
+into the same `NET_REGISTRY` (`src/models/registry.py`) — an ensemble member is just
+another net built from a `base_model_spec`, so e.g. an ensemble of SNGP members is
+possible without new code, only a config that points `base_model_spec.name` at
+`sngp_classifier`'s registry key.
+
+## Backbones
+
+Built in exactly one place, `src/models/backbones.py`:
+
+| `arch` | Kind | Pretrained weights |
+|---|---|---|
+| `resnet18` | resnet | ImageNet1K_V1 |
+| `resnet34` | resnet | ImageNet1K_V1 |
+| `resnet50` | resnet | ImageNet1K_V2 |
+| `vit_b_16` | vit | ImageNet1K_V1 |
+| `vit_b_32` | vit | ImageNet1K_V1 |
+| `vit_l_16` | vit | ImageNet1K_V1 |
+| `vit_l_32` | vit | ImageNet1K_V1 |
+| `vit_h_14` | vit | ImageNet1K_V1 |
+
+Select via `model.net.arch=<name>` (baseline/SNGP) or
+`model.net.base_model_spec.arch=<name>` (deep ensemble).
+
+## SNGP × ViT compatibility
+
+SNGP recursively wraps every `Conv2d`/`Linear` in the backbone with spectral
+normalization. That wrapping isn't validated against ViT internals
+(`LayerNorm`/attention), so ViT architectures are rejected at construction time —
+`SPECTRAL_NORM_COMPATIBLE` in `src/models/backbones.py` enumerates the allowed set
+(currently all `resnet*` entries). Passing a `vit_*` arch to `sngp_classifier` raises
+immediately rather than silently training something unvalidated.
+
+## Adding a backbone or net family
+
+Use the `add-model` skill. In short:
+
+- A new **backbone option** for existing families: add an entry to `BACKBONES` in
+  `src/models/backbones.py`.
+- A new **net class/family**: implement `forward()` returning `ModelOutput`, add a
+  `.spec` property, and register with `@register_net("...")`.
+- A new **training strategy** around an existing net (different loss, multi-stage
+  training): use the `add-lightning-module` skill instead — that's a new
+  `LitModuleBase` subclass, not a new net.
