@@ -12,7 +12,7 @@ defaults:
 # all parameters below will be merged with parameters from default configurations set above
 # this allows you to overwrite only specified parameters
 name: "acevedo_baseline_resnet18"
-WANDB_PROJECT: "code_refactor"
+WANDB_PROJECT: ${oc.env:PROJECT_NAME}
 tags: ["acevedo_et_al_2020", "resnet18", "training", "baseline"]
 
 seed: 12345
@@ -27,8 +27,8 @@ trainer:
 
 model:
   optimizer:
-    lr: 1e-3
-    weight_decay: 1e-3
+    lr: 0.00027713338312567603
+    weight_decay: 0.00013908633873458044
   net:
     arch: resnet18
     num_classes: ${num_classes}
@@ -45,7 +45,7 @@ model:
 
 data:
   datamodule:
-    batch_size: 128
+    batch_size: 64
 
 logger:
   wandb:
