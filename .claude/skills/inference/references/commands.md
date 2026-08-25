@@ -50,9 +50,7 @@ Test Tang data on a checkpoint trained on Wong (in-distribution model, out-of-di
 ```bash
 uv run src/inference/infer.py \
   ckpt_path=./checkpoints/wong_sngp_resnet18/model.ckpt \
-  data=image_classifier \
-  data.datamodule.dataset_name=nirschl-lab/tang_et_al_2019 \
-  data.datamodule.num_classes=4 \
+  data=tang \
   save_path=<output_dir>/tang_data_wong_sngp_model/ \
   infer.save.save_images=false
 ```
@@ -61,9 +59,7 @@ Same, but test on **all** folds (not just the test split) and with MC-Dropout:
 ```bash
 uv run src/inference/infer.py \
   ckpt_path=./checkpoints/wong_baseline_resnet18/model.ckpt \
-  data=image_classifier \
-  data.datamodule.dataset_name=nirschl-lab/tang_et_al_2019 \
-  data.datamodule.num_classes=4 \
+  data=tang \
   save_path=<output_dir>/tang_data_wong_baseline_MC_model_all_folds/ \
   infer.save.save_images=false \
   infer.runtime.use_mc_dropout=true infer.runtime.mc_passes=20 \
@@ -72,14 +68,21 @@ uv run src/inference/infer.py \
 
 `fold=all` tests on train+validation+test combined instead of just the test split.
 
+Each `configs/data/<dataset>.yaml` carries its own `dataset_name`/`num_classes`/
+`class_to_idx`, so picking the dataset to test on is just `data=<dataset>` now -- no
+`data.datamodule.dataset_name=...`/`num_classes=...` overrides needed (that older
+pattern still works via a group-composed base like `data=acevedo` plus overrides, but
+requires also passing `data.datamodule.class_to_idx=null`, since the config's own
+class map would otherwise be checked against whatever dataset actually loads and fail
+loudly on a mismatch -- see `scripts/eval/*.sh`'s cross-dataset sweep scripts for that
+pattern in the Hydra-multirun case).
+
 ## In-distribution performance
 
 ```bash
 uv run src/inference/infer.py \
   ckpt_path=./checkpoints/tang_baseline_resnet18/model.ckpt \
-  data=image_classifier \
-  data.datamodule.dataset_name=nirschl-lab/tang_et_al_2019 \
-  data.datamodule.num_classes=4 \
+  data=tang \
   save_path=<output_dir>/indist_performance/tang/baseline_model/ \
   infer.save.save_images=false
 ```

@@ -45,8 +45,7 @@ backbone added to the shared factory, or an entirely new net class/family. For a
 - `src/models/sngp/sngp_classifier.py` — example of a net with extra structure (RFF-GP
   head) and a compatibility guard (`assert_spectral_norm_compatible`).
 - `configs/model/baseline_classifier.yaml` — the Hydra config shape a new
-  `configs/model/<name>.yaml` should follow (includes `defaults: [calibration@calibration_cfg: default]`
-  if pairing with `LitModuleBase`).
+  `configs/model/<name>.yaml` should follow.
 
 ## Steps
 
@@ -86,8 +85,8 @@ backbone added to the shared factory, or an entirely new net class/family. For a
 
 3. Add `configs/model/<name>.yaml` mirroring `baseline_classifier.yaml`'s shape
    (`_target_` pointing at a *LightningModule* — pair with an existing one like
-   `BaselineClassificationLitModule` if the training loop doesn't need to change, or
-   see `add-lightning-module` if it does).
+   `BaselineLitModule` if the training loop doesn't need to change, or see
+   `add-lightning-module` if it does).
 
 4. Tests (`tests/models/<family>/test_<name>.py` or add to
    `tests/models/test_output_contract.py`):

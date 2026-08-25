@@ -52,12 +52,18 @@ backbone arch).
 ```bash
 uv run src/inference/infer.py \
   ckpt_path=<path> \
-  data=<image_classifier|artifact_image_classifier> \
-  data.datamodule.dataset_name=nirschl-lab/<dataset>_et_al_<year> \
-  data.datamodule.num_classes=<n> \
+  data=<dataset|artifact_image_classifier> \
   fold=<train|validation|test|all> \
   save_path=<output_dir>
 ```
+`<dataset>` selects a per-dataset config from `configs/data/` (`acevedo`, `tang`,
+`wong`, `kather2018`, `kather2016`, `jung`, `nirschl2018`) — each already carries the
+right `dataset_name`/`num_classes`/`class_to_idx`, so no manual
+`data.datamodule.dataset_name=...`/`num_classes=...` overrides are needed. For a
+cross-dataset OOD sweep that overrides `data.datamodule.dataset_name` directly (see
+`references/commands.md`), also pass `data.datamodule.class_to_idx=null` — otherwise
+the datamodule's config-vs-dataset consistency check will fail once the overridden
+dataset no longer matches the base config's own class map.
 
 Key `infer.runtime.*` overrides (see `configs/infer/runtime/default.yaml`):
 `device`, `batch_size_override`, `strict` (strict state_dict loading), `use_mc_dropout`,
