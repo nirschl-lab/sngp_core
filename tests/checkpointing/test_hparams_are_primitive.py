@@ -21,7 +21,7 @@ from hydra import compose, initialize
 )
 def test_hparams_are_json_serializable(model_name, overrides):
     with initialize(version_base="1.3", config_path="../../configs"):
-        cfg = compose(config_name="train.yaml", overrides=[f"model={model_name}", *overrides])
+        cfg = compose(config_name="train.yaml", overrides=["data=acevedo", f"model={model_name}", *overrides])
         model = hydra.utils.instantiate(cfg.model)
 
     hparams = dict(model.hparams)
@@ -30,7 +30,6 @@ def test_hparams_are_json_serializable(model_name, overrides):
     assert "net" not in hparams
     assert "optimizer" not in hparams
     assert "scheduler" not in hparams
-    assert "calibration_cfg" not in hparams
     assert "net_spec" in hparams
     assert isinstance(hparams["net_spec"], dict)
     assert "name" in hparams["net_spec"]

@@ -1,9 +1,22 @@
 """test_configs.py in tests."""
 
+import glob
+import os
+
 import hydra
 import pytest
 from hydra.core.hydra_config import HydraConfig
 from omegaconf import DictConfig
+
+_DATA_CONFIG_DIR = os.path.join(os.path.dirname(__file__), "..", "configs", "data")
+
+
+def _dataset_config_names() -> list[str]:
+    """Names of the per-dataset `configs/data/*.yaml` configs (excludes the
+    artifact-eval config, which has a different schema)."""
+    paths = glob.glob(os.path.join(_DATA_CONFIG_DIR, "*.yaml"))
+    names = [os.path.splitext(os.path.basename(p))[0] for p in paths]
+    return sorted(n for n in names if not n.startswith("artifact"))
 
 
 class TestTrainConfig:
@@ -82,3 +95,74 @@ class TestEvalConfig:
     def test_trainer_instantiation(self):
         """Instantiate trainer."""
         self._instantiate(self.cfg_eval.trainer, "trainer")
+
+
+class TestModelConfigs:
+    """Regression guard: smoke-instantiate every `configs/model/*.yaml` individually,
+    not just whichever one happens to be the Hydra default -- mirrors
+    `TestDatasetConfigDrift`'s per-file approach so a broken config is attributable to
+    one file."""
+
+    @pytest.mark.parametrize(
+        "model_config_name",
+        ["baseline_classifier", "sngp_classifier", "deep_ensemble_classifier"],
+    )
+    def test_each_model_config_instantiates(self, model_config_name: str):
+        with hydra.initialize(version_base="1.3", config_path="../configs"):
+            cfg = hydra.compose(
+                config_name="train.yaml", overrides=["data=acevedo", f"model={model_config_name}"]
+            )
+        hydra.utils.instantiate(cfg.model)
+
+
+class TestDatasetConfigDrift:
+    """Regression guard for `configs/data/*.yaml`: catches a config that was
+    copy-pasted from another dataset without every field being updated to match."""
+
+    @pytest.mark.parametrize("data_config_name", _dataset_config_names())
+    def test_num_classes_matches_class_to_idx(self, data_config_name: str):
+        with hydra.initialize(version_base="1.3", config_path="../configs"):
+            cfg = hydra.compose(config_name="train.yaml", overrides=[f"data={data_config_name}"])
+        datamodule_cfg = cfg.data.datamodule
+        assert datamodule_cfg.num_classes == len(datamodule_cfg.class_to_idx), (
+            f"configs/data/{data_config_name}.yaml: num_classes="
+            f"{datamodule_cfg.num_classes} but class_to_idx has "
+            f"{len(datamodule_cfg.class_to_idx)} entries"
+        )
+
+    def test_dataset_names_are_distinct(self):
+        dataset_names = {}
+        for data_config_name in _dataset_config_names():
+            with hydra.initialize(version_base="1.3", config_path="../configs"):
+                cfg = hydra.compose(config_name="train.yaml", overrides=[f"data={data_config_name}"])
+            dataset_names[data_config_name] = cfg.data.datamodule.dataset_name
+        assert len(set(dataset_names.values())) == len(dataset_names), (
+            f"duplicate dataset_name across configs/data/*.yaml: {dataset_names}"
+        )
+
+
+class TestExperimentClassFreqConsistency:
+    """Regression guard for fair cross-model-family comparison: every model family's
+    experiment config for the same dataset must resolve `model.class_freq` to the
+    identical, data-derived value -- imbalance handling can't differ by model family."""
+
+    _EXPERIMENTS_BY_DATASET = {
+        "tang": ["baseline_tang", "sngp_tang"],
+        "kather2018": ["baseline_kather2018", "sngp_kather2018"],
+        "wong": ["baseline_wong", "sngp_wong", "deep_ensemble_wong"],
+        "acevedo": ["baseline_acevedo", "sngp_acevedo", "deep_ensemble_acevedo"],
+    }
+
+    @pytest.mark.parametrize("dataset", sorted(_EXPERIMENTS_BY_DATASET))
+    def test_class_freq_identical_across_model_families(self, dataset: str):
+        experiments = self._EXPERIMENTS_BY_DATASET[dataset]
+        resolved = {}
+        for experiment in experiments:
+            with hydra.initialize(version_base="1.3", config_path="../configs"):
+                cfg = hydra.compose(config_name="train.yaml", overrides=[f"experiment={experiment}"])
+            resolved[experiment] = list(cfg.model.class_freq)
+
+        values = list(resolved.values())
+        assert all(v == values[0] for v in values), (
+            f"model.class_freq differs across experiment configs for dataset {dataset!r}: {resolved}"
+        )

@@ -27,7 +27,7 @@ class _FakeClassificationDataset(torch.utils.data.Dataset):
 
 def _build_and_train_one_step(tmp_path, model_name: str, overrides):
     with initialize(version_base="1.3", config_path="../../configs"):
-        cfg = compose(config_name="train.yaml", overrides=[f"model={model_name}", *overrides])
+        cfg = compose(config_name="train.yaml", overrides=["data=acevedo", f"model={model_name}", *overrides])
         model = hydra.utils.instantiate(cfg.model)
 
     if hasattr(model.net, "set_active_member"):
@@ -56,6 +56,7 @@ def _build_and_train_one_step(tmp_path, model_name: str, overrides):
     [
         ("baseline_classifier", ["model.net.pretrained=false"]),
         ("sngp_classifier", ["model.net.pretrained=false"]),
+        ("deep_ensemble_classifier", ["model.net.base_model_spec.pretrained=false"]),
     ],
 )
 def test_checkpoint_roundtrip(tmp_path, model_name, overrides):
@@ -87,7 +88,10 @@ def test_trainer_fit_ckpt_path_resume_still_works(tmp_path):
     cfg, ckpt_path = _build_and_train_one_step(tmp_path, "baseline_classifier", ["model.net.pretrained=false"])
 
     with initialize(version_base="1.3", config_path="../../configs"):
-        cfg2 = compose(config_name="train.yaml", overrides=["model=baseline_classifier", "model.net.pretrained=false"])
+        cfg2 = compose(
+            config_name="train.yaml",
+            overrides=["data=acevedo", "model=baseline_classifier", "model.net.pretrained=false"],
+        )
         model2 = hydra.utils.instantiate(cfg2.model)
 
     dataloader = torch.utils.data.DataLoader(_FakeClassificationDataset(), batch_size=4)
