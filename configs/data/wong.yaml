@@ -1,0 +1,22 @@
+defaults:
+  - /img_augmentations: light_augmentations #albumentations #torchvision #default
+
+# Train-split counts, ordered by class_to_idx; see scripts/data/compute_class_freq.py.
+# Kept outside `datamodule:` -- everything under `datamodule:` is passed as a
+# ClassificationImageDataModule constructor kwarg via Hydra `_target_` instantiation.
+class_freq: [12301, 12288, 12223, 12218]
+
+datamodule:
+  _target_: src.data.classification_image_datamodule.ClassificationImageDataModule
+  dataset_name: nirschl-lab/wong_et_al_2022
+  num_classes: 4
+  class_to_idx:
+    caa: 0
+    cored: 1
+    diffuse: 2
+    negative: 3
+  batch_size: 64
+  num_workers: 32
+  pin_memory: True
+  test_all_folds: False
+  sample_rate: 0

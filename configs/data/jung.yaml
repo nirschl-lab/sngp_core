@@ -1,0 +1,18 @@
+defaults:
+  - /img_augmentations: light_augmentations #albumentations #torchvision #default
+
+datamodule:
+  _target_: src.data.classification_image_datamodule.ClassificationImageDataModule
+  dataset_name: nirschl-lab/jung_et_al_2022
+  num_classes: 5
+  class_to_idx:
+    basophil: 0
+    eosinophil: 1
+    lymphocyte: 2
+    monocyte: 3
+    neutrophil: 4
+  batch_size: 64
+  num_workers: 32
+  pin_memory: True
+  test_all_folds: False
+  sample_rate: 0

@@ -1,11 +1,19 @@
-# configs/data/acevedo_image_classifier.yaml
 defaults:
   - /img_augmentations: light_augmentations #albumentations #torchvision #default
 
 datamodule:
   _target_: src.data.classification_image_datamodule.ClassificationImageDataModule
-  dataset_name: nirschl-lab/acevedo_et_al_2020
+  dataset_name: nirschl-lab/kather_et_al_2016
   num_classes: 8
+  class_to_idx:
+    tumor: 0
+    stroma: 1
+    complex: 2
+    lympho: 3
+    debris: 4
+    mucosa: 5
+    adipose: 6
+    empty: 7
   batch_size: 64
   num_workers: 32
   pin_memory: True

@@ -1,0 +1,15 @@
+defaults:
+  - /img_augmentations: light_augmentations #albumentations #torchvision #default
+
+datamodule:
+  _target_: src.data.classification_image_datamodule.ClassificationImageDataModule
+  dataset_name: nirschl-lab/nirschl_et_al_2018
+  num_classes: 2
+  class_to_idx:
+    not_chronic_heart_failure: 0
+    chronic_heart_failure: 1
+  batch_size: 64
+  num_workers: 32
+  pin_memory: True
+  test_all_folds: False
+  sample_rate: 0
