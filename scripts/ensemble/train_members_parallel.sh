@@ -121,8 +121,11 @@ with hydra.initialize(version_base='1.3', config_path='configs'):
     print(f'{cfg.model.name}_{cfg.data.name}')
 ")"
 
+# Nested under train/<model>_<dataset>/ -- the same root ordinary single-run training
+# (train/<model>_<dataset>/runs/<run_id>/) uses -- as a sibling "ensemble_members/"
+# batch kind, rather than a separate top-level tree. See docs/OUTPUT_LAYOUT.md §6.
 RUN_ID="$(date +%Y-%m-%d_%H-%M-%S)"
-MEMBERS_ROOT="${EXPERIMENTS_HOME}/${PROJECT_NAME}/ensemble_members/${MODEL_DATASET_KEY}_${RUN_ID}"
+MEMBERS_ROOT="${EXPERIMENTS_HOME}/${PROJECT_NAME}/train/${MODEL_DATASET_KEY}/ensemble_members/${RUN_ID}"
 mkdir -p "${MEMBERS_ROOT}"
 
 PIDS=()
