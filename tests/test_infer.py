@@ -48,12 +48,12 @@ def test_extract_ckpt_run_id_falls_back_when_no_timestamp_present():
     assert infer._RUN_ID_PATTERN.fullmatch(run_id)
 
 
-def test_derive_default_run_name_uses_ckpt_run_id_and_fold():
+def test_derive_default_run_name_uses_ckpt_run_id_and_dataset():
     ckpt_path = ".../runs/2026-08-20_14-03-11/checkpoints/last.ckpt"
-    run_name = infer.derive_default_run_name(ckpt_path, net_name="sngp_classifier", fold="test")
-    assert run_name == "sngp_classifier_2026-08-20_14-03-11_test"
+    run_name = infer.derive_default_run_name(ckpt_path, net_name="sngp_classifier", data_name="acevedo")
+    assert run_name == "sngp_classifier/2026-08-20_14-03-11/acevedo"
 
 
 def test_derive_default_run_name_fallback_shape():
-    run_name = infer.derive_default_run_name("/no/timestamp/here.ckpt", net_name="deep_ensemble", fold="validation")
-    assert re.fullmatch(rf"deep_ensemble_{infer._RUN_ID_PATTERN.pattern}_validation", run_name)
+    run_name = infer.derive_default_run_name("/no/timestamp/here.ckpt", net_name="deep_ensemble", data_name="tang")
+    assert re.fullmatch(rf"deep_ensemble/{infer._RUN_ID_PATTERN.pattern}/tang", run_name)

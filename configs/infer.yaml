@@ -19,9 +19,9 @@ fold: test # train | validation | test | all
 
 ckpt_path: ???
 
-# Dataset-scoped default; the actual per-run subfolder is auto-derived from the
-# checkpoint itself (<model>_<ckpt_run_id>_<fold>) unless infer.save.run_name is set
-# explicitly -- see src/inference/infer.py::derive_default_run_name.
-save_path: ${paths.log_dir}/infer/${data.name}
+# The full output path is auto-derived as <save_path>/<model_name>/<ckpt_run_id>/<dataset>
+# unless infer.save.run_name is set explicitly -- see
+# src/inference/infer.py::derive_default_run_name.
+save_path: ${paths.log_dir}/infer
 
 seed: null

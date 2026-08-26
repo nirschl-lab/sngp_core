@@ -89,12 +89,14 @@ By default, outputs are written to:
 save_path/<run_name>/
 ```
 
-- `save_path` defaults to `${paths.log_dir}/infer/${data.name}` (dataset-scoped; override with
-  `save_path=...` or `--save-path` to point elsewhere).
-- `<run_name>` defaults to an auto-derived `<model>_<ckpt_run_id>_<fold>`, read straight from the
-  checkpoint (`<model>` is the checkpoint's own architecture identity, `<ckpt_run_id>` is the
-  training run's timestamp extracted from `ckpt_path`) -- set `infer.save.run_name=...` explicitly
-  to override it.
+- `save_path` defaults to `${paths.log_dir}/infer` (override with `save_path=...` or
+  `--save-path` to point elsewhere).
+- `<run_name>` defaults to an auto-derived `<model>/<ckpt_run_id>/<dataset>`, read straight from
+  the checkpoint and the dataset used for inference (`<model>` is the checkpoint's own
+  architecture identity, `<ckpt_run_id>` is the training run's timestamp extracted from
+  `ckpt_path`) -- set `infer.save.run_name=...` explicitly to override it. Note this is keyed on
+  checkpoint + dataset only, not `fold`, so rerunning against a different fold overwrites the
+  previous outputs in place unless you set `run_name` explicitly.
 
 See [docs/OUTPUT_LAYOUT.md](OUTPUT_LAYOUT.md) for the full picture, including how this fits
 alongside train/eval output directories and a note on the one architecture-family whose

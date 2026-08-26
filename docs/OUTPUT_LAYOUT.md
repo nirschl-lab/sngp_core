@@ -45,7 +45,7 @@ $EXPERIMENTS_HOME/$PROJECT_NAME/
 │   ├── run.log
 │   ├── .hydra/
 │   └── csv/
-└── infer/<data.name>/<run_name>/
+└── infer/<net_spec name>/<ckpt_run_id>/<data.name>/
     ├── predictions.csv
     ├── metrics.json
     └── images/                    # artifact mode only, if infer.save.save_images=true
@@ -81,7 +81,9 @@ above `runs/`:
 - **Inference** -- [`configs/infer.yaml`](../configs/infer.yaml):
   `task_name: "infer/${data.name}"`. This field is set for a clean printed/logged config only --
   `src/inference/infer.py` never runs a real `@hydra.main` job (see
-  [§8](#8-known-quirks)), so it does **not** drive `hydra.run.dir` the way it does for train/eval.
+  [§8](#8-known-quirks)), so it does **not** drive `hydra.run.dir` the way it does for train/eval,
+  and its `${data.name}`-first shape doesn't match the actual on-disk inference layout described in
+  [§5](#5-inference-outputs) (`<net_spec name>/<ckpt_run_id>/<data.name>`, model/run first).
 
 `${model.name}` and `${data.name}` are plain config fields resolved at Hydra composition time --
 see [§7](#7-three-name-fields----dont-conflate) for exactly which fields these are and which ones
@@ -116,18 +118,18 @@ consumer above applies identically.
 ## 5. Inference outputs
 
 [`src/inference/infer.py`](../src/inference/infer.py) resolves the output directory in two
-layers. `configs/infer.yaml` sets a dataset-scoped base:
+layers. `configs/infer.yaml` sets a dataset-agnostic base:
 
 ```yaml
-save_path: ${paths.log_dir}/infer/${data.name}
+save_path: ${paths.log_dir}/infer
 ```
 
 Then, unless the caller sets `infer.save.run_name` explicitly, `run_inference()` derives a default
-run-folder name from the checkpoint itself
+run-folder path from the checkpoint and the dataset used for inference
 (`src/inference/infer.py::derive_default_run_name`):
 
 ```
-<net_spec name>_<ckpt_run_id>_<fold>
+<net_spec name>/<ckpt_run_id>/<data.name>
 ```
 
 - `<net_spec name>` comes from `read_meta(ckpt_path).net_spec["name"]` -- the checkpoint's own
@@ -140,10 +142,14 @@ run-folder name from the checkpoint itself
   folder name lets you trace results back to the exact training run that produced the checkpoint,
   with no separate bookkeeping. Falls back to the current timestamp if the checkpoint predates
   this convention or was renamed/moved.
-- `<fold>` is the normalized `cfg.fold` (`train`/`validation`/`test`/`all`).
+- `<data.name>` is the dataset inference was run against -- the same value that scoped `save_path`
+  before this layout changed.
 
-`infer.save.run_name` remains a manual override -- set it explicitly to bypass the auto-derived
-name entirely.
+Note: the folder is keyed on checkpoint + dataset only, not `fold` -- rerunning the same checkpoint
+against the same dataset with a different `fold` (or a second time with the same fold) overwrites
+the previous `predictions.csv`/`metrics.json` in place. Set `infer.save.run_name` explicitly (a
+manual override that bypasses the auto-derived path entirely) if you need distinct folders per
+fold or per rerun.
 
 ## 6. Ensemble-member parallel training outputs
 
@@ -182,16 +188,16 @@ by hand here instead of by `DeepEnsembleLitModule`.
 
 | Field | Where | Example | Drives |
 |---|---|---|---|
-| `data.name` | `configs/data/*.yaml` top level | `acevedo` | `task_name` (train/eval/infer), infer's `save_path` |
+| `data.name` | `configs/data/*.yaml` top level | `acevedo` | `task_name` (train/eval/infer), infer's auto-derived run-folder path (leaf segment) |
 | `model.name` | `configs/model/*.yaml` top level | `sngp_classifier` | `task_name` (train/eval) |
-| `net_spec["name"]` | `NET_REGISTRY` key, stamped into every checkpoint (`src/models/registry.py`) | `sngp_classifier`, but **`deep_ensemble`** (not `deep_ensemble_classifier`) | infer's auto-derived run-folder name |
+| `net_spec["name"]` | `NET_REGISTRY` key, stamped into every checkpoint (`src/models/registry.py`) | `sngp_classifier`, but **`deep_ensemble`** (not `deep_ensemble_classifier`) | infer's auto-derived run-folder path (top segment) |
 | `name` | `configs/experiment/*.yaml` top level (`_global_`) | `acevedo_sngp_resnet18` | `logger.wandb.name`/`group` only -- never on disk |
 
 The `net_spec["name"]` vs `model.name` mismatch for deep ensembles is real and permanent: the
 registry key (`"deep_ensemble"`) is baked into every already-saved deep-ensemble checkpoint's
 `net_spec`, and renaming it would break `build_net()` for those checkpoints. So a deep-ensemble
 training run lands at `train/deep_ensemble_classifier_<dataset>/...`, but that same checkpoint's
-auto-derived inference folder reads `infer/<dataset>/deep_ensemble_<ckpt_run_id>_<fold>/` -- the
+auto-derived inference folder reads `infer/deep_ensemble/<ckpt_run_id>/<dataset>/` -- the
 "deep_ensemble" vs "deep_ensemble_classifier" difference there is expected, not a bug.
 
 ## 8. Known quirks

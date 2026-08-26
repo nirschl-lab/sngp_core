@@ -65,14 +65,14 @@ def _extract_ckpt_run_id(ckpt_path: Union[str, Path]) -> str:
     return fallback
 
 
-def derive_default_run_name(ckpt_path: Union[str, Path], net_name: str, fold: str) -> str:
-    """Default `infer.save.run_name` when left blank: '<net_spec name>_<ckpt_run_id>_<fold>'.
+def derive_default_run_name(ckpt_path: Union[str, Path], net_name: str, data_name: str) -> str:
+    """Default `infer.save.run_name` when left blank: '<net_spec name>/<ckpt_run_id>/<dataset>'.
 
     `net_name` is `read_meta(ckpt_path).net_spec["name"]` -- the `NET_REGISTRY` key,
     which is NOT the same as `configs/model/*.yaml`'s `name:` field (they differ for
     deep ensembles: "deep_ensemble" vs "deep_ensemble_classifier").
     """
-    return f"{net_name}_{_extract_ckpt_run_id(ckpt_path)}_{fold}"
+    return f"{net_name}/{_extract_ckpt_run_id(ckpt_path)}/{data_name}"
 
 
 def _resolve_output_root(cfg: DictConfig, default_run_name: str) -> Path:
@@ -452,7 +452,7 @@ def run_inference(cfg: DictConfig) -> Dict[str, Any]:
     default_run_name = derive_default_run_name(
         ckpt_path=cfg.ckpt_path,
         net_name=str(ckpt_meta.net_spec.get("name", "model")),
-        fold=fold,
+        data_name=str(cfg.data.name),
     )
 
     expected_num_classes = None
