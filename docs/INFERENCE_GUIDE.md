@@ -47,23 +47,24 @@ so it must be passed explicitly (options: `acevedo`, `wong`, `tang`, `kather2018
 `kather2016`, `jung`, `nirschl2018`, or `artifact_image_classifier`, from
 [configs/data](configs/data)).
 
-Run inference with default infer config and command-line overrides:
+The minimal invocation only needs a checkpoint and a dataset -- `save_path` is
+optional and defaults to `${paths.log_dir}/infer/<run_name>`, with `<run_name>`
+auto-derived from the checkpoint and dataset (see [Outputs](#outputs) below):
+
+```bash
+uv run src/inference/infer.py \
+  ckpt_path=/absolute/path/to/model.ckpt \
+  data=acevedo
+```
+
+To point outputs somewhere specific, pass either the `--save-path` CLI flag or the
+equivalent `save_path=...` Hydra override -- both do the same optional thing:
 
 ```bash
 uv run src/inference/infer.py \
   ckpt_path=/absolute/path/to/model.ckpt \
   data=acevedo \
   --save-path /absolute/path/to/output
-```
-
-The same output location can also be provided through a Hydra config override instead
-of the `--save-path` flag:
-
-```bash
-uv run src/inference/infer.py \
-  ckpt_path=/absolute/path/to/model.ckpt \
-  data=acevedo \
-  save_path=/absolute/path/to/output
 ```
 
 Choose split/fold (`train | validation | test | all`; `all` runs train+val+test
