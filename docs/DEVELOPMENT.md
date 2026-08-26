@@ -51,44 +51,44 @@ huggingface-cli login
 
 ```
 src/
-  models/            net architectures + Lightning training strategies (see below)
-  checkpointing/      the plain-data checkpoint contract (see Checkpointing)
-  inference/           the one canonical inference entrypoint
-  metrics/            offline/research metrics (AUROC-OOD, smooth-ECE, Dempster-Shafer)
-  visualization/       reusable plotting (live during training + offline for figures)
-  paper_helpers/       per-paper/per-dataset analysis scripts consuming metrics CSVs
-  data/                datamodules (dataset-agnostic, config-driven)
-  train.py / eval.py    Hydra entrypoints for training / test-set evaluation
-configs/               Hydra config tree (see Configuration System)
-scripts/                cluster jobs, HF export/upload, checkpoint migration
+  models/
+    backbones.py            build_backbone(arch, pretrained) -- the ONE place resnet/vit get constructed
+    outputs.py               ModelOutput -- every net's forward() return type
+    registry.py               NET_REGISTRY / register_net / build_net -- net identity as data, not code
+    components/spectral_norm.py   spectral-norm wrapping + the SNGP/ViT compatibility guard
+    baseline/baseline_models.py   BaselineClassifier (+ MC-Dropout)
+    sngp/sngp_classifier.py       SNGPClassifier (spectral-normed backbone + RFF-GP head)
+    ensemble/deep_ensemble_model.py  DeepEnsemble net
+    lit_module_base.py            shared LightningModule: lean train/val loop only, torchmetrics, checkpoint hooks
+    <family>_lit_module.py        thin per-family subclasses (BaselineLitModule / SNGPLitModule /
+                                   DeepEnsembleLitModule) -- override forward()/_predict_forward() only
+  callbacks/
+    test_artifacts_callback.py    ALL test-time analysis: per-class metrics, calibration, uncertainty,
+                                   prediction CSV, diagnostic figures -- not in the LightningModule
+  checkpointing/
+    spec.py     CheckpointMeta / FORMAT_VERSION -- the plain-data checkpoint metadata contract
+    io.py       read_meta / load_net / load_lit_module -- the ONLY sanctioned way to read a checkpoint
+    legacy.py   pre-v2 checkpoint support, used only by scripts/checkpoints/migrate_checkpoints.py
+    resolve.py  wandb-artifact:// URI resolution
+  inference/
+    infer.py           the one canonical Hydra inference entrypoint (handles artifact mode internally)
+    predict_image.py   thin single/batch-image helper for scripts (not a parallel API)
+  metrics/      offline/research metrics (AUROC-OOD, smooth-ECE, Dempster-Shafer) driven by prediction CSVs
+  visualization/  reusable plotting, used both live (test loop) and offline (paper figures)
+  paper_helpers/  per-paper/per-dataset analysis scripts consuming those CSVs
+configs/        Hydra config tree (see Configuration System)
+scripts/        cluster/HF-export/utility scripts (not part of the importable package)
+notebooks/      exploration; notebooks/archive/ is frozen -- don't import from it or extend it
 ```
-
-The full directory-level map lives in `CLAUDE.md` §3 — this document is the narrative
-version: *why* it's shaped this way, not a file listing.
 
 ### Hard contracts
 
 A small number of invariants hold across every model family and every checkpoint in
-the project. New code should be checked against these before anything else:
-
-- **Every net's `forward()` returns a `ModelOutput`**
-  (`src/models/outputs.py`) — `.logits` for loss/argmax, `.variance` for uncertainty,
-  `.raw_logits`/`.features`/`.member_logits` where relevant. Never a bare tensor,
-  never a family-specific tuple. This is what lets `LitModuleBase` and
-  `src/inference/infer.py` stay ignorant of which model family they're driving.
-- **Every net has a `.spec` property** (plain JSON-serializable dict: registry `name`
-  + constructor kwargs) and registers into `NET_REGISTRY` via `@register_net(...)`
-  (`src/models/registry.py`). Architecture identity is data, not a Python import path
-  — a checkpoint's `net_spec` is enough to rebuild the exact net that produced it.
-- **`LitModuleBase.save_hyperparameters()` never pickles `net`/`optimizer`/
-  `scheduler`** — those aren't JSON-serializable, and pickling a
-  live object into hparams is what used to make checkpoints depend on the exact code
-  structure they were saved with (unpickling required the original class's import
-  path to still resolve). `tests/checkpointing/test_hparams_are_primitive.py` is a
-  permanent regression guard for this.
-- **All checkpoint I/O goes through `src/checkpointing/io.py`** — never raw
-  `torch.load` + manual state-dict surgery, never a bare
-  `LightningModule.load_from_checkpoint()` scattered across scripts.
+the project — every net returns a `ModelOutput`, registers via `@register_net`, keeps
+non-primitive objects out of `save_hyperparameters()`, and every checkpoint read goes
+through `src/checkpointing/io.py`. See
+[../.claude/rules/hard-contracts.md](../.claude/rules/hard-contracts.md) for the exact
+list and rationale — new code should be checked against it before anything else.
 
 ---
 
@@ -125,9 +125,7 @@ figure export) lives entirely in
 LightningModule.
 
 See [docs/SUPPORTED_MODELS.md](SUPPORTED_MODELS.md) for the concrete backbone list and
-compatibility matrix. To add a new backbone, net, or training strategy, use the
-`add-model` / `add-lightning-module` skills — see
-[Extending the Framework](#extending-the-framework).
+compatibility matrix, including how to add a new backbone, net, or training strategy.
 
 ---
 
@@ -249,10 +247,10 @@ uv run src/inference/infer.py \
 
 Artifact-paired inference is triggered by pointing `data` at
 `artifact_image_classifier` — no separate script; the artifact code path is selected
-automatically when the dataloader returns paired artifact batches. Full flag reference
-in [docs/INFERENCE_GUIDE.md](INFERENCE_GUIDE.md), or use the `inference` skill for
-guided/multi-checkpoint runs. **Don't add a second inference script** — every request
-in scope is expressible as an `infer.py` invocation.
+automatically when the dataloader returns paired artifact batches. Full flag
+reference, including guided/multi-checkpoint sweeps, is in
+[docs/INFERENCE_GUIDE.md](INFERENCE_GUIDE.md). **Don't add a second inference
+script** — every request in scope is expressible as an `infer.py` invocation.
 
 ---
 
@@ -294,10 +292,9 @@ Two-tier split:
   target.
 - **Offline/research metrics** — `src/metrics/` (cross-dataset OOD-AUROC, smooth-ECE,
   Dempster-Shafer uncertainty), driven by prediction CSVs from inference/eval runs.
-  Use the `metrics` skill.
 
-Publication figures go through `src/visualization/style.py` for consistent styling;
-use the `visualizations` skill rather than one-off plotting code.
+Publication figures go through `src/visualization/style.py` for consistent styling
+rather than one-off plotting code.
 
 ---
 
@@ -320,8 +317,10 @@ make test        # fast tests, no network/GPU, no @pytest.mark.slow
 make test-full     # full suite including slow/integration tests
 ```
 
-Full tier definitions and current known flaky tests are in `CLAUDE.md` §7 — check
-there before adding a test for something that already has a documented caveat.
+Current known flaky tests are tracked in [docs/KNOWN_ISSUES.md](KNOWN_ISSUES.md) —
+check there before adding a test for something that already has a documented caveat.
+For which command to run for a given code change, see
+[../.claude/rules/testing.md](../.claude/rules/testing.md).
 
 ---
 
@@ -330,12 +329,12 @@ there before adding a test for something that already has a documented caveat.
 | Task | Use |
 |---|---|
 | New dataset | Copy an `configs/experiment/baseline_<name>.yaml`, change `dataset_name`/`num_classes` — see [docs/DATASETS.md](DATASETS.md). |
-| New backbone / net family | `add-model` skill. |
-| New training strategy (different loss, multi-stage training) | `add-lightning-module` skill. |
-| Run inference / checkpoint sweeps / artifact inference | `inference` skill, or `src/inference/infer.py` directly per [docs/INFERENCE_GUIDE.md](INFERENCE_GUIDE.md). |
+| New backbone / net family | Add an entry to `BACKBONES`, or a new registered net class — see [docs/SUPPORTED_MODELS.md#adding-a-backbone-or-net-family](SUPPORTED_MODELS.md#adding-a-backbone-or-net-family). |
+| New training strategy (different loss, multi-stage training) | A new `LitModuleBase` subclass — see [Model Methodology](#model-methodology). |
+| Run inference / checkpoint sweeps / artifact inference | `src/inference/infer.py` — see [docs/INFERENCE_GUIDE.md](INFERENCE_GUIDE.md). |
 | Tune hyperparameters (fair cross-model comparison) | `scripts/hpo/sweep.sh <baseline\|sngp> <dataset>` — see [docs/HPO_GUIDE.md](HPO_GUIDE.md). |
-| Offline/research metrics | `metrics` skill. |
-| Publication figures | `visualizations` skill. |
+| Offline/research metrics | `src/metrics/` — see [Metrics & Visualization](#metrics--visualization). |
+| Publication figures | `src/visualization/` — see [Metrics & Visualization](#metrics--visualization). |
 | Publish a trained model to HF Hub | See [Publishing to Hugging Face](#publishing-to-hugging-face). |
 
 ---
@@ -351,4 +350,4 @@ make test-full     # before considering the work done
 ```
 
 Known out-of-scope items and pre-existing test flakiness (not to be re-litigated per
-change) are tracked in `CLAUDE.md` §6.
+change) are tracked in [docs/KNOWN_ISSUES.md](KNOWN_ISSUES.md).

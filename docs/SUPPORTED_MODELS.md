@@ -49,12 +49,13 @@ immediately rather than silently training something unvalidated.
 
 ## Adding a backbone or net family
 
-Use the `add-model` skill. In short:
-
 - A new **backbone option** for existing families: add an entry to `BACKBONES` in
   `src/models/backbones.py`.
 - A new **net class/family**: implement `forward()` returning `ModelOutput`, add a
-  `.spec` property, and register with `@register_net("...")`.
+  `.spec` property, and register with `@register_net("...")` — see
+  [../.claude/rules/hard-contracts.md](../.claude/rules/hard-contracts.md) for the
+  full contract every net must satisfy.
 - A new **training strategy** around an existing net (different loss, multi-stage
-  training): use the `add-lightning-module` skill instead — that's a new
-  `LitModuleBase` subclass, not a new net.
+  training): add a new `LitModuleBase` subclass instead — that's a training-loop
+  change, not a new net. See
+  [DEVELOPMENT.md#model-methodology](DEVELOPMENT.md#model-methodology).

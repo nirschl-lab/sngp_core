@@ -188,11 +188,14 @@ uv run scripts/ensemble/assemble_ensemble_checkpoint.py \
     --out ensemble.ckpt
 ```
 
-This validates that every member checkpoint is a `baseline_classifier` run with
-matching architecture and source dataset, then writes a checkpoint satisfying the
-same contract (CLAUDE.md §3) as one produced by a real `DeepEnsembleLitModule`
-training run — it loads through `src/checkpointing/io.py` and works with
-`src/eval.py`/`src/inference/infer.py` unmodified, with no separate code path needed.
+This validates that every member checkpoint shares the same net type/architecture
+(e.g. all `baseline_classifier`, or all `sngp_classifier` -- see [Architecture
+Overview](#architecture-overview) above) and source dataset, then writes a checkpoint
+satisfying the same contract (see
+[../.claude/rules/hard-contracts.md](../.claude/rules/hard-contracts.md)) as one
+produced by a real `DeepEnsembleLitModule` training run — it loads through `src/checkpointing/io.py` and
+works with `src/eval.py`/`src/inference/infer.py` unmodified, with no separate code
+path needed.
 
 On a SLURM cluster, `scripts/slurm/train_ensemble_members.sh
 <baseline_experiment> <num_estimators>` is the `sbatch` wrapper around the same
@@ -235,7 +238,7 @@ includes the ensemble-averaged prediction with confidence, the uncertainty score
 and each individual member's prediction.
 
 For the project's canonical, dataset/artifact-aware inference entrypoint (sweeps,
-batch inference, metrics), use `src/inference/infer.py` per the `inference` skill /
+batch inference, metrics), use `src/inference/infer.py` per
 [INFERENCE_GUIDE.md](INFERENCE_GUIDE.md) instead — this example script is a minimal,
 single-image reference, not a second inference entrypoint.
 
@@ -266,8 +269,9 @@ uv run scripts/compare_methods.py \
 
 This generates a CSV summary plus calibration-curve and uncertainty-distribution
 plots. For the project's standard offline/research metrics (cross-dataset OOD AUROC,
-smooth-ECE, Dempster-Shafer uncertainty) driven from prediction CSVs, use the
-`metrics` skill instead.
+smooth-ECE, Dempster-Shafer uncertainty) driven from prediction CSVs, use
+`src/metrics/` instead — see
+[DEVELOPMENT.md#metrics--visualization](DEVELOPMENT.md#metrics--visualization).
 
 ## Tips & Best Practices
 
@@ -301,9 +305,9 @@ smooth-ECE, Dempster-Shafer uncertainty) driven from prediction CSVs, use the
 ### Custom base model
 
 Ensemble members are built through the shared net registry
-(`src/models/registry.py`), the same mechanism every net family uses — see the
-`add-model` skill. Register a model, then reference it by name from the ensemble
-config:
+(`src/models/registry.py`), the same mechanism every net family uses — see
+[SUPPORTED_MODELS.md#adding-a-backbone-or-net-family](SUPPORTED_MODELS.md#adding-a-backbone-or-net-family).
+Register a model, then reference it by name from the ensemble config:
 
 ```python
 # my_custom_model.py
@@ -374,8 +378,9 @@ and already differs per member.
 
 **Checkpoint won't load**: all checkpoint I/O goes through
 `src/checkpointing/io.py` (`load_lit_module`/`load_net`/`read_meta`) — never a bare
-`torch.load` or `LightningModule.load_from_checkpoint()`, per CLAUDE.md's checkpoint
-contract. If loading a sequentially-trained checkpoint, confirm `num_estimators`
+`torch.load` or `LightningModule.load_from_checkpoint()`, per
+[../.claude/rules/hard-contracts.md](../.claude/rules/hard-contracts.md). If loading a
+sequentially-trained checkpoint, confirm `num_estimators`
 matches between training and loading; if loading an assembled checkpoint, confirm it
 was built by `assemble_ensemble_checkpoint.py` from checkpoints with matching
 architecture and dataset.

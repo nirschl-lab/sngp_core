@@ -32,8 +32,9 @@ Every dataset serves double duty:
 - **In-distribution**: train and evaluate on the same dataset (its own train/val/test
   folds).
 - **Out-of-distribution**: train on one dataset, evaluate on another. This is how the
-  project's OOD/uncertainty claims are measured — see the `metrics` skill for the
-  cross-dataset AUROC-OOD computation this feeds.
+  project's OOD/uncertainty claims are measured — see
+  [DEVELOPMENT.md#metrics--visualization](DEVELOPMENT.md#metrics--visualization) for
+  the cross-dataset AUROC-OOD computation this feeds.
 
 ## Adding a dataset
 
@@ -43,8 +44,8 @@ identifier used for output-directory naming, see
 [docs/OUTPUT_LAYOUT.md](OUTPUT_LAYOUT.md)), then reference it from an experiment file
 via `override /data: <dataset>` — or compose ad hoc on the CLI for a dataset with no
 preset yet. No new Python is needed — the datamodule
-(`src/data/classification_image_datamodule.py`) is dataset-agnostic. See CLAUDE.md §5
-for the full workflow and §6 for the two known `ClassificationImageDataModule`
+(`src/data/classification_image_datamodule.py`) is dataset-agnostic. See
+[KNOWN_ISSUES.md](KNOWN_ISSUES.md) for the two known `ClassificationImageDataModule`
 caveats (duplicate class name across two files, a `setup()` edge case with
 `stage=None`).
 
@@ -54,5 +55,5 @@ A separate axis, orthogonal to which dataset is used: `configs/artifact/` holds
 sampling profiles from the external `histo-artifact-sim` package for simulating
 imaging artifacts (stain variation, blur, etc.) on any of the above datasets, paired
 with `configs/data/artifact_image_classifier.yaml` for paired real/simulated
-inference. See the `inference` skill's artifact-mode section and
+inference. See [INFERENCE_GUIDE.md](INFERENCE_GUIDE.md)'s artifact-mode section and
 `configs/artifact/README.md`.
