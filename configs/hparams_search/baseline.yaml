@@ -71,3 +71,9 @@ hydra:
       model.optimizer.lr: tag(log, interval(0.00001, 0.01))
       model.optimizer.weight_decay: tag(log, interval(0.000001, 0.01))
       data.datamodule.batch_size: choice(64, 128, 256)
+      # ClassBalancedFocalLoss params (see docs/HPO_GUIDE.md#search-space) -- these
+      # shape the fit, not just calibration, since every experiment config used here
+      # sets class_freq. cb_beta stays a discrete choice (Cui et al.'s
+      # effective-number-of-samples formulation is conventionally reported this way).
+      model.cb_beta: choice(0.9, 0.99, 0.999, 0.9999)
+      model.focal_gamma: interval(0.0, 5.0)

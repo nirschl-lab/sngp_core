@@ -76,6 +76,16 @@ Optuna's override grammar):
 | `model.optimizer.lr` | `tag(log, interval(1e-5, 1e-2))` | 1e-3 |
 | `model.optimizer.weight_decay` | `tag(log, interval(1e-6, 1e-2))` | 1e-3 |
 | `data.datamodule.batch_size` | `choice(64, 128, 256)` | 128 |
+| `model.cb_beta` | `choice(0.9, 0.99, 0.999, 0.9999)` | 0.999 |
+| `model.focal_gamma` | `interval(0.0, 5.0)` | 2.0 |
+
+`cb_beta`/`focal_gamma` parameterize `ClassBalancedFocalLoss`
+(`src/models/components/losses.py`), which every `configs/experiment/*.yaml` used with
+these sweeps enables via `class_freq: ${data.class_freq}` -- so both genuinely shape
+the *fit* (same rationale as the SNGP knobs below), not just calibration. `cb_beta` is
+swept over the discrete set from Cui et al.'s effective-number-of-samples formulation
+(`0` = uniform reweighting, `→1` = increasingly aggressive) rather than a continuous
+range, matching how the original paper reports it.
 
 SNGP additionally (`configs/hparams_search/sngp.yaml` only):
 
@@ -99,8 +109,8 @@ a search that would likely land near the baseline optimum anyway.
 ## Fixed protocol constants
 
 Identical across every sweep, never in the search space: `net.arch: resnet18`,
-`pretrained: false`, `img_augmentations: light_augmentations`, `cb_beta: 0.999`,
-`focal_gamma: 2.0`, `class_freq` (from the dataset's own config), the
+`pretrained: false`, `img_augmentations: light_augmentations`, `class_freq` (from the
+dataset's own config), the
 `CosineAnnealingLR` family (`CosineAnnealingWarmRestarts` for Deep Ensemble, which
 resets per member -- see `configs/experiment/deep_ensemble_*.yaml`), `seed: 12345`,
 `test: False`.
