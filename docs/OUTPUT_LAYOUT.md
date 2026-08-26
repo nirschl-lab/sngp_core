@@ -176,13 +176,19 @@ Hydra run dir (same `checkpoints/`, `.hydra/`, `run.log` shape as [§3](#3-train
 a `member_<i>.log` one level up capturing that member's full stdout/stderr (the script's own
 process-supervision log, separate from Hydra's `run.log` inside each member's directory).
 
-The assembled `ensemble.ckpt` itself isn't placed in any of these trees automatically --
-`--out` is an explicit path the caller chooses (the script's own final message suggests
-`<members-root>/ensemble.ckpt`). Its `net_spec["name"]` is `"deep_ensemble"` (assembled via
+By default (no `--out` given), the assembled `ensemble.ckpt` lands inside the `ensemble_members/`
+run it was built from, at `ensemble_members/<run_id>/checkpoints/ensemble.ckpt` -- a sibling of
+`member_0/`, `member_1/`, ... under the same `<run_id>`, matching the `checkpoints/` subdir
+convention `runs/<run_id>/` and each `member_<i>/` already use
+(`derive_default_out_path` in `assemble_ensemble_checkpoint.py`). Pass `--out <path>` explicitly
+to override. Either way, its `net_spec["name"]` is `"deep_ensemble"` (assembled via
 `DeepEnsemble.spec`, the same registry key a real `DeepEnsembleLitModule` run produces), even
 though every member checkpoint underneath it is individually a `"baseline_classifier"` --
 consistent with the [§7](#7-three-name-fields----dont-conflate) asymmetry, just constructed
-by hand here instead of by `DeepEnsembleLitModule`.
+by hand here instead of by `DeepEnsembleLitModule`. The `<run_id>` timestamp stays a literal path
+segment either way, so `src/inference/infer.py`'s own auto-derived output layout
+([§5](#5-inference-outputs)) resolves inference against this checkpoint to
+`infer/deep_ensemble/<run_id>/<dataset>/` with no special-casing needed.
 
 ## 7. Three "name" fields -- don't conflate
 
