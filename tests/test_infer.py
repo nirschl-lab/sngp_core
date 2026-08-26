@@ -65,3 +65,23 @@ def test_derive_default_run_name_tags_mc_dropout():
         ckpt_path, net_name="sngp_classifier", data_name="acevedo", use_mc_dropout=True
     )
     assert run_name == "sngp_classifier_mcdropout/2026-08-20_14-03-11/acevedo"
+
+
+def test_derive_default_run_name_tags_base_model_name():
+    ckpt_path = ".../ensemble_members/2026-08-20_14-03-11/checkpoints/ensemble.ckpt"
+    run_name = infer.derive_default_run_name(
+        ckpt_path, net_name="deep_ensemble", data_name="acevedo", base_model_name="baseline_classifier"
+    )
+    assert run_name == "deep_ensemble_baseline_classifier/2026-08-20_14-03-11/acevedo"
+
+
+def test_derive_default_run_name_base_model_name_precedes_mc_dropout():
+    ckpt_path = ".../ensemble_members/2026-08-20_14-03-11/checkpoints/ensemble.ckpt"
+    run_name = infer.derive_default_run_name(
+        ckpt_path,
+        net_name="deep_ensemble",
+        data_name="acevedo",
+        use_mc_dropout=True,
+        base_model_name="sngp_classifier",
+    )
+    assert run_name == "deep_ensemble_sngp_classifier_mcdropout/2026-08-20_14-03-11/acevedo"

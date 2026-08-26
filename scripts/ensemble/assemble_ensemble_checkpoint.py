@@ -125,6 +125,8 @@ def assemble(ckpt_paths: List[Path], out_path: Path) -> None:
     }
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
+    if out_path.exists():
+        print(f"Warning: overwriting existing checkpoint at {out_path}", file=sys.stderr)
     torch.save(checkpoint, out_path)
     print(f"Wrote {len(ckpt_paths)}-member ensemble checkpoint to {out_path}")
 

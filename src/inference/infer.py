@@ -84,16 +84,24 @@ def derive_default_run_name(
     net_name: str,
     data_name: str,
     use_mc_dropout: bool = False,
+    base_model_name: Optional[str] = None,
 ) -> str:
     """Default `infer.save.run_name` when left blank: '<net_spec name>/<ckpt_run_id>/<dataset>'.
 
     `net_name` is `read_meta(ckpt_path).net_spec["name"]` -- the `NET_REGISTRY` key,
     which is NOT the same as `configs/model/*.yaml`'s `name:` field (they differ for
-    deep ensembles: "deep_ensemble" vs "deep_ensemble_classifier"). When
-    `use_mc_dropout` is set, `_mcdropout` is appended to the net name so MC-Dropout
-    runs don't overwrite a plain inference run's `predictions.csv`/`metrics.json` in
-    the same `<net_name>/<ckpt_run_id>/<dataset>` folder.
+    deep ensembles: "deep_ensemble" vs "deep_ensemble_classifier"). `net_spec["name"]`
+    is always the fixed registry key "deep_ensemble" for every Deep Ensemble checkpoint
+    regardless of member architecture, so `base_model_name` -- when the checkpoint's
+    `net_spec["base_model_spec"]["name"]` is available (e.g. "baseline_classifier" or
+    "sngp_classifier") -- is appended to `net_name` first, so a baseline-member
+    ensemble and an sngp-member ensemble don't collide onto the same
+    `deep_ensemble/<ckpt_run_id>/<dataset>` folder. When `use_mc_dropout` is set,
+    `_mcdropout` is appended after that, so MC-Dropout runs don't overwrite a plain
+    inference run's `predictions.csv`/`metrics.json` in the same folder either.
     """
+    if base_model_name:
+        net_name = f"{net_name}_{base_model_name}"
     if use_mc_dropout:
         net_name = f"{net_name}_mcdropout"
     return f"{net_name}/{_extract_ckpt_run_id(ckpt_path)}/{data_name}"
@@ -483,11 +491,15 @@ def run_inference(cfg: DictConfig) -> Dict[str, Any]:
     if not class_names and ckpt_meta.idx_to_class:
         class_names = ckpt_meta.idx_to_class
 
+    base_model_spec = ckpt_meta.net_spec.get("base_model_spec")
+    base_model_name = base_model_spec.get("name") if isinstance(base_model_spec, Mapping) else None
+
     default_run_name = derive_default_run_name(
         ckpt_path=cfg.ckpt_path,
         net_name=str(ckpt_meta.net_spec.get("name", "model")),
         data_name=str(cfg.data.name),
         use_mc_dropout=bool(cfg.infer.runtime.use_mc_dropout),
+        base_model_name=str(base_model_name) if base_model_name else None,
     )
 
     expected_num_classes = None
