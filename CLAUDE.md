@@ -1,15 +1,18 @@
 # CLAUDE.md
 
-Uncertainty-aware histopathology image classification research (`sngp-core`), built on
-PyTorch Lightning + Hydra (fork of `ashleve/lightning-hydra-template`). Three model
-families — Baseline, SNGP, Deep Ensemble — share resnet/ViT backbones across 7
-HuggingFace datasets under the `nirschl-lab` org. The paper (ISBI 2026,
+`sngp-core` is a framework for experimenting with uncertainty-aware image
+classification on biomedical imaging, built on PyTorch Lightning + Hydra (fork of
+`ashleve/lightning-hydra-template`). Three pluggable model families — Baseline, SNGP,
+Deep Ensemble — share a single backbone factory (resnet/ViT) and a single output
+contract, so a new uncertainty method drops in without touching the others; 7
+HuggingFace datasets under the `nirschl-lab` org share one schema, so a new dataset is
+a config change, never new Python. The paper built on this framework (ISBI 2026,
 arXiv:2602.02370) is accepted; ongoing work evaluates robustness to simulated imaging
 artifacts and publishes trained models to the HF Hub.
 
 ## Where things live
 
-This file is deliberately short. Project knowledge and engineering rules live outside
+This file stays short by design. Project knowledge and engineering rules live outside
 it, written to stand on their own for any contributor — human or not:
 
 - **`docs/`** — what the project is, how it's architected, and how to do things in it.
@@ -30,9 +33,10 @@ it, written to stand on their own for any contributor — human or not:
 
 ## Claude Code shortcuts
 
+Extending the framework — a new model family, training strategy, or uncertainty
+method — touches several places by hand; see
 [docs/DEVELOPMENT.md#extending-the-framework](docs/DEVELOPMENT.md#extending-the-framework)
-lists what each workflow requires manually. In a Claude Code session, prefer these
-skills over doing it by hand:
+for the full list. In a Claude Code session, prefer these skills instead:
 
 | Task | Skill |
 |---|---|
