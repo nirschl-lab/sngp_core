@@ -1,16 +1,26 @@
 # Inference Guide
 
-This project uses a single inference entrypoint:
+This project uses a single inference entrypoint for dataset-wide, metrics-producing
+runs:
 
 - [src/inference/infer.py](src/inference/infer.py)
 
-The artifact path is handled internally by batch-format detection. You do not need to run a separate script.
+The artifact path is handled internally by batch-format detection. You do not need to
+run a separate script.
+
+For a single image (or a handful) without going through Hydra/a datamodule, use
+[src/inference/predict_image.py](src/inference/predict_image.py) instead --
+`predict_image`/`predict_batch` are thin wrappers around the same canonical checkpoint
+loader. See [examples/README.md](examples/README.md). Everything below is about
+`infer.py`.
 
 ## Config Layout
 
 Inference is controlled by [configs/infer.yaml](configs/infer.yaml) and config groups:
 
-- data config: [configs/data](configs/data)
+- data config: [configs/data](configs/data) -- **required, no default** (`data: ???`
+  in `configs/infer.yaml`); omitting `data=...` fails fast with a
+  `ConfigCompositionException` listing the available options
 - infer runtime config (device, batch size, MC-dropout knobs): [configs/infer/runtime/default.yaml](configs/infer/runtime/default.yaml)
 - infer metrics config: [configs/infer/metrics/default.yaml](configs/infer/metrics/default.yaml)
 - infer save config: [configs/infer/save/default.yaml](configs/infer/save/default.yaml)
@@ -22,43 +32,48 @@ architecture to build.
 
 Top-level fields in [configs/infer.yaml](configs/infer.yaml):
 
-- fold: train, val, or test
-- ckpt_path: checkpoint path (required)
-- save_path: output directory root
+- `data`: dataset config group from `configs/data/` (**required, no default** --
+  see above)
+- `ckpt_path`: checkpoint path (required)
+- `fold`: `train`, `validation` (`val` also accepted), `test`, or `all` (train + val +
+  test combined, not just the test split)
+- `save_path`: output directory root
 - tags, seed, task_name
 
 ## Basic Usage
+
+`data=<dataset>` is **required on every invocation** -- there is no default dataset,
+so it must be passed explicitly (options: `acevedo`, `wong`, `tang`, `kather2018`,
+`kather2016`, `jung`, `nirschl2018`, or `artifact_image_classifier`, from
+[configs/data](configs/data)).
 
 Run inference with default infer config and command-line overrides:
 
 ```bash
 uv run src/inference/infer.py \
-  --save-path /absolute/path/to/output \
-  ckpt_path=/absolute/path/to/model.ckpt
+  ckpt_path=/absolute/path/to/model.ckpt \
+  data=acevedo \
+  --save-path /absolute/path/to/output
 ```
 
-The same output location can also be provided through Hydra config overrides:
+The same output location can also be provided through a Hydra config override instead
+of the `--save-path` flag:
 
 ```bash
 uv run src/inference/infer.py \
   ckpt_path=/absolute/path/to/model.ckpt \
+  data=acevedo \
   save_path=/absolute/path/to/output
 ```
 
-Select a data config from [configs/data](configs/data):
+Choose split/fold (`train | validation | test | all`; `all` runs train+val+test
+combined, not just the test split):
 
 ```bash
 uv run src/inference/infer.py \
   ckpt_path=/absolute/path/to/model.ckpt \
-  data=acevedo
-```
-
-Choose split/fold:
-
-```bash
-uv run src/inference/infer.py \
-  ckpt_path=/absolute/path/to/model.ckpt \
-  fold=test
+  data=acevedo \
+  fold=all
 ```
 
 ## Artifact Inference
@@ -122,19 +137,45 @@ Run on CPU:
 infer.runtime.device=cpu
 ```
 
-MC dropout for compatible models:
-
-```bash
-infer.runtime.use_mc_dropout=true infer.runtime.mc_passes=20
-```
-
 Override the dataloader batch size:
 
 ```bash
 infer.runtime.batch_size_override=32
 ```
 
+## MC-Dropout
+
+```bash
+uv run src/inference/infer.py \
+  ckpt_path=/absolute/path/to/baseline_model.ckpt \
+  data=acevedo \
+  infer.runtime.use_mc_dropout=true infer.runtime.mc_passes=20
+```
+
+- **Baseline checkpoints only.** MC-Dropout is implemented as `mc_predict()` on
+  `BaselineClassifier` ([src/models/baseline/baseline_models.py](src/models/baseline/baseline_models.py))
+  and dispatched via `hasattr(model, "mc_predict")`
+  ([src/inference/infer.py](src/inference/infer.py)). Setting
+  `infer.runtime.use_mc_dropout=true` against an SNGP or Deep Ensemble checkpoint is a
+  **silent no-op** -- it falls through to a plain forward pass with no warning. Those
+  families already expose predictive uncertainty natively (SNGP: `net(x).variance`;
+  Deep Ensemble: member disagreement, see
+  [docs/DEEP_ENSEMBLES_GUIDE.md](DEEP_ENSEMBLES_GUIDE.md)), so they don't need
+  MC-Dropout.
+- `infer.runtime.mc_passes` (default `10`) is the number of stochastic forward passes
+  averaged per batch; runtime scales roughly linearly with it.
+- The resulting per-sample predictive std is written to predictions.csv's
+  `uncertainty` column, same column SNGP/ensemble uncertainty is written to.
+
 ## Notes
 
 - One entrypoint is intentional for consistency and easier automation.
 - Artifact-specific logic is selected automatically when the dataloader returns paired artifact batches.
+- A mismatched `num_classes` between the checkpoint and the dataset's datamodule (or
+  targets outside the expected class range) does not raise -- `run_inference` silently
+  skips metric computation and logs a warning instead
+  (`_check_metric_compatibility`/`_skip_metrics` in
+  [src/inference/infer.py](src/inference/infer.py)); `predictions.csv` is still
+  written, but `metrics.json` comes back empty. Check the log output (or the
+  checkpoint's `read_meta()` output beforehand) rather than assuming an empty
+  `metrics.json` means zero test samples.
