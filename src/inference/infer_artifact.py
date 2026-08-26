@@ -12,6 +12,8 @@ from omegaconf import DictConfig
 from torch.utils.data import DataLoader
 from torchmetrics.classification import (
 	Accuracy,
+	MulticlassAUROC,
+	MulticlassAveragePrecision,
 	MulticlassCalibrationError,
 	MulticlassF1Score,
 	MulticlassPrecision,
@@ -101,6 +103,16 @@ def _build_metrics(num_classes: int, metric_names: Sequence[str]) -> Dict[str, A
 		metrics["recall"] = MulticlassRecall(num_classes=num_classes, average="macro")
 	if "f1" in metric_names:
 		metrics["f1"] = MulticlassF1Score(num_classes=num_classes, average="macro")
+	if "precision_micro" in metric_names:
+		metrics["precision_micro"] = MulticlassPrecision(num_classes=num_classes, average="micro")
+	if "recall_micro" in metric_names:
+		metrics["recall_micro"] = MulticlassRecall(num_classes=num_classes, average="micro")
+	if "f1_micro" in metric_names:
+		metrics["f1_micro"] = MulticlassF1Score(num_classes=num_classes, average="micro")
+	if "auroc" in metric_names:
+		metrics["auroc"] = MulticlassAUROC(num_classes=num_classes, average="macro")
+	if "auprc" in metric_names:
+		metrics["auprc"] = MulticlassAveragePrecision(num_classes=num_classes, average="macro")
 
 	return metrics
 
@@ -178,7 +190,7 @@ class ArtifactInferenceRunner:
 
 	def _update_metrics(self, stream_name: str, probs: torch.Tensor, preds: torch.Tensor, targets: torch.Tensor) -> None:
 		for name, metric in self._metric_states[stream_name].items():
-			if name == "ece":
+			if name in ("ece", "auroc", "auprc"):
 				metric.update(probs, targets)
 			else:
 				metric.update(preds, targets)

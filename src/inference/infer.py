@@ -18,6 +18,8 @@ from omegaconf import DictConfig, OmegaConf
 from torch.utils.data import DataLoader
 from torchmetrics.classification import (
     Accuracy,
+    MulticlassAUROC,
+    MulticlassAveragePrecision,
     MulticlassCalibrationError,
     MulticlassF1Score,
     MulticlassPrecision,
@@ -39,7 +41,19 @@ DEFAULT_INFER_RUNTIME_CFG: Dict[str, Any] = {
 
 DEFAULT_INFER_METRICS_CFG: Dict[str, Any] = {
     "enabled": True,
-    "items": ["acc", "ece", "precision", "recall", "f1", "nll"],
+    "items": [
+        "acc",
+        "ece",
+        "precision",
+        "recall",
+        "f1",
+        "precision_micro",
+        "recall_micro",
+        "f1_micro",
+        "nll",
+        "auroc",
+        "auprc",
+    ],
 }
 
 DEFAULT_INFER_SAVE_CFG: Dict[str, Any] = {
@@ -183,6 +197,16 @@ def _build_metrics(num_classes: int, metric_names: Sequence[str]) -> Dict[str, A
         metrics["recall"] = MulticlassRecall(num_classes=num_classes, average="macro")
     if "f1" in metric_names:
         metrics["f1"] = MulticlassF1Score(num_classes=num_classes, average="macro")
+    if "precision_micro" in metric_names:
+        metrics["precision_micro"] = MulticlassPrecision(num_classes=num_classes, average="micro")
+    if "recall_micro" in metric_names:
+        metrics["recall_micro"] = MulticlassRecall(num_classes=num_classes, average="micro")
+    if "f1_micro" in metric_names:
+        metrics["f1_micro"] = MulticlassF1Score(num_classes=num_classes, average="micro")
+    if "auroc" in metric_names:
+        metrics["auroc"] = MulticlassAUROC(num_classes=num_classes, average="macro")
+    if "auprc" in metric_names:
+        metrics["auprc"] = MulticlassAveragePrecision(num_classes=num_classes, average="macro")
 
     return metrics
 
@@ -258,7 +282,7 @@ class BaseInferenceRunner:
 
     def _update_metrics(self, probs: torch.Tensor, preds: torch.Tensor, targets: torch.Tensor) -> None:
         for name, metric in self._metric_states.items():
-            if name == "ece":
+            if name in ("ece", "auroc", "auprc"):
                 metric.update(probs, targets)
             else:
                 metric.update(preds, targets)
