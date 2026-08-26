@@ -231,8 +231,54 @@ blanket coverage:
    notebooks, `src/paper_helpers/**` plotting, cluster `.sh` scripts, W&B interaction.
    When touched, a smoke test (import + one call on tiny synthetic data) is enough.
 
-Run `make test` (fast) during normal iteration; `make test-full` before considering
-work done.
+### Scoped test selection (don't run the whole suite for a local change)
+
+`make test`/`make test-full` run every test regardless of what changed. For normal
+iteration, run only the tests mapped to the paths you touched — not the full suite:
+
+| Changed path | Run |
+|---|---|
+| `src/metrics/**` | `pytest tests/metrics/` |
+| `src/models/backbones.py`, `src/models/components/spectral_norm.py` | `pytest tests/models/test_backbone_factory.py tests/models/baseline/test_backbones.py tests/models/sngp/test_spectral_norm.py` |
+| `src/models/baseline/**`, `src/models/baseline_lit_module.py` | `pytest tests/models/baseline/ tests/models/test_output_contract.py` |
+| `src/models/sngp/**`, `src/models/sngp_lit_module.py` | `pytest tests/models/sngp/` |
+| `src/models/ensemble/**`, `src/models/deep_ensemble_lit_module.py` | `pytest tests/checkpointing/test_ensemble_assembly.py tests/models/test_output_contract.py` |
+| `src/checkpointing/legacy.py`, `src/checkpointing/resolve.py` | `pytest tests/checkpointing/` |
+| `src/data/classification_image_datamodule.py`, `artifact_image_datamodule.py`, `mnist_datamodule.py` | `pytest tests/test_datamodules.py` |
+| `src/callbacks/**` | `pytest tests/callbacks/` |
+| `src/inference/**` | `pytest tests/test_infer.py` |
+| `src/train.py` | `pytest tests/test_train.py` |
+| `src/eval.py` | `pytest tests/test_eval.py` |
+| `src/paper_helpers/**` | `pytest tests/paper_helpers/` |
+| `src/visualization/**` | tier 4 — no dedicated suite; smoke-test manually |
+| `scripts/hf/export_to_hub.py` | `pytest tests/hf/` |
+| `configs/data/*.yaml` | `pytest tests/test_configs.py::TestDatasetConfigDrift tests/test_datamodules.py` |
+| `configs/model/*.yaml` | `pytest tests/test_configs.py::TestModelConfigs` |
+| `configs/experiment/*.yaml` | `pytest tests/test_configs.py::TestExperimentClassFreqConsistency` |
+| `configs/hparams_search/**` | `pytest tests/test_sweeps.py` |
+| any other `configs/**` | `pytest tests/test_configs.py` |
+
+**Core files — no safe scoped subset, run `make test` instead:** these are the
+single-source-of-truth contracts from §3's architecture map, load-bearing across
+every model family and dataset, so a scoped subset gives false confidence —
+`src/models/lit_module_base.py`, `src/models/outputs.py`, `src/models/registry.py`,
+`src/checkpointing/spec.py`, `src/checkpointing/io.py`,
+`src/data/base_image_datamodule.py`, `src/utils/**`, `tests/conftest.py`,
+`configs/paths/**`, `configs/trainer/**`.
+
+Rules:
+1. Map each changed file to its row (or to "core"); if a change spans multiple rows,
+   union their commands rather than escalating to the full suite.
+2. A path not in this table (new module/top-level dir) defaults to `make test` —
+   don't guess a narrower scope the table doesn't cover.
+3. Scoped runs keep the same fast/slow split as `make test`/`make test-full`
+   (`pytest <paths> -k "not slow"` by default); include the slow tests in that same
+   scope only when the change specifically touches integration/round-trip behavior
+   there (e.g. checkpoint save/load logic → also run
+   `tests/checkpointing/test_roundtrip.py`'s slow cases).
+4. Scoped runs are for fast in-loop feedback, not a substitute for the real gate:
+   still run `make test` (fast) before considering a change ready, and `make
+   test-full` before considering the work genuinely done.
 
 ## 8. Conventions
 
