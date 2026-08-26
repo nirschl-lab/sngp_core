@@ -57,3 +57,11 @@ def test_derive_default_run_name_uses_ckpt_run_id_and_dataset():
 def test_derive_default_run_name_fallback_shape():
     run_name = infer.derive_default_run_name("/no/timestamp/here.ckpt", net_name="deep_ensemble", data_name="tang")
     assert re.fullmatch(rf"deep_ensemble/{infer._RUN_ID_PATTERN.pattern}/tang", run_name)
+
+
+def test_derive_default_run_name_tags_mc_dropout():
+    ckpt_path = ".../runs/2026-08-20_14-03-11/checkpoints/last.ckpt"
+    run_name = infer.derive_default_run_name(
+        ckpt_path, net_name="sngp_classifier", data_name="acevedo", use_mc_dropout=True
+    )
+    assert run_name == "sngp_classifier_mcdropout/2026-08-20_14-03-11/acevedo"
