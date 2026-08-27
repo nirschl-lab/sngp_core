@@ -19,8 +19,10 @@ fold: test # train | validation | test | all
 
 ckpt_path: ???
 
-# The full output path is auto-derived as <save_path>/<model_name>/<ckpt_run_id>/<dataset>
-# unless infer.save.run_name is set explicitly -- see
+# The full output path is auto-derived as
+# <save_path>/<model_name>/<train_dataset>/<ckpt_run_id>/<dataset> (the <train_dataset>
+# segment -- what the checkpoint was trained on -- is omitted for checkpoints that
+# don't carry it) unless infer.save.run_name is set explicitly -- see
 # src/inference/infer.py::derive_default_run_name.
 save_path: ${paths.log_dir}/infer
 

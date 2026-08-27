@@ -79,14 +79,26 @@ def _extract_ckpt_run_id(ckpt_path: Union[str, Path]) -> str:
     return fallback
 
 
+def _sanitize_dataset_segment(dataset_name: str) -> str:
+    """Path-safe form of a checkpoint's training `dataset_name` (`CheckpointMeta`).
+
+    That field is the full HF repo id (e.g. `nirschl-lab/wong_et_al_2022`) -- unsafe to
+    use as a directory segment as-is (see `configs/data/*.yaml`'s `name:` vs
+    `datamodule.dataset_name:` comment) -- so this strips the org prefix.
+    """
+    return dataset_name.rsplit("/", 1)[-1]
+
+
 def derive_default_run_name(
     ckpt_path: Union[str, Path],
     net_name: str,
     data_name: str,
     use_mc_dropout: bool = False,
     base_model_name: Optional[str] = None,
+    train_dataset_name: Optional[str] = None,
 ) -> str:
-    """Default `infer.save.run_name` when left blank: '<net_spec name>/<ckpt_run_id>/<dataset>'.
+    """Default `infer.save.run_name` when left blank:
+    '<net_spec name>/<train dataset>/<ckpt_run_id>/<dataset>'.
 
     `net_name` is `read_meta(ckpt_path).net_spec["name"]` -- the `NET_REGISTRY` key,
     which is NOT the same as `configs/model/*.yaml`'s `name:` field (they differ for
@@ -99,12 +111,26 @@ def derive_default_run_name(
     `deep_ensemble/<ckpt_run_id>/<dataset>` folder. When `use_mc_dropout` is set,
     `_mcdropout` is appended after that, so MC-Dropout runs don't overwrite a plain
     inference run's `predictions.csv`/`metrics.json` in the same folder either.
+
+    `train_dataset_name` is `read_meta(ckpt_path).dataset_name` -- the dataset the
+    checkpoint was *trained* on (stamped in at training time, see
+    `LitModuleBase.on_save_checkpoint`), not to be confused with `data_name`, the
+    dataset inference is being *run against*. Without it, two checkpoints of the same
+    architecture trained on different datasets both land under the same
+    `<net_name>/<ckpt_run_id>/...` root, distinguishable only by an opaque timestamp.
+    Omitted entirely (rather than an "unknown" placeholder) when the checkpoint
+    predates this field or was saved without a datamodule attached.
     """
     if base_model_name:
         net_name = f"{net_name}_{base_model_name}"
     if use_mc_dropout:
         net_name = f"{net_name}_mcdropout"
-    return f"{net_name}/{_extract_ckpt_run_id(ckpt_path)}/{data_name}"
+    parts = [net_name]
+    if train_dataset_name:
+        parts.append(_sanitize_dataset_segment(train_dataset_name))
+    parts.append(_extract_ckpt_run_id(ckpt_path))
+    parts.append(data_name)
+    return "/".join(parts)
 
 
 def _resolve_output_root(cfg: DictConfig, default_run_name: str) -> Path:
@@ -500,6 +526,7 @@ def run_inference(cfg: DictConfig) -> Dict[str, Any]:
         data_name=str(cfg.data.name),
         use_mc_dropout=bool(cfg.infer.runtime.use_mc_dropout),
         base_model_name=str(base_model_name) if base_model_name else None,
+        train_dataset_name=ckpt_meta.dataset_name,
     )
 
     expected_num_classes = None
