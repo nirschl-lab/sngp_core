@@ -36,7 +36,7 @@ Top-level fields in [configs/infer.yaml](configs/infer.yaml):
   see above)
 - `ckpt_path`: checkpoint path (required)
 - `fold`: `train`, `validation` (`val` also accepted), `test`, or `all` (train + val +
-  test combined, not just the test split)
+  test combined, not just the test split); defaults to `test`
 - `save_path`: output directory root
 - tags, seed, task_name
 
@@ -68,7 +68,7 @@ uv run src/inference/infer.py \
 ```
 
 Choose split/fold (`train | validation | test | all`; `all` runs train+val+test
-combined, not just the test split):
+combined, not just the test split; defaults to `test` if omitted):
 
 ```bash
 uv run src/inference/infer.py \
