@@ -79,14 +79,25 @@ def _extract_ckpt_run_id(ckpt_path: Union[str, Path]) -> str:
     return fallback
 
 
-def _sanitize_dataset_segment(dataset_name: str) -> str:
-    """Path-safe form of a checkpoint's training `dataset_name` (`CheckpointMeta`).
+_NETNAME_DATASET_PATTERN = re.compile(r"/([^/]+)/(?:runs|ensemble_members)/")
 
-    That field is the full HF repo id (e.g. `nirschl-lab/wong_et_al_2022`) -- unsafe to
-    use as a directory segment as-is (see `configs/data/*.yaml`'s `name:` vs
-    `datamodule.dataset_name:` comment) -- so this strips the org prefix.
+
+def _extract_netname_dataset(ckpt_path: Union[str, Path], fallback: str) -> str:
+    """This project's own `<model.name>_<data.name>` training-output segment
+    (`train/<model.name>_<data.name>/{runs,ensemble_members}/<run_id>/...`, see
+    docs/OUTPUT_LAYOUT.md), regex-extracted from `ckpt_path`. Falls back to `fallback`
+    (the checkpoint's own `net_spec["name"]`) with a `logger.warning` when `ckpt_path`
+    doesn't follow that convention -- e.g. a `wandb-artifact://` download
+    (`src/checkpointing/resolve.py` resolves those to `<artifact_dir>/model.ckpt`, no
+    `runs`/`ensemble_members` segment at all) or a manually renamed/moved checkpoint.
     """
-    return dataset_name.rsplit("/", 1)[-1]
+    match = _NETNAME_DATASET_PATTERN.search(str(ckpt_path))
+    if match:
+        return match.group(1)
+    logger.warning(
+        f"No '<model>_<dataset>/{{runs,ensemble_members}}/' segment found in ckpt_path={ckpt_path!r}; using {fallback!r}."
+    )
+    return fallback
 
 
 def derive_default_run_name(
@@ -94,43 +105,34 @@ def derive_default_run_name(
     net_name: str,
     data_name: str,
     use_mc_dropout: bool = False,
-    base_model_name: Optional[str] = None,
-    train_dataset_name: Optional[str] = None,
+    is_deep_ensemble: bool = False,
 ) -> str:
     """Default `infer.save.run_name` when left blank:
-    '<net_spec name>/<train dataset>/<ckpt_run_id>/<dataset>'.
+    '[deep_ensemble_|mc_]<netname_dataset>/<ckpt_run_id>/<dataset>'.
 
-    `net_name` is `read_meta(ckpt_path).net_spec["name"]` -- the `NET_REGISTRY` key,
-    which is NOT the same as `configs/model/*.yaml`'s `name:` field (they differ for
-    deep ensembles: "deep_ensemble" vs "deep_ensemble_classifier"). `net_spec["name"]`
-    is always the fixed registry key "deep_ensemble" for every Deep Ensemble checkpoint
-    regardless of member architecture, so `base_model_name` -- when the checkpoint's
-    `net_spec["base_model_spec"]["name"]` is available (e.g. "baseline_classifier" or
-    "sngp_classifier") -- is appended to `net_name` first, so a baseline-member
-    ensemble and an sngp-member ensemble don't collide onto the same
-    `deep_ensemble/<ckpt_run_id>/<dataset>` folder. When `use_mc_dropout` is set,
-    `_mcdropout` is appended after that, so MC-Dropout runs don't overwrite a plain
-    inference run's `predictions.csv`/`metrics.json` in the same folder either.
-
-    `train_dataset_name` is `read_meta(ckpt_path).dataset_name` -- the dataset the
-    checkpoint was *trained* on (stamped in at training time, see
-    `LitModuleBase.on_save_checkpoint`), not to be confused with `data_name`, the
-    dataset inference is being *run against*. Without it, two checkpoints of the same
-    architecture trained on different datasets both land under the same
-    `<net_name>/<ckpt_run_id>/...` root, distinguishable only by an opaque timestamp.
-    Omitted entirely (rather than an "unknown" placeholder) when the checkpoint
-    predates this field or was saved without a datamodule attached.
+    `netname_dataset` is parsed straight out of `ckpt_path` by `_extract_netname_dataset`
+    -- this project's own `<model.name>_<data.name>` training-output segment -- rather
+    than reconstructed from checkpoint metadata, so it already carries both
+    architecture and training dataset in one string (and, for an assembled Deep
+    Ensemble, the underlying member's own architecture, since the assembled path is
+    literally the member's training path). `is_deep_ensemble` (from
+    `net_spec["name"] == "deep_ensemble"`) prepends `deep_ensemble_`, unless
+    `netname_dataset` already starts with "deep_ensemble" (true only for a *sequential*
+    DeepEnsembleLitModule run, whose own `model.name` is `deep_ensemble_classifier`) --
+    skipped there to avoid a doubled `deep_ensemble_deep_ensemble_classifier_...`.
+    Otherwise `use_mc_dropout` prepends `mc_`. Deep-ensemble beats MC-Dropout when both
+    are set: `use_mc_dropout` is a no-op on ensemble checkpoints anyway (`mc_predict`
+    is only defined on `BaselineClassifier`), so the folder name should reflect
+    checkpoint identity, not an inert toggle.
     """
-    if base_model_name:
-        net_name = f"{net_name}_{base_model_name}"
-    if use_mc_dropout:
-        net_name = f"{net_name}_mcdropout"
-    parts = [net_name]
-    if train_dataset_name:
-        parts.append(_sanitize_dataset_segment(train_dataset_name))
-    parts.append(_extract_ckpt_run_id(ckpt_path))
-    parts.append(data_name)
-    return "/".join(parts)
+    netname_dataset = _extract_netname_dataset(ckpt_path, fallback=net_name)
+    if is_deep_ensemble:
+        prefix = "" if netname_dataset.startswith("deep_ensemble") else "deep_ensemble_"
+    elif use_mc_dropout:
+        prefix = "mc_"
+    else:
+        prefix = ""
+    return f"{prefix}{netname_dataset}/{_extract_ckpt_run_id(ckpt_path)}/{data_name}"
 
 
 def _resolve_output_root(cfg: DictConfig, default_run_name: str) -> Path:
@@ -517,16 +519,12 @@ def run_inference(cfg: DictConfig) -> Dict[str, Any]:
     if not class_names and ckpt_meta.idx_to_class:
         class_names = ckpt_meta.idx_to_class
 
-    base_model_spec = ckpt_meta.net_spec.get("base_model_spec")
-    base_model_name = base_model_spec.get("name") if isinstance(base_model_spec, Mapping) else None
-
     default_run_name = derive_default_run_name(
         ckpt_path=cfg.ckpt_path,
         net_name=str(ckpt_meta.net_spec.get("name", "model")),
         data_name=str(cfg.data.name),
         use_mc_dropout=bool(cfg.infer.runtime.use_mc_dropout),
-        base_model_name=str(base_model_name) if base_model_name else None,
-        train_dataset_name=ckpt_meta.dataset_name,
+        is_deep_ensemble=ckpt_meta.net_spec.get("name") == "deep_ensemble",
     )
 
     expected_num_classes = None

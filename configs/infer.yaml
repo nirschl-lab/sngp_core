@@ -20,9 +20,12 @@ fold: test # train | validation | test | all
 ckpt_path: ???
 
 # The full output path is auto-derived as
-# <save_path>/<model_name>/<train_dataset>/<ckpt_run_id>/<dataset> (the <train_dataset>
-# segment -- what the checkpoint was trained on -- is omitted for checkpoints that
-# don't carry it) unless infer.save.run_name is set explicitly -- see
+# <save_path>/[deep_ensemble_|mc_]<netname_dataset>/<ckpt_run_id>/<dataset>, where
+# <netname_dataset> is parsed straight out of ckpt_path (this project's own
+# <model.name>_<data.name>/{runs,ensemble_members}/<run_id>/ training-output
+# convention -- see docs/OUTPUT_LAYOUT.md), falling back to the checkpoint's own
+# net_spec name alone if ckpt_path doesn't match that convention, unless
+# infer.save.run_name is set explicitly -- see
 # src/inference/infer.py::derive_default_run_name.
 save_path: ${paths.log_dir}/infer
 

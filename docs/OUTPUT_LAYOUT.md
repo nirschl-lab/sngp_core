@@ -45,7 +45,7 @@ $EXPERIMENTS_HOME/$PROJECT_NAME/
 │   ├── run.log
 │   ├── .hydra/
 │   └── csv/
-└── infer/<net_spec name>/<train dataset>/<ckpt_run_id>/<data.name>/
+└── infer/[deep_ensemble_|mc_]<netname_dataset>/<ckpt_run_id>/<data.name>/
     ├── predictions.csv
     ├── metrics.json
     └── images/                    # artifact mode only, if infer.save.save_images=true
@@ -83,8 +83,8 @@ above `runs/`:
   `src/inference/infer.py` never runs a real `@hydra.main` job (see
   [§8](#8-known-quirks)), so it does **not** drive `hydra.run.dir` the way it does for train/eval,
   and its `${data.name}`-first shape doesn't match the actual on-disk inference layout described in
-  [§5](#5-inference-outputs) (`<net_spec name>/<train dataset>/<ckpt_run_id>/<data.name>`, model/run
-  first).
+  [§5](#5-inference-outputs) (`[deep_ensemble_|mc_]<netname_dataset>/<ckpt_run_id>/<data.name>`,
+  model/run first).
 
 `${model.name}` and `${data.name}` are plain config fields resolved at Hydra composition time --
 see [§7](#7-three-name-fields----dont-conflate) for exactly which fields these are and which ones
@@ -130,30 +130,34 @@ run-folder path from the checkpoint and the dataset used for inference
 (`src/inference/infer.py::derive_default_run_name`):
 
 ```
-<net_spec name>/<train dataset>/<ckpt_run_id>/<data.name>
+[deep_ensemble_|mc_]<netname_dataset>/<ckpt_run_id>/<data.name>
 ```
 
-- `<net_spec name>` comes from `read_meta(ckpt_path).net_spec["name"]` -- the checkpoint's own
-  `NET_REGISTRY` key (see [§7](#7-three-name-fields----dont-conflate) for why this can differ from
-  `model.name`). When the checkpoint's `net_spec` carries a nested `base_model_spec` dict (true
-  today only for Deep Ensemble checkpoints -- see [§6](#6-ensemble-member-parallel-training-outputs)),
-  `base_model_spec["name"]` (e.g. `baseline_classifier` or `sngp_classifier`) is appended as a
-  suffix: `deep_ensemble_baseline_classifier`, `deep_ensemble_sngp_classifier`, etc. Without this,
-  every Deep Ensemble checkpoint would produce the identical `deep_ensemble` segment regardless of
-  member architecture, relying entirely on `<ckpt_run_id>` below to keep a baseline-member
-  ensemble's results apart from an sngp-member ensemble's -- fragile, since that value isn't
-  derived from checkpoint content (see the fallback caveat immediately below).
-- `<train dataset>` is `read_meta(ckpt_path).dataset_name` -- the dataset the checkpoint was
-  *trained* on, stamped in at training time (`LitModuleBase.on_save_checkpoint`) from the training
-  datamodule's own `dataset_name` attribute, and validated to agree across all members when a Deep
-  Ensemble checkpoint is assembled (`scripts/ensemble/assemble_ensemble_checkpoint.py`). That
-  attribute is the full HF repo id (e.g. `nirschl-lab/wong_et_al_2022`), not path-safe as-is (see
-  the `name:` vs `datamodule.dataset_name:` comment in any `configs/data/*.yaml`), so
-  `derive_default_run_name` strips the org prefix before using it as a directory segment. This is
-  what lets two checkpoints of the same architecture trained on different datasets land in separate
-  folders instead of only being distinguishable by an opaque `<ckpt_run_id>` timestamp. Omitted
-  entirely -- not replaced with an "unknown" placeholder -- for checkpoints that predate this
-  field or were saved without a datamodule attached.
+- `<netname_dataset>` is parsed straight out of `ckpt_path` by `_extract_netname_dataset` --
+  this project's own `<model.name>_<data.name>` training-output segment
+  (`train/<model.name>_<data.name>/{runs,ensemble_members}/<run_id>/...`, see [§3](#3-training-outputs)
+  and [§6](#6-ensemble-member-parallel-training-outputs)), e.g. `baseline_classifier_acevedo` or
+  `sngp_classifier_wong` -- regex-extracted, not reconstructed from checkpoint metadata, so it
+  already carries both architecture and training dataset in one string. Falls back to the
+  checkpoint's own `net_spec["name"]` (with a `logger.warning`) when `ckpt_path` doesn't match that
+  convention -- e.g. a `wandb-artifact://` download (resolves to `<artifact_dir>/model.ckpt`, no
+  `runs`/`ensemble_members` segment) or a manually renamed/moved checkpoint.
+- A `deep_ensemble_` prefix is added when `read_meta(ckpt_path).net_spec["name"] == "deep_ensemble"`
+  -- the checkpoint's own `NET_REGISTRY` key (see [§7](#7-three-name-fields----dont-conflate) for why
+  this can differ from `model.name`) -- *unless* `<netname_dataset>` already starts with
+  `deep_ensemble` (true only for a checkpoint from `DeepEnsembleLitModule`'s `sequential`
+  single-run training strategy, whose own `model.name` is `deep_ensemble_classifier`), which would
+  otherwise double up into `deep_ensemble_deep_ensemble_classifier_...`. For an assembled Deep
+  Ensemble (see [§6](#6-ensemble-member-parallel-training-outputs)), `<netname_dataset>` is read
+  straight from the underlying member's own training path, so a baseline-member ensemble
+  (`deep_ensemble_baseline_classifier_acevedo`) and an sngp-member ensemble
+  (`deep_ensemble_sngp_classifier_acevedo`) never collide -- no separate metadata lookup needed for
+  that disambiguation.
+- Otherwise, an `mc_` prefix is added when MC-Dropout is enabled for the inference run
+  (`infer.runtime.use_mc_dropout`), so MC-Dropout runs don't overwrite a plain inference run's
+  `predictions.csv`/`metrics.json` in the same folder. Deep Ensemble beats MC-Dropout when both are
+  set -- `use_mc_dropout` is a no-op on ensemble checkpoints anyway (`mc_predict` is only defined on
+  `BaselineClassifier`), so the folder name reflects checkpoint identity, not an inert toggle.
 - `<ckpt_run_id>` is this project's own run-id timestamp
   (`\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}`), regex-extracted from `ckpt_path` -- since a checkpoint's
   path already contains its training run's `<run_id>`
@@ -162,8 +166,9 @@ run-folder path from the checkpoint and the dataset used for inference
   with no separate bookkeeping. Falls back to the current timestamp if the checkpoint predates
   this convention or was renamed/moved.
 - `<data.name>` is the dataset inference was run against -- the same value that scoped `save_path`
-  before this layout changed. Not to be confused with `<train dataset>` above: this is the eval-time
-  dataset, which may differ from the training dataset (e.g. a cross-dataset OOD sweep).
+  before this layout changed. Not to be confused with the *training* dataset baked into
+  `<netname_dataset>` above: this is the eval-time dataset, which may differ (e.g. a cross-dataset
+  OOD sweep).
 
 Note: the folder is keyed on checkpoint + dataset only, not `fold` -- rerunning the same checkpoint
 against the same dataset with a different `fold` (or a second time with the same fold) overwrites
@@ -208,10 +213,14 @@ produces), even though every member checkpoint underneath it is individually a
 `"baseline_classifier"` (or `"sngp_classifier"`) -- consistent with the
 [§7](#7-three-name-fields----dont-conflate) asymmetry, just constructed by hand here instead of by
 `DeepEnsembleLitModule`. The checkpoint's `net_spec["base_model_spec"]["name"]` retains that
-underlying architecture, though, and `src/inference/infer.py`'s auto-derived output layout
-([§5](#5-inference-outputs)) reads it: inference against this checkpoint resolves to
-`infer/deep_ensemble_baseline_classifier/<train dataset>/<run_id>/<dataset>/` (or
-`..._sngp_classifier/...`), not a bare `infer/deep_ensemble/<run_id>/<dataset>/` -- so a
+underlying architecture, though -- and unlike a sequential `DeepEnsembleLitModule` run, that
+architecture is never derived from checkpoint metadata for path-naming purposes here: the assembled
+ckpt's own path (`train/<member's model.name>_<data.name>/ensemble_members/<run_id>/checkpoints/ensemble.ckpt`)
+already contains `<member's model.name>_<data.name>` before `/ensemble_members/`, which
+`src/inference/infer.py`'s auto-derived output layout ([§5](#5-inference-outputs)) reads directly via
+`_extract_netname_dataset`, then prepends `deep_ensemble_` (from `net_spec["name"] == "deep_ensemble"`):
+inference against this checkpoint resolves to `infer/deep_ensemble_baseline_classifier_<dataset>/<run_id>/<dataset>/`
+(or `..._sngp_classifier_<dataset>/...`), not a bare `infer/deep_ensemble/<run_id>/<dataset>/` -- so a
 baseline-member ensemble and an sngp-member ensemble never collide onto the same inference output
 folder, even if their `<run_id>`s happened to coincide.
 
@@ -220,19 +229,22 @@ folder, even if their `<run_id>`s happened to coincide.
 | Field | Where | Example | Drives |
 |---|---|---|---|
 | `data.name` | `configs/data/*.yaml` top level | `acevedo` | `task_name` (train/eval/infer), infer's auto-derived run-folder path (leaf segment) |
-| `model.name` | `configs/model/*.yaml` top level | `sngp_classifier` | `task_name` (train/eval) |
-| `net_spec["name"]` | `NET_REGISTRY` key, stamped into every checkpoint (`src/models/registry.py`) | `sngp_classifier`, but **`deep_ensemble`** (not `deep_ensemble_classifier`) | infer's auto-derived run-folder path (top segment, plus a `base_model_spec["name"]` suffix when present -- see [§5](#5-inference-outputs)) |
+| `model.name` | `configs/model/*.yaml` top level | `sngp_classifier` | `task_name` (train/eval); indirectly drives infer's auto-derived run-folder path too, since `<netname_dataset>` ([§5](#5-inference-outputs)) is parsed straight out of the `<model.name>_<data.name>` training-output path segment |
+| `net_spec["name"]` | `NET_REGISTRY` key, stamped into every checkpoint (`src/models/registry.py`) | `sngp_classifier`, but **`deep_ensemble`** (not `deep_ensemble_classifier`) | infer's auto-derived run-folder path -- only the `deep_ensemble_` prefix decision and the `<netname_dataset>` fallback value (when `ckpt_path` doesn't match this project's own convention), not the primary segment -- see [§5](#5-inference-outputs) |
 | `name` | `configs/experiment/*.yaml` top level (`_global_`) | `acevedo_sngp_resnet18` | `logger.wandb.name`/`group` only -- never on disk |
 
 The `net_spec["name"]` vs `model.name` mismatch for deep ensembles is real and permanent: the
 registry key (`"deep_ensemble"`) is baked into every already-saved deep-ensemble checkpoint's
-`net_spec`, and renaming it would break `build_net()` for those checkpoints. So a deep-ensemble
-training run lands at `train/deep_ensemble_classifier_<dataset>/...`, but that same checkpoint's
-auto-derived inference folder reads `infer/deep_ensemble_<base-architecture>/<ckpt_run_id>/<dataset>/`
--- the "deep_ensemble" vs "deep_ensemble_classifier" difference there is expected, not a bug. What
-used to be a bug -- `net_spec["name"]` alone being identical for every Deep Ensemble checkpoint,
-regardless of member architecture -- is mitigated by the `base_model_spec["name"]` suffix
-described in [§5](#5-inference-outputs).
+`net_spec`, and renaming it would break `build_net()` for those checkpoints. So a *sequential*
+deep-ensemble training run lands at `train/deep_ensemble_classifier_<dataset>/...`, and that same
+checkpoint's auto-derived inference folder reads `infer/deep_ensemble_classifier_<dataset>/<ckpt_run_id>/<dataset>/`
+(no doubled `deep_ensemble_` prefix, since `<netname_dataset>` already starts with "deep_ensemble" --
+see [§5](#5-inference-outputs)) -- the "deep_ensemble" vs "deep_ensemble_classifier" difference there
+is expected, not a bug. An *assembled* deep-ensemble checkpoint (see
+[§6](#6-ensemble-member-parallel-training-outputs)) has no such collision to begin with, since its
+path never contains "deep_ensemble" at all -- `<netname_dataset>` is read from the underlying
+member's own training path (e.g. `baseline_classifier_<dataset>`), and the `deep_ensemble_` prefix
+is added on top from `net_spec["name"]` alone.
 
 ## 8. Known quirks
 
@@ -244,8 +256,11 @@ described in [§5](#5-inference-outputs).
   is entirely determined by `save_path`/`infer.save.run_name` as described in [§5](#5-inference-outputs).
 - **The deep-ensemble name asymmetry** described in [§7](#7-three-name-fields----dont-conflate) --
   the `net_spec["name"]`/`model.name` mismatch itself is permanent, but the inference-path
-  collision it used to cause between differently-membered ensembles is mitigated by the
-  `base_model_spec["name"]` suffix.
+  collision it used to cause between differently-membered ensembles doesn't arise for *assembled*
+  ensembles, since `<netname_dataset>` is read from the member's own training path rather than
+  reconstructed from checkpoint metadata; it's avoided for *sequential* ensembles by skipping the
+  `deep_ensemble_` prefix when `<netname_dataset>` already starts with "deep_ensemble" (see
+  [§5](#5-inference-outputs)).
 - **`ensemble_members/<run_id>/` is a sibling of `runs/<run_id>/`, but each member's own run dir
   is built by an explicit `hydra.run.dir=` override, not `task_name`** -- described in
   [§6](#6-ensemble-member-parallel-training-outputs); deliberate, not an oversight.
