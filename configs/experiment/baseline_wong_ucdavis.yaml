@@ -1,0 +1,70 @@
+# @package _global_
+
+# to execute this experiment run:
+# python train.py experiment=example
+
+defaults:
+  - override /data: wong
+  - override /model: baseline_classifier
+  - override /callbacks: default
+  - override /trainer: default
+
+# all parameters below will be merged with parameters from default configurations set above
+# this allows you to overwrite only specified parameters
+name: "wong_ucdavis_baseline_resnet18"
+WANDB_PROJECT: ${oc.env:PROJECT_NAME}
+tags: ["wong_et_al_2022", "resnet18", "training", "baseline", "ucdavis"]
+
+seed: 12345
+
+num_classes: 4
+
+trainer:
+  min_epochs: 30
+  max_epochs: 150
+  accelerator: "gpu"
+
+
+model:
+  optimizer:
+    lr: 0.001642741271994354
+    weight_decay: 0.00022346758408902265
+  net:
+    arch: resnet18
+    num_classes: ${num_classes}
+    dropout_p: 0.2
+    pretrained: false
+  compile: false
+  scheduler:
+    _target_: torch.optim.lr_scheduler.CosineAnnealingLR
+    _partial_: true
+    T_max: ${trainer.max_epochs}
+    eta_min: 0.0
+  num_classes: ${num_classes}
+  class_freq: ${data.class_freq}
+  cb_beta: 0.9 # effective-number-of-samples reweighting; 0 = uniform, closer to 1 = more aggressive
+  focal_gamma: 1.5032085288515056 # focal-loss focusing parameter; 0 = plain class-balanced CE
+
+data:
+  datamodule:
+    batch_size: 64
+    institution: ucdavis
+
+logger:
+  wandb:
+    project: "${WANDB_PROJECT}"
+    tags: ${tags}
+    group: "Training"
+    name: ${name}
+    log_model: True
+  aim:
+    experiment: ""
+
+callbacks:
+  early_stopping:
+    monitor: "val/f1"
+    patience: 20
+    mode: "max"
+    min_delta: 0.005
+  test_artifacts:
+    hist_bins: 10
