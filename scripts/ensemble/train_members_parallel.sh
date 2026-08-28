@@ -135,11 +135,23 @@ for ((i = 0; i < NUM_ESTIMATORS; i++)); do
   echo "Launching member ${i}/${NUM_ESTIMATORS} on GPU ${GPU_ID} -> ${MEMBER_DIR}"
   # shellcheck disable=SC2086  # MEMBER_EXTRA_OVERRIDES is intentionally word-split
   # into zero or more separate Hydra overrides, same as any Hydra CLI call.
+  #
+  # logger.wandb.tags: the \$ escapes keep bash from expanding ${...} itself, and the
+  # inner '...' are literal characters Hydra's OVERRIDE grammar requires around an
+  # interpolation value on the CLI (plain `key=${...}` fails to parse there even
+  # though the identical string works inside a yaml file -- verified directly).
+  # Resolved by src/utils/resolvers.py's tags_with. Without this, every member would
+  # carry the same tags/group as an ordinary single baseline run and be
+  # indistinguishable from one on the W&B dashboard.
+  TAGS_OVERRIDE="logger.wandb.tags='\${tags_with:\${tags},\${data.datamodule.institution},deep_ensemble_member}'"
   CUDA_VISIBLE_DEVICES="${GPU_ID}" uv run python src/train.py \
     experiment="${EXPERIMENT}" \
     seed="${i}" \
     name="${EXPERIMENT}_member${i}" \
     hydra.run.dir="${MEMBER_DIR}" \
+    "${TAGS_OVERRIDE}" \
+    logger.wandb.group="${EXPERIMENT}_ensemble_members_${RUN_ID}" \
+    logger.wandb.job_type="ensemble_member" \
     ${MEMBER_EXTRA_OVERRIDES} \
     > "${MEMBERS_ROOT}/member_${i}.log" 2>&1 &
   PIDS+=($!)

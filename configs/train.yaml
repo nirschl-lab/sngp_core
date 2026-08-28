@@ -11,6 +11,14 @@ defaults:
   - paths: default
   - extras: default
 
+  # _self_ here (rather than at the end) makes this file's own values below (tags,
+  # seed, ...) the BASE that experiment/hparams_search override -- not the other way
+  # around. With _self_ last, this file's tags/seed silently clobbered whatever
+  # experiment=X set for those same keys, since later-in-defaults-list always wins;
+  # every experiment-based run was training unseeded and tagged only this file's
+  # base tags regardless of which experiment config was used.
+  - _self_
+
 #  # experiment configs allow for version control of specific hyperparameters
 #  # e.g. best hyperparameters for given model and datamodule
   - experiment: null
@@ -30,8 +38,6 @@ defaults:
   # if using submitit_slurm, set override after others but before _self_
   # - override /hydra/launcher: submitit_slurm
 
-  - _self_
-
 # task name, determines output directory path -- includes model family + dataset so
 # runs are distinguishable on disk, not just by timestamp (see docs/OUTPUT_LAYOUT.md)
 task_name: "train/${model.name}_${data.name}"
@@ -39,7 +45,10 @@ task_name: "train/${model.name}_${data.name}"
 # tags to help you identify your experiments
 # you can overwrite this in experiment configs
 # overwrite from command line with `python train.py tags="[first_tag, second_tag]"`
-tags: ["isbi2026",]
+# empty by default -- extras()/enforce_tags() (src/utils/rich_utils.py) prompts for
+# tags interactively if none are set, which is the right fallback for a bare run with
+# no experiment=; every experiment config sets its own tags: [...] instead.
+tags: []
 
 # set False to skip model training
 train: True

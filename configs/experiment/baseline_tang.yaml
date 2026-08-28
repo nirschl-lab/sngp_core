@@ -13,7 +13,7 @@ defaults:
 # this allows you to overwrite only specified parameters
 name: "tang_baseline_resnet18"
 WANDB_PROJECT: ${oc.env:PROJECT_NAME}
-tags: ["tang_et_al_2019", "resnet18", "training", "baseline"]
+tags: ["baseline", "tang", "resnet18", "training"]
 
 seed: 12345
 
@@ -50,7 +50,7 @@ data:
 logger:
   wandb:
     project: "${WANDB_PROJECT}"
-    tags: ${tags}
+    tags: "${tags_with:${tags},${data.datamodule.institution}}"
     group: "Training"
     name: ${name}
     log_model: True

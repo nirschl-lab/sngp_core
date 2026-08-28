@@ -46,6 +46,7 @@ logger:
     log_model: False # a 48-trial sweep must not upload 48 checkpoints as W&B artifacts
     group: "${name}_hpo"
     job_type: "sweep"
+    tags: "${tags_with:${tags},${data.datamodule.institution},hpo}"
 
 hydra:
   mode: "MULTIRUN"

@@ -17,7 +17,7 @@ defaults:
 # task name, determines output directory path -- includes model family + dataset so
 # runs are distinguishable on disk, not just by timestamp (see docs/OUTPUT_LAYOUT.md)
 task_name: "eval/${model.name}_${data.name}"
-tags: ["eval", "sngp", "isbi2026"]
+tags: ["eval", "sngp"]
 
 # flag for torch precision: 'medium', 'high' or 'highest'
 precision: "medium"
