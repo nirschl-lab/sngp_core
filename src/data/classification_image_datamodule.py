@@ -23,6 +23,7 @@ class ClassificationImageDataModule(BaseImageDataModule):
         test_augmentations: Optional[transforms.Compose | A.Compose] = None,
         test_all_folds: Optional[bool] = False,
         sample_rate: int = 0,
+        institution: Optional[str] = None,
     ) -> None:
         super().__init__(
             dataset_name=dataset_name,
@@ -36,6 +37,7 @@ class ClassificationImageDataModule(BaseImageDataModule):
             test_augmentations=test_augmentations,
             test_all_folds=test_all_folds,
             sample_rate=sample_rate,
+            institution=institution,
         )
 
     def _make_dataset(self, hf_split, fold: str, transform) -> HFDataset:

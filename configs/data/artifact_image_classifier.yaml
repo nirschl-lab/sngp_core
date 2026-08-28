@@ -26,6 +26,7 @@ datamodule:
   pin_memory: true
   test_all_folds: false
   sample_rate: 0
+  institution: null # HF row-level institution id to filter to; null = all institutions
   simulate_artifacts_for_test: true
   artifact_csv_path: ${paths.root_dir}/data/artifact/artifacts.csv
   artifact_config_path: ${paths.root_dir}/configs/artifact/balanced.yaml

@@ -3,6 +3,7 @@
 from pathlib import Path
 from types import SimpleNamespace
 
+import datasets
 import numpy as np
 import pytest
 import torch
@@ -177,6 +178,143 @@ def test_classification_datamodule_stage_none_with_trainer_builds_test_dataset(
 
     assert dm.data_test is not None
     assert dm.class_to_idx == fake_classes
+
+
+def _fake_load_dataset_with_institutions():
+    """Real `datasets.Dataset` splits (not plain lists) carrying an `institution`
+    column, needed because `.filter()`/`.column_names` are Dataset-only APIs."""
+
+    def make_split(rows):
+        return datasets.Dataset.from_list(rows)
+
+    def fake_load_dataset(_dataset_name: str):
+        return {
+            "train": make_split([
+                {
+                    "image": np.zeros((16, 16, 3), dtype=np.uint8),
+                    "label": 0,
+                    "image_id": "train-0",
+                    "institution": "ucdavis",
+                },
+                {
+                    "image": np.zeros((16, 16, 3), dtype=np.uint8),
+                    "label": 1,
+                    "image_id": "train-1",
+                    "institution": "stanford",
+                },
+            ]),
+            "validation": make_split([
+                {
+                    "image": np.zeros((16, 16, 3), dtype=np.uint8),
+                    "label": 0,
+                    "image_id": "val-0",
+                    "institution": "ucdavis",
+                },
+                {
+                    "image": np.zeros((16, 16, 3), dtype=np.uint8),
+                    "label": 1,
+                    "image_id": "val-1",
+                    "institution": "stanford",
+                },
+            ]),
+            "test": make_split([
+                {
+                    "image": np.zeros((16, 16, 3), dtype=np.uint8),
+                    "label": 0,
+                    "image_id": "test-0",
+                    "institution": "ucdavis",
+                },
+                {
+                    "image": np.zeros((16, 16, 3), dtype=np.uint8),
+                    "label": 1,
+                    "image_id": "test-1",
+                    "institution": "stanford",
+                },
+            ]),
+        }
+
+    return fake_load_dataset
+
+
+def test_classification_datamodule_institution_none_loads_all_institutions(monkeypatch: pytest.MonkeyPatch) -> None:
+    """No institution id -- every row across institutions is loaded, matching today's
+    (pre-filter) behavior."""
+    monkeypatch.setattr(
+        "src.data.base_image_datamodule.datasets.load_dataset",
+        _fake_load_dataset_with_institutions(),
+    )
+
+    dm = ClassificationImageDataModule(dataset_name="dummy", batch_size=1, num_workers=0, pin_memory=False)
+    dm.setup(stage="fit")
+
+    assert len(dm.data_train) == 2
+    assert {dm.data_train.dataset[i]["institution"] for i in range(2)} == {"ucdavis", "stanford"}
+
+
+def test_classification_datamodule_institution_narrows_splits(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A configured institution id narrows train/val/test to only its own rows."""
+    monkeypatch.setattr(
+        "src.data.base_image_datamodule.datasets.load_dataset",
+        _fake_load_dataset_with_institutions(),
+    )
+
+    dm = ClassificationImageDataModule(
+        dataset_name="dummy", batch_size=1, num_workers=0, pin_memory=False, institution="ucdavis"
+    )
+    dm.setup(stage="fit")
+    assert len(dm.data_train) == 1
+    assert dm.data_train.dataset[0]["institution"] == "ucdavis"
+    assert len(dm.data_val) == 1
+    assert dm.data_val.dataset[0]["institution"] == "ucdavis"
+
+    dm.setup(stage="test")
+    assert len(dm.data_test) == 1
+    assert dm.data_test.dataset[0]["institution"] == "ucdavis"
+
+
+def test_classification_datamodule_institution_not_present_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    """An institution id absent from the data must fail loudly, not silently train on
+    an empty split."""
+    monkeypatch.setattr(
+        "src.data.base_image_datamodule.datasets.load_dataset",
+        _fake_load_dataset_with_institutions(),
+    )
+
+    dm = ClassificationImageDataModule(
+        dataset_name="dummy", batch_size=1, num_workers=0, pin_memory=False, institution="nowhere"
+    )
+
+    with pytest.raises(ValueError, match="matched zero rows"):
+        dm.setup(stage="fit")
+
+
+def test_classification_datamodule_institution_requested_but_column_missing_raises(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Requesting an institution filter against a dataset with no institution column
+    at all must fail loudly rather than silently ignoring the filter."""
+
+    def fake_load_dataset(_dataset_name: str):
+        return {
+            "train": datasets.Dataset.from_list(
+                [{"image": np.zeros((16, 16, 3), dtype=np.uint8), "label": 0, "image_id": "train-0"}]
+            ),
+            "validation": datasets.Dataset.from_list(
+                [{"image": np.zeros((16, 16, 3), dtype=np.uint8), "label": 0, "image_id": "val-0"}]
+            ),
+            "test": datasets.Dataset.from_list(
+                [{"image": np.zeros((16, 16, 3), dtype=np.uint8), "label": 0, "image_id": "test-0"}]
+            ),
+        }
+
+    monkeypatch.setattr("src.data.base_image_datamodule.datasets.load_dataset", fake_load_dataset)
+
+    dm = ClassificationImageDataModule(
+        dataset_name="dummy", batch_size=1, num_workers=0, pin_memory=False, institution="ucdavis"
+    )
+
+    with pytest.raises(ValueError, match="no 'institution' column"):
+        dm.setup(stage="fit")
 
 
 def _fake_load_dataset_for_artifact() -> dict:

@@ -84,6 +84,7 @@ class ArtifactImageDataModule(BaseImageDataModule):
         test_augmentations: Optional[transforms.Compose | A.Compose] = None,
         test_all_folds: Optional[bool] = False,
         sample_rate: int = 0,
+        institution: Optional[str] = None,
         artifact_csv_path: str = DEFAULT_ARTIFACT_CSV,
         artifact_config_path: str = DEFAULT_ARTIFACT_CONFIG,
         artifact_seed: int = 42,
@@ -101,6 +102,7 @@ class ArtifactImageDataModule(BaseImageDataModule):
             test_augmentations=test_augmentations,
             test_all_folds=test_all_folds,
             sample_rate=sample_rate,
+            institution=institution,
         )
         self.artifact_csv_path = artifact_csv_path
         self.artifact_config_path = artifact_config_path

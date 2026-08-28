@@ -29,3 +29,4 @@ datamodule:
   pin_memory: True
   test_all_folds: False
   sample_rate: 0
+  institution: null # HF row-level institution id to filter to; null = all institutions

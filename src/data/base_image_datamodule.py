@@ -34,6 +34,7 @@ class BaseImageDataModule(LightningDataModule):
         test_augmentations: Optional[transforms.Compose | A.Compose] = None,
         test_all_folds: Optional[bool] = False,
         sample_rate: int = 0,
+        institution: Optional[str] = None,
     ) -> None:
         super().__init__()
 
@@ -48,6 +49,7 @@ class BaseImageDataModule(LightningDataModule):
         self.class_to_idx = class_to_idx
         self.sample_rate = sample_rate
         self.test_all_folds = test_all_folds
+        self.institution = institution
 
         self.train_transform = train_augmentations or self._default_transform("train")
         self.val_transform = val_augmentations or self._default_transform("val")
@@ -102,11 +104,30 @@ class BaseImageDataModule(LightningDataModule):
 
         resolved_stage = stage or getattr(getattr(self.trainer, "state", None), "stage", None)
         data = self._load_raw_dataset()
+        if self.institution is not None:
+            data = self._filter_by_institution(data)
 
         if resolved_stage in {"test", "predict"}:
             self._setup_test(data)
         else:
             self._setup_fit(data)
+
+    def _filter_by_institution(self, data) -> Dict[str, Any]:
+        filtered = {}
+        for split_name, split_ds in data.items():
+            if "institution" not in split_ds.column_names:
+                raise ValueError(
+                    f"institution={self.institution!r} was requested but the {split_name!r} split "
+                    f"of {self.dataset_name!r} has no 'institution' column."
+                )
+            filtered_split = split_ds.filter(lambda row: row["institution"] == self.institution)
+            if len(filtered_split) == 0:
+                raise ValueError(
+                    f"institution={self.institution!r} matched zero rows in the {split_name!r} split "
+                    f"of {self.dataset_name!r}."
+                )
+            filtered[split_name] = filtered_split
+        return filtered
 
     def _setup_fit(self, data) -> None:
         # Sample images from train and val for faster training.

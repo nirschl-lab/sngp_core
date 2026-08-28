@@ -49,6 +49,23 @@ preset yet. No new Python is needed — the datamodule
 caveats (duplicate class name across two files, a `setup()` edge case with
 `stage=None`).
 
+## Filtering by institution
+
+Some datasets (e.g. Wong et al. 2022, Tang et al. 2019) mix rows sourced from
+multiple institutions in a per-row `institution` HF column. Pass
+`data.datamodule.institution=<id>` to scope training/eval/inference to a single
+institution's rows; leave it unset (the default, `null`) to train on all data as
+before:
+
+```bash
+uv run src/train.py experiment=baseline_wong data.datamodule.institution=ucdavis
+```
+
+Requesting an institution id that doesn't match any rows, or a dataset with no
+`institution` column at all, fails loudly at `setup()` time rather than silently
+training on an empty split. `uv run src/visualization/datasets_class_distribution.py
+--dataset <name>` reports which institution ids (if any) a given dataset actually has.
+
 ## Artifact-robustness evaluation
 
 A separate axis, orthogonal to which dataset is used: `configs/artifact/` holds
