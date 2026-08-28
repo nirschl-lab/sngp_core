@@ -26,9 +26,6 @@ Tracked here so they aren't re-litigated on every change.
 Pre-existing, not caused by any particular change, verified against an untouched
 baseline:
 
-- `tests/metrics/test_smooth_ece.py` has order-dependent failures when run as part of
-  the full suite but passes cleanly in isolation — some global state leaks between
-  tests. Worth a real fix, not yet done.
 - `tests/test_train.py::test_train_resume` asserts checkpoint filenames
   (`epoch_000.ckpt`) from an older `ModelCheckpoint` config pattern that no longer
   matches `configs/callbacks/model_checkpoint.yaml`/`default.yaml` (which now save
