@@ -294,7 +294,7 @@ Two-tier split:
   Dempster-Shafer uncertainty), driven by prediction CSVs from inference/eval runs.
 
 Publication figures go through `src/visualization/style.py` for consistent styling
-rather than one-off plotting code.
+rather than one-off plotting code -- see [docs/VISUALIZATION_GUIDE.md](VISUALIZATION_GUIDE.md).
 
 ---
 
