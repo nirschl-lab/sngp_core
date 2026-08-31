@@ -291,7 +291,8 @@ Two-tier split:
   `val/ece` are read-only calibration diagnostics, never a training-time selection
   target.
 - **Offline/research metrics** — `src/metrics/` (cross-dataset OOD-AUROC, smooth-ECE,
-  Dempster-Shafer uncertainty), driven by prediction CSVs from inference/eval runs.
+  Dempster-Shafer uncertainty), driven by prediction CSVs from inference/eval runs --
+  see [docs/METRICS_GUIDE.md](METRICS_GUIDE.md).
 
 Publication figures go through `src/visualization/style.py` for consistent styling
 rather than one-off plotting code -- see [docs/VISUALIZATION_GUIDE.md](VISUALIZATION_GUIDE.md).
