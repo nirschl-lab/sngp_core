@@ -27,7 +27,7 @@ from scipy.stats import gaussian_kde
 ROOT = rootutils.setup_root(__file__, indicator=".project-root", pythonpath=True)
 
 from src.metrics.auc import _parse_class_probs  # noqa: E402
-from src.visualization.style import set_default_style  # noqa: E402
+from src.visualization.style import DATASET_COLORS, set_default_style  # noqa: E402
 
 
 def _raw_entropy_from_probs(probs: list[float], eps: float = 1e-12) -> float:
@@ -105,16 +105,19 @@ def plot_entropy_kde(
         is_in_dist = label in in_dist_labels
         line_style = "-" if is_in_dist else "--"
         alpha = 1.0 if is_in_dist else 0.9
+        color = DATASET_COLORS.get(label)
 
         uniq = np.unique(values)
         if uniq.size < 2 or np.isclose(np.var(values), 0.0):
-            ax.axvline(float(uniq[0]), linestyle=line_style, linewidth=2.0, alpha=0.5, label=f"{label} (no KDE)")
+            ax.axvline(
+                float(uniq[0]), color=color, linestyle=line_style, linewidth=2.0, alpha=0.5, label=f"{label} (no KDE)"
+            )
             continue
 
         kde = gaussian_kde(values, bw_method=bw_method)
         y = kde.evaluate(x)
-        ax.plot(x, y, linewidth=2.0, linestyle=line_style, alpha=alpha, label=label)
-        ax.fill_between(x, y, 0, alpha=0.15)
+        ax.plot(x, y, color=color, linewidth=2.0, linestyle=line_style, alpha=alpha, label=label)
+        ax.fill_between(x, y, 0, color=color, alpha=0.15)
 
     ax.set_xlabel("Entropy (nats)", fontsize=16)
     ax.set_ylabel("Density", fontsize=16)

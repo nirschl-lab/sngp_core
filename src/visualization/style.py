@@ -5,6 +5,18 @@ import matplotlib as mpl
 import seaborn as sns
 from loguru import logger
 
+# Colorblind-safe categorical palette (Wong 2011, Nature Methods), one fixed color per
+# project dataset so the same dataset reads as the same color across every figure.
+DATASET_COLORS: dict[str, str] = {
+    "acevedo": "#0173B2",
+    "wong": "#DE8F05",
+    "tang": "#029E73",
+    "kather2018": "#D55E00",
+    "kather2016": "#CC78BC",
+    "jung": "#CA9161",
+    "nirschl2018": "#949494",
+}
+
 
 def set_default_style(use_tex: bool = False) -> None:
     """Set global matplotlib/seaborn style for calibration plots."""
