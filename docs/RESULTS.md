@@ -27,7 +27,8 @@ directly as the uncertainty score (higher entropy = more OOD-like, no inversion
 needed). This differs from max-softmax-probability (MSP), which looks only at the
 top predicted class's probability (`1 - max(p)` as the uncertainty score) and
 ignores how probability mass is spread over the remaining classes. MSP-based tables
-for the same runs are kept in [OOD_MSP_AUROC.md](OOD_MSP_AUROC.md) for reference.
+for the same runs are kept in [subdocs/OOD_MSP_AUROC.md](subdocs/OOD_MSP_AUROC.md) for
+reference.
 
 ### Model Trained on Acevedo and Tested on other datasets
 

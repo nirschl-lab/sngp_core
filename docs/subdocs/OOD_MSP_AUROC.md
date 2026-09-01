@@ -1,8 +1,8 @@
 # OOD AUROC (MSP-based)
 
 Secondary OOD-detection tables using max-softmax-probability (MSP) as the
-uncertainty score, moved out of [RESULTS.md](RESULTS.md) so that document keeps
-entropy AUROC as the primary reported metric. See RESULTS.md for what MSP vs.
+uncertainty score, moved out of [../RESULTS.md](../RESULTS.md) so that document
+keeps entropy AUROC as the primary reported metric. See RESULTS.md for what MSP vs.
 entropy AUROC measure and why they differ.
 
 ### Model Trained on Acevedo and Tested on other datasets
