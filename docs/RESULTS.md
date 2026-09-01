@@ -52,20 +52,14 @@ reference.
 | SNGP | 0.9974 ± 0.0004 | 0.6851 ± 0.0064 | 0.9587 ± 0.0012 | 0.9000 ± 0.0068 | 0.9648 ± 0.0018 | **0.4606 ± 0.0101** |
 | SNGP Ensemble | **0.9989 ± 0.0003** | **0.7938 ± 0.0051** | **0.9808 ± 0.0006** | **0.9360 ± 0.0054** | **0.9974 ± 0.0003** | 0.4095 ± 0.0059 |
 
-**Notes — how these numbers are computed** (`src/metrics/calculate_ood_metrics.py`,
-`src/metrics/auc.py`):
-- Each run directory has one `predictions.csv` per dataset (full test-set
-  predictions from `src/inference/infer.py`, no fold filtering applied here). AUROC
-  treats the in-distribution set as label 0 and each OOD set as label 1.
-- To get a mean ± std rather than a single point estimate, AUROC is recomputed 10
-  times over 10 fixed seeds (`42, 1337, 12345, 8675309, 314159, 271828, 20240427,
-  987654321, 3735928559, 777`); each time, `min(1000, len(ID), len(OOD))` rows are
-  sampled without replacement from the ID and OOD predictions (`pandas.sample`,
-  seeded), scored, and passed to `sklearn.roc_auc_score`. The table reports the
-  mean and standard deviation of those 10 AUROC values.
-- Sampling is per-comparison, not shared: an ID dataset resampled for the Jung
-  comparison is independent of the same ID dataset resampled for the Kather2016
-  comparison.
+**Notes.** For each in-distribution/OOD dataset pair, AUROC is computed by treating
+the in-distribution predictions as the negative class and the OOD predictions as
+the positive class, using entropy as the decision score. To obtain a mean and
+standard deviation rather than a single estimate, this is repeated over 10 fixed
+random seeds, each time subsampling up to 1,000 rows without replacement from the
+full test-set predictions of each dataset; sampling is independent for every
+in-distribution/OOD pair (`src/metrics/calculate_ood_metrics.py`,
+`src/metrics/auc.py`).
 
 ---
 
@@ -142,18 +136,9 @@ SNGP Ensemble
 </tr>
 </table>
 
-**Notes — how these plots are made** (`src/visualization/predictive_entropy.py`):
-- Per dataset, 500 rows are sampled from `predictions.csv`, class-balanced by the
-  `target` column (roughly `500 / num_classes` per class, seed 42; any shortfall
-  from small classes is topped up from the remaining rows). This is a fixed
-  sample size independent of each dataset's actual size, so datasets are shown at
-  comparable density regardless of how many test rows they have.
-- Per-row entropy is the raw (unnormalized) Shannon entropy in nats,
-  `-Σ p·log(p)`, computed from the `class_probs` column — this is on a different
-  scale than the `[0, 1]`-normalized entropy used for AUROC above, since the plot
-  is about comparing shape/spread across datasets, not producing a bounded score.
-- Each dataset's 500 entropy values are turned into a KDE (`scipy.stats.gaussian_kde`,
-  Scott's rule bandwidth) evaluated on a shared x-range across all datasets in the
-  plot (padded 5% beyond the global min/max), so curves are directly comparable.
-  The in-distribution dataset is drawn as a solid line, OOD datasets as dashed
-  lines, colored by `DATASET_COLORS` in `src/visualization/style.py`.
+**Notes.** For each dataset, 500 predictions are sampled class-balanced by label
+(seed 42), and per-sample predictive entropy is computed in nats from the
+predicted class-probability vector. The resulting per-dataset entropy
+distributions are visualized as kernel density estimates (Scott's rule bandwidth)
+over a shared x-range, with the in-distribution dataset drawn as a solid line and
+OOD datasets as dashed lines (`src/visualization/predictive_entropy.py`).
