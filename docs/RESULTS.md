@@ -98,3 +98,31 @@ SNGP Ensemble
 </td>
 </tr>
 </table>
+
+Predictive-entropy KDE per model, trained on Wong (all institutions) and
+evaluated across all datasets (in-distribution vs. out-of-distribution).
+
+<table>
+<tr>
+<td align="center" width="20%">
+<img src="../figures/predictive_entropy/baseline_wong_entropy.png" width="100%"><br>
+Baseline
+</td>
+<td align="center" width="20%">
+<img src="../figures/predictive_entropy/deep_ensemble_baseline_wong_entropy.png" width="100%"><br>
+Deep Ensemble
+</td>
+<td align="center" width="20%">
+<img src="../figures/predictive_entropy/mc_baseline_wong_entropy.png" width="100%"><br>
+MC Dropout
+</td>
+<td align="center" width="20%">
+<img src="../figures/predictive_entropy/sngp_wong_entropy.png" width="100%"><br>
+SNGP
+</td>
+<td align="center" width="20%">
+<img src="../figures/predictive_entropy/deep_ensemble_sngp_wong_entropy.png" width="100%"><br>
+SNGP Ensemble
+</td>
+</tr>
+</table>
