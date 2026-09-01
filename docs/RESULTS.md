@@ -58,8 +58,7 @@ the positive class, using entropy as the decision score. To obtain a mean and
 standard deviation rather than a single estimate, this is repeated over 10 fixed
 random seeds, each time subsampling up to 1,000 rows without replacement from the
 full test-set predictions of each dataset; sampling is independent for every
-in-distribution/OOD pair (`src/metrics/calculate_ood_metrics.py`,
-`src/metrics/auc.py`).
+in-distribution/OOD pair.
 
 ---
 
@@ -141,4 +140,4 @@ SNGP Ensemble
 predicted class-probability vector. The resulting per-dataset entropy
 distributions are visualized as kernel density estimates (Scott's rule bandwidth)
 over a shared x-range, with the in-distribution dataset drawn as a solid line and
-OOD datasets as dashed lines (`src/visualization/predictive_entropy.py`).
+OOD datasets as dashed lines.
