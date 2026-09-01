@@ -28,6 +28,7 @@ from torchmetrics.classification import (
 
 rootutils.setup_root(__file__, indicator=".project-root", pythonpath=True)
 
+from src.metrics.brier import brier_score  # noqa: E402
 from src.models.outputs import ModelOutput  # noqa: E402
 
 
@@ -53,6 +54,7 @@ DEFAULT_INFER_METRICS_CFG: Dict[str, Any] = {
         "nll",
         "auroc",
         "auprc",
+        "brier",
     ],
 }
 
@@ -366,13 +368,17 @@ class BaseInferenceRunner:
                 value = metric.compute()
                 metrics[name] = float(value.detach().cpu().item())
 
-            if "nll" in list(self.cfg.infer.metrics["items"]) and self._records:
+            items = list(self.cfg.infer.metrics["items"])
+            if ("nll" in items or "brier" in items) and self._records:
                 records_df = pd.DataFrame(self._records)
                 probs = records_df["class_probs"].map(json.loads).to_list()
                 probs_t = torch.tensor(probs, dtype=torch.float32)
                 targets_t = torch.tensor(records_df["target"].tolist(), dtype=torch.long)
-                nll = torch.nn.functional.nll_loss(torch.log(probs_t + 1e-8), targets_t)
-                metrics["nll"] = float(nll.item())
+                if "nll" in items:
+                    nll = torch.nn.functional.nll_loss(torch.log(probs_t + 1e-8), targets_t)
+                    metrics["nll"] = float(nll.item())
+                if "brier" in items:
+                    metrics["brier"] = brier_score(probs_t, targets_t, num_classes=probs_t.shape[1])
         elif self._skip_metrics:
             logger.warning(self._skip_metrics_reason)
 

@@ -16,4 +16,5 @@ infer:
         nll,
         auroc,
         auprc,
+        brier,
       ]

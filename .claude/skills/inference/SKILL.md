@@ -19,8 +19,8 @@ scope here is expressible as an invocation of that entrypoint (see
 3. Fold: `train | validation | test | all`?
 4. Output directory.
 5. MC-Dropout passes, if applicable (baseline checkpoints only).
-6. Whether to compute metrics (accuracy/ECE/precision/recall/f1/nll) against labels,
-   or just produce predictions.
+6. Whether to compute metrics (accuracy/ECE/precision/recall/f1/nll/brier) against
+   labels, or just produce predictions.
 
 ## Before running: check the checkpoint
 

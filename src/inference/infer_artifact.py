@@ -21,6 +21,7 @@ from torchmetrics.classification import (
 )
 
 from src.inference.infer import _resolve_output_root
+from src.metrics.brier import brier_score
 from src.models.outputs import ModelOutput
 
 
@@ -235,20 +236,27 @@ class ArtifactInferenceRunner:
 
 		if bool(self.cfg.infer.metrics.enabled) and not self._skip_metrics:
 			records_df = pd.DataFrame(self._records) if self._records else None
-			compute_nll = "nll" in list(self.cfg.infer.metrics["items"])
+			items = list(self.cfg.infer.metrics["items"])
+			compute_nll = "nll" in items
+			compute_brier = "brier" in items
 
 			for stream_name, stream_metrics in self._metric_states.items():
 				for name, metric in stream_metrics.items():
 					value = metric.compute()
 					metrics[f"{stream_name}.{name}"] = float(value.detach().cpu().item())
 
-				if compute_nll and records_df is not None:
+				if (compute_nll or compute_brier) and records_df is not None:
 					stream_df = records_df[records_df["stream"] == stream_name]
 					if not stream_df.empty:
 						probs_t = torch.tensor(stream_df["class_probs"].map(json.loads).tolist(), dtype=torch.float32)
 						targets_t = torch.tensor(stream_df["target"].tolist(), dtype=torch.long)
-						nll = torch.nn.functional.nll_loss(torch.log(probs_t + 1e-8), targets_t)
-						metrics[f"{stream_name}.nll"] = float(nll.item())
+						if compute_nll:
+							nll = torch.nn.functional.nll_loss(torch.log(probs_t + 1e-8), targets_t)
+							metrics[f"{stream_name}.nll"] = float(nll.item())
+						if compute_brier:
+							metrics[f"{stream_name}.brier"] = brier_score(
+								probs_t, targets_t, num_classes=probs_t.shape[1]
+							)
 		elif self._skip_metrics:
 			logger.warning(self._skip_metrics_reason)
 
