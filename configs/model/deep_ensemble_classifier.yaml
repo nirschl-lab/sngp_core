@@ -13,7 +13,6 @@ net:
     name: baseline_classifier
     arch: resnet18
     num_classes: 8
-    dropout_p: 0.2
     pretrained: true
   num_estimators: 5
   task: classification

@@ -1,0 +1,105 @@
+# @package _global_
+
+# to execute this experiment run:
+# python train.py experiment=deep_ensemble_sngp_wong_ucdavis
+
+defaults:
+  - override /data: wong
+  - override /model: deep_ensemble_classifier
+  - override /callbacks: default
+  - override /trainer: default
+
+# all parameters below will be merged with parameters from default configurations set above
+# this allows you to overwrite only specified parameters
+name: "wong_ucdavis_deep_ensemble_sngp_resnet18"
+WANDB_PROJECT: ${oc.env:PROJECT_NAME}
+tags: ["deep_ensemble", "sngp", "wong", "resnet18", "training"]
+
+seed: 12345
+
+num_classes: 4
+num_estimators: 5  # Number of ensemble members
+
+trainer:
+  min_epochs: 150
+  max_epochs: 750  # 5 members x 150 epochs each -- matches the sngp's per-model budget
+  accelerator: "gpu"
+
+model:
+  num_estimators: ${num_estimators}
+  train_strategy: sequential  # Train one member at a time
+
+  optimizer:
+    lr: 0.006987025320140652
+    weight_decay: 4.953457867090508e-06
+
+  net:
+    base_model_spec:
+      name: sngp_classifier
+      arch: resnet18
+      num_classes: ${num_classes}
+      pretrained: false
+      rff_dim: 1024            # 256–1024 is a good range
+      length_scale: 3.9470953262218864
+      ridge_penalty: 0.0030056314601554384
+      mean_field: True
+    num_estimators: ${num_estimators}
+    task: classification
+
+  compile: false
+
+  scheduler:
+    # A single scheduler steps continuously across the whole 750-epoch run --
+    # set_active_member() only routes the forward pass, it does not reset the
+    # optimizer/scheduler per member. CosineAnnealingWarmRestarts handles this
+    # natively: it anneals to eta_min over T_0 epochs, then jumps back to the base LR
+    # and repeats -- exactly the fresh-start-per-member behavior each new (randomly
+    # initialized) member needs. T_0 must equal trainer.max_epochs // num_estimators
+    # (150 here); Hydra has no arithmetic resolver, so keep these in sync by hand if
+    # either changes.
+    _target_: torch.optim.lr_scheduler.CosineAnnealingWarmRestarts
+    _partial_: true
+    T_0: 150
+    T_mult: 1
+    eta_min: 0.0
+
+  num_classes: ${num_classes}
+  class_freq: ${data.class_freq}
+  cb_beta: 0.9999 # effective-number-of-samples reweighting; 0 = uniform, closer to 1 = more aggressive
+  focal_gamma: 1.5312519191681795 # focal-loss focusing parameter; 0 = plain class-balanced CE
+
+data:
+  datamodule:
+    batch_size: 128
+    institution: ucdavis
+
+logger:
+  wandb:
+    project: "${WANDB_PROJECT}"
+    tags: "${tags_with:${tags},${data.datamodule.institution}}"
+    group: "Training"
+    name: ${name}
+    log_model: True
+  aim:
+    experiment: ""
+
+callbacks:
+  early_stopping:
+    # Disabled: validation runs the FULL ensemble, so val/f1 dips every time a fresh,
+    # untrained member becomes active (see DeepEnsembleLitModule.on_train_epoch_start).
+    # A patience-based monitor would kill the run mid-cycle. The per-member epoch
+    # budget is fixed by design instead (trainer.max_epochs / num_estimators).
+    _target_: lightning.pytorch.callbacks.EarlyStopping
+    monitor: "val/f1"
+    patience: 999999
+    mode: "max"
+  model_checkpoint:
+    monitor: "val/f1"
+    mode: "max"
+    save_top_k: 1
+    save_last: True
+    verbose: True
+    filename: "epoch_{epoch:03d}"
+    auto_insert_metric_name: False
+  test_artifacts:
+    hist_bins: 10
