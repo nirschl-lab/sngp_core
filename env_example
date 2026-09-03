@@ -24,6 +24,14 @@ HYDRA_FULL_ERROR=1
 EXPERIMENTS_HOME=<path, e.g. /data1/<you>/experiments>
 PROJECT_NAME=<this project's folder name under EXPERIMENTS_HOME, e.g. sngp-core>
 
+# Artifact simulation (only needed for `data=artifact_image_classifier`).
+# BANK is the asset folder holding alpha/ and paired/; configs/paths/default.yaml exposes
+# it as ${paths.artifact_bank_dir}. CACHE is read by histo-artifact-sim itself -- it is
+# where the measured asset index is cached, so keep it off the project tree and somewhere
+# writable and persistent.
+HISTO_ARTIFACTS_BANK=<path to the artifact asset bank, e.g. /data1/shared/data/artifacts-org>
+HISTO_ARTIFACTS_CACHE=<path, e.g. /data1/shared/.cache/histo-artifact-cache>
+
 # Hugging Face cache -- read directly by the `datasets`/`huggingface_hub` libraries,
 # no Hydra config involved. See configs/paths/default.yaml.
 HF_TOKEN=<your-hf-api-token>

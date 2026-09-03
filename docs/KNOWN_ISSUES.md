@@ -19,7 +19,7 @@ Tracked here so they aren't re-litigated on every change.
   suite is fast/green.
 - **`histo-artifact-sim`'s own roadmap** (tissue-aware placement, multi-instance
   coverage, stain-space effects, elastic deformation, a real-vs-simulated validation
-  report) — see `configs/artifact/README.md`. External package, not this repo's scope.
+  report) — see that package's own README. External package, not this repo's scope.
 
 ## Known test flakiness
 
@@ -31,6 +31,9 @@ baseline:
   matches `configs/callbacks/model_checkpoint.yaml`/`default.yaml` (which now save
   `best.ckpt`/`last.ckpt`, not one file per epoch) — needs a product decision about
   the intended checkpoint-retention behavior before fixing, not just a test update.
+- `tests/test_eval.py::test_train_eval` fails with `KeyError: 'test/acc_final'`. That
+  metric is logged by `TestArtifactsCallback` (`src/callbacks/test_artifacts_callback.py`),
+  so the test depends on a callback the eval path does not always run.
 
 ## Frozen / archived
 

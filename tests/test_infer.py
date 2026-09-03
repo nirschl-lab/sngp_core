@@ -7,12 +7,15 @@ from src.inference import infer
 
 
 class DummyDataModule:
-    def __init__(self, artifact_csv_path: str, artifact_config_path: str, **kwargs) -> None:
-        self.artifact_csv_path = artifact_csv_path
-        self.artifact_config_path = artifact_config_path
+    def __init__(self, artifact_bank_dir: str, artifact_taxonomy_csv: str, **kwargs) -> None:
+        self.artifact_bank_dir = artifact_bank_dir
+        self.artifact_taxonomy_csv = artifact_taxonomy_csv
 
 
-def test_infer_datamodule_resolves_paths_root_dir(monkeypatch):
+def test_infer_datamodule_resolves_paths_interpolations(monkeypatch):
+    """The artifact datamodule's paths arrive as `${paths.*}` interpolations, which
+    `_instantiate_datamodule` has to resolve -- an unresolved one reaches the pipeline as
+    the literal string."""
     monkeypatch.setattr(infer.hydra.utils, "instantiate", lambda cfg, **kwargs: DummyDataModule(**cfg))
 
     cfg = OmegaConf.create(
@@ -20,19 +23,22 @@ def test_infer_datamodule_resolves_paths_root_dir(monkeypatch):
             "data": {
                 "datamodule": {
                     "_target_": "tests.test_infer.DummyDataModule",
-                    "artifact_csv_path": "${paths.root_dir}/data/artifact/artifacts.csv",
-                    "artifact_config_path": "${paths.root_dir}/configs/artifact/balanced.yaml",
+                    "artifact_bank_dir": "${paths.artifact_bank_dir}",
+                    "artifact_taxonomy_csv": "${paths.root_dir}/data/artifact/artifact_taxonomy_by_image.csv",
                 }
             },
             "infer": {"runtime": {"batch_size_override": None}},
-            "paths": {"root_dir": "/tmp/fake-root"},
+            "paths": {"root_dir": "/tmp/fake-root", "artifact_bank_dir": "/tmp/fake-bank"},
         }
     )
 
     datamodule = infer._instantiate_datamodule(cfg)
 
-    assert datamodule.artifact_csv_path == "/tmp/fake-root/data/artifact/artifacts.csv"
-    assert datamodule.artifact_config_path == "/tmp/fake-root/configs/artifact/balanced.yaml"
+    assert datamodule.artifact_bank_dir == "/tmp/fake-bank"
+    assert (
+        datamodule.artifact_taxonomy_csv
+        == "/tmp/fake-root/data/artifact/artifact_taxonomy_by_image.csv"
+    )
 
 
 def test_extract_ckpt_run_id_finds_the_project_timestamp():

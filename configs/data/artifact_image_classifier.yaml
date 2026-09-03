@@ -28,6 +28,26 @@ datamodule:
   sample_rate: 0
   institution: null # HF row-level institution id to filter to; null = all institutions
   simulate_artifacts_for_test: true
-  artifact_csv_path: ${paths.root_dir}/data/artifact/artifacts.csv
-  artifact_config_path: ${paths.root_dir}/configs/artifact/balanced.yaml
+
+  # Artifact simulation. The bank is indexed on first use and the measurements cached
+  # under $HISTO_ARTIFACTS_CACHE, so there is no manifest to maintain here.
+  artifact_bank_dir: ${paths.artifact_bank_dir}
+  # Categorises the bank per asset. Regenerate with scripts/artifact/build_taxonomy.py --
+  # the flat folder layout alone puts 17% of assets in categories no policy mentions.
+  artifact_taxonomy_csv: ${paths.root_dir}/data/artifact/artifact_taxonomy_by_image.csv
+  # A policy shipped in histo-artifact-sim ("balanced" or "empirical"); a path to a
+  # generated policy file also works. balanced gives all 11 categories equal occurrence,
+  # which is what makes rare ones (focus, scratch_glass) measurable.
+  artifact_config_path: balanced
   artifact_seed: 42
+  # The optics the patches are read as. Recorded in provenance and used whenever
+  # coverage is rescaled.
+  artifact_patch_magnification: 40
+  # Take the policy's coverage quartiles literally at whatever size the patch is. Under
+  # the package default ("field_of_view") they would be rescaled from the 1024px field
+  # they were measured on to Acevedo's 360px one -- an 8.09x multiplier that puts
+  # tissue_component at 433% and bone_calcification at 375%, i.e. total occlusion. See
+  # docs/DATASETS.md.
+  artifact_coverage_scaling: fixed
+  # Only consulted when artifact_coverage is "assets"; Acevedo's native patch edge.
+  artifact_reference_patch_px: 360

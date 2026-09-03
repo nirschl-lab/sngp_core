@@ -14,6 +14,13 @@ data_dir: ${paths.root_dir}/data/
 # not-yet-existing PROJECT_NAME folder) the first time a run needs to write into it.
 log_dir: ${oc.env:EXPERIMENTS_HOME}/${oc.env:PROJECT_NAME}
 
+# path to the artifact asset bank -- the folder holding alpha/ and paired/ that
+# histo-artifact-sim indexes for `data=artifact_image_classifier`. Machine-specific and
+# outside the repo, so it comes from HISTO_ARTIFACTS_BANK (see .env / env_example).
+# The sibling HISTO_ARTIFACTS_CACHE needs no entry here: histo_artifacts.paths reads it
+# from the environment or the nearest .env itself.
+artifact_bank_dir: ${oc.env:HISTO_ARTIFACTS_BANK}
+
 # path to output directory, created dynamically by hydra
 # path generation pattern is specified in `configs/hydra/default.yaml`
 # use it to store all files generated during the run, like ckpts and metrics

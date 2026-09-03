@@ -17,6 +17,12 @@ hydra-optuna-sweeper==1.2.0
 # comet-ml
 # aim>=3.16.2  # no lower than 3.16.2, see https://github.com/aimhubio/aim/issues/2550
 
+# --------- artifact simulation --------- #
+# Private GitLab; needs SSH access to git.doit.wisc.edu. uv.lock/pyproject.toml are
+# authoritative and pin an exact commit -- this line only keeps a pip install of
+# requirements.txt from silently producing a broken artifact pipeline.
+histo-artifact-sim @ git+ssh://git@git.doit.wisc.edu/smph/path/nirschl-lab/histo-artifact-sim.git@main
+
 # --------- others --------- #
 rootutils       # standardizing the project root setup
 pre-commit      # hooks for applying linters on commit

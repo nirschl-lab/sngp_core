@@ -15,8 +15,12 @@ _DATA_CONFIG_DIR = os.path.join(os.path.dirname(__file__), "..", "configs", "dat
 
 
 def _dataset_config_names() -> list[str]:
-    """Names of the per-dataset `configs/data/*.yaml` configs (excludes the
-    artifact-eval config, which has a different schema)."""
+    """Names of the per-dataset `configs/data/*.yaml` configs.
+
+    Excludes the artifact-eval config: it has a different schema, and it interpolates
+    `${paths.artifact_bank_dir}`, which resolves `HISTO_ARTIFACTS_BANK` -- an asset bank
+    outside the repo that is not present in a bare checkout or in CI.
+    """
     paths = glob.glob(os.path.join(_DATA_CONFIG_DIR, "*.yaml"))
     names = [os.path.splitext(os.path.basename(p))[0] for p in paths]
     return sorted(n for n in names if not n.startswith("artifact"))

@@ -341,6 +341,7 @@ def test_artifact_datamodule_fit_stage_never_simulates(monkeypatch: pytest.Monke
 
     dm = ArtifactImageDataModule(
         dataset_name="dummy",
+        artifact_bank_dir="/nonexistent-asset-bank",
         num_classes=2,
         batch_size=1,
         num_workers=0,
@@ -354,24 +355,45 @@ def test_artifact_datamodule_fit_stage_never_simulates(monkeypatch: pytest.Monke
     assert dm.artifact_pipeline is None
 
 
-def test_artifact_datamodule_test_stage_builds_paired_samples(monkeypatch: pytest.MonkeyPatch) -> None:
-    """A test-stage setup() with simulate_artifacts_for_test=True should build
-    ArtifactHFDataset, whose batches carry paired real/simulated images."""
-    monkeypatch.setattr(
-        "src.data.base_image_datamodule.datasets.load_dataset",
-        lambda _name: _fake_load_dataset_for_artifact(),
-    )
+_FAKE_LABEL_NAMES = ("debris", "pigment_ink", "global:illumination_gradient")
 
-    def _fake_simulator(image):
-        return {"image": image, "metadata": {}}
 
+def _install_fake_simulator(monkeypatch: pytest.MonkeyPatch, seen_seeds: list | None = None):
+    """Stand in for the histo_artifacts pipeline, matching its output contract."""
+
+    def _fake_simulator(image, seed=None, count=None):
+        if seen_seeds is not None:
+            seen_seeds.append(seed)
+        height, width = np.asarray(image).shape[:2]
+        return {
+            "image": image,
+            "artifact_mask": np.zeros((height, width), dtype=np.uint8),
+            "instance_mask": np.zeros((height, width), dtype=np.uint16),
+            "artifact_labels": np.zeros(len(_FAKE_LABEL_NAMES), dtype=np.float32),
+            "metadata": {},
+        }
+
+    _fake_simulator.label_names = _FAKE_LABEL_NAMES
     monkeypatch.setattr(
         "src.data.artifact_image_datamodule.build_artifact_pipeline",
         lambda **_kwargs: _fake_simulator,
     )
+    return _fake_simulator
+
+
+def test_artifact_datamodule_test_stage_builds_paired_samples(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A test-stage setup() with simulate_artifacts_for_test=True should build
+    ArtifactHFDataset, whose batches carry paired real/simulated images plus the
+    artifact mask and multi-hot labels."""
+    monkeypatch.setattr(
+        "src.data.base_image_datamodule.datasets.load_dataset",
+        lambda _name: _fake_load_dataset_for_artifact(),
+    )
+    _install_fake_simulator(monkeypatch)
 
     dm = ArtifactImageDataModule(
         dataset_name="dummy",
+        artifact_bank_dir="/nonexistent-asset-bank",
         num_classes=2,
         batch_size=1,
         num_workers=0,
@@ -381,9 +403,60 @@ def test_artifact_datamodule_test_stage_builds_paired_samples(monkeypatch: pytes
     dm.setup(stage="test")
 
     assert isinstance(dm.data_test, ArtifactHFDataset)
+    assert dm.artifact_label_names == _FAKE_LABEL_NAMES
+
     batch = next(iter(dm.test_dataloader()))
     assert "real_image" in batch and "artifact_simulated_image" in batch
     assert batch["real_image"].shape[0] == 1
+    # The mask has to survive the same spatial transforms as the image it describes,
+    # so its spatial dims must track the simulated image's rather than the raw input's.
+    assert "artifact_mask" in batch
+    assert batch["artifact_mask"].shape[-2:] == batch["artifact_simulated_image"].shape[-2:]
+    assert batch["artifact_labels"].shape == (1, len(_FAKE_LABEL_NAMES))
+
+
+def test_artifact_datamodule_seeds_each_sample_independently(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Every sample must get its own content-derived seed.
+
+    Without one, the simulator's single RNG stream is replayed identically inside each
+    forked DataLoader worker, so samples at the same within-worker offset receive the
+    same artifacts. Keying on image_id also keeps a sample's artifacts stable regardless
+    of worker count or shard order."""
+    dataset = {
+        "test": [
+            {"image": np.zeros((16, 16, 3), dtype=np.uint8), "label": 0, "image_id": f"test-{i}"}
+            for i in range(3)
+        ]
+    }
+    monkeypatch.setattr(
+        "src.data.base_image_datamodule.datasets.load_dataset", lambda _name: dataset
+    )
+    seen_seeds: list = []
+    _install_fake_simulator(monkeypatch, seen_seeds)
+
+    dm = ArtifactImageDataModule(
+        dataset_name="dummy",
+        artifact_bank_dir="/nonexistent-asset-bank",
+        num_classes=2,
+        batch_size=1,
+        num_workers=0,
+        pin_memory=False,
+        simulate_artifacts_for_test=True,
+        artifact_seed=7,
+    )
+    dm.setup(stage="test")
+    list(dm.test_dataloader())
+
+    assert len(seen_seeds) == 3
+    assert all(seed is not None for seed in seen_seeds)
+    assert len(set(seen_seeds)) == 3, "each image_id must map to a distinct seed"
+
+    # Reproducible: the same artifact_seed and image_ids must derive the same seeds.
+    from histo_artifacts.seeding import derive_seed
+
+    assert seen_seeds == [derive_seed(7, f"test-{i}") for i in range(3)]
 
 
 def test_artifact_datamodule_rejects_mismatched_class_to_idx(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -398,6 +471,7 @@ def test_artifact_datamodule_rejects_mismatched_class_to_idx(monkeypatch: pytest
 
     dm = ArtifactImageDataModule(
         dataset_name="dummy",
+        artifact_bank_dir="/nonexistent-asset-bank",
         num_classes=2,
         class_to_idx=wrong_classes,
         batch_size=1,
