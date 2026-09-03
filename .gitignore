@@ -165,6 +165,11 @@ data/**/*.json
 logs/**
 .env
 
+# Artifact-bank CSVs: local inputs plus the taxonomy generated from them by
+# scripts/artifact/build_taxonomy.py. Derived from a bank that lives outside the
+# repo ($HISTO_ARTIFACTS_BANK), so they are regenerated rather than versioned.
+data/artifact/
+
 # Aim logging
 .aim
 

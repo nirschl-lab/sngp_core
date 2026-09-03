@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git status *)",
+      "Bash(set -e)",
+      "Bash(git rm *)",
+      "Bash(git check-ignore *)",
+      "Bash(echo \"exit: $?\")",
+      "Bash(git mv *)",
+      "Bash(make clean *)",
+      "Read(//tmp/**)",
+      "Bash(git add *)",
+      "Bash(git commit -q -m ' *)",
+      "Bash(git worktree *)",
+      "Read(//tmp/baseline-check/**)",
+      "Bash(ln -sfn /home/wisc/maheswararao/code/lightning-hydra-template/.venv .venv)",
+      "Read(//usr/bin/**)",
+      "Bash(cd /tmp/baseline-check *)",
+      "Edit(/.claude/skills/inference/**)",
+      "Bash(python3 -c ' *)"
+    ]
+  }
+}
