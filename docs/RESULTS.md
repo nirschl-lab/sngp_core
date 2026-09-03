@@ -17,6 +17,21 @@
 | Monte Carlo Dropout | 0.9818 | 0.9821 | 0.9818 | 0.9817 | 0.9981 | 0.9953 | 3.5365 | 8.0981 | 3.7131 | 0.9818 | 0.9818 | 0.9818 |
 | SNGP | 0.9878 | 0.9879 | 0.9878 | 0.9878 | 0.9991 | 0.9977 | 8.8451 | 12.1092 | 4.3607 | 0.9878 | 0.9878 | 0.9878 |
 | SNGP Ensemble | 0.9904 | 0.9905 | 0.9904 | 0.9903 | 0.9996 | 0.9989 | 8.0570 | 10.5483 | 3.3336 | 0.9904 | 0.9904 | 0.9904 |
+
+### Wong (UC Davis)
+| Model | Accuracy ↑ | Precision ↑ | Recall ↑ | F1 ↑ | AUROC ↑ | AUPRC ↑ | ECE (×10⁻²) ↓ | NLL (×10⁻²) ↓ | Brier (×10⁻²) ↓ | Precision (Micro) ↑ | Recall (Micro) ↑ | F1 (Micro) ↑ |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| Baseline Classifier | 0.9881 | 0.9888 | 0.9860 | 0.9874 | 0.9988 | 0.9969 | 8.2786 | 11.6170 | 4.8461 | 0.9881 | 0.9881 | 0.9881 |
+| Deep Ensemble | 0.9899 | 0.9923 | 0.9874 | 0.9897 | 0.9992 | 0.9982 | 7.1133 | 9.7708 | 3.5234 | 0.9899 | 0.9899 | 0.9899 |
+| Monte Carlo Dropout | 0.9871 | 0.9878 | 0.9852 | 0.9864 | 0.9988 | 0.9970 | 8.2584 | 11.6993 | 4.8764 | 0.9871 | 0.9871 | 0.9871 |
+| SNGP | 0.9827 | 0.9845 | 0.9800 | 0.9821 | 0.9983 | 0.9957 | 5.6070 | 9.7136 | 3.7980 | 0.9827 | 0.9827 | 0.9827 |
+| SNGP Ensemble | **0.9910** | **0.9926** | **0.9889** | **0.9906** | **0.9997** | **0.9991** | **3.5961** | **5.8695** | **1.8979** | **0.9910** | **0.9910** | **0.9910** |
+
+**Notes.** The Wong (UC Davis) models are trained on the UC Davis institution subset
+of Wong only (`data.datamodule.institution=ucdavis`) and evaluated here on that same
+subset's test split, so this table is in-distribution for the UC Davis scanner. The
+Wong (All institutions) table above uses the unfiltered dataset for both training and
+evaluation; the two are therefore not directly comparable row-for-row.
 ---
 
 # Out-of-Distribution (OOD) settings
