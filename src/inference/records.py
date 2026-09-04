@@ -100,6 +100,22 @@ def build_metrics(num_classes: int, metric_names: Sequence[str]) -> Dict[str, An
     return metrics
 
 
+def _reduce_uncertainty(uncertainty: Optional[torch.Tensor]) -> Optional[torch.Tensor]:
+    """Collapse a per-class uncertainty tensor to one scalar per sample.
+
+    SNGP and DeepEnsemble already emit `[B, 1]`, but `BaselineClassifier.mc_predict`
+    returns the per-class std of the stacked per-pass logits, i.e. `[B, C]`. Reducing
+    by the mean over classes matches both existing precedents --
+    `src/inference/predict_image.py` (`std.mean(dim=1)`) and `DeepEnsemble.forward`
+    (`.var(dim=0).mean(dim=-1, keepdim=True)`).
+    """
+    if uncertainty is None:
+        return None
+    if uncertainty.dim() == 2 and uncertainty.shape[1] > 1:
+        return uncertainty.mean(dim=1, keepdim=True)
+    return uncertainty
+
+
 def extract_model_outputs(
     model: torch.nn.Module,
     x: torch.Tensor,
@@ -118,7 +134,7 @@ def extract_model_outputs(
         result = model.mc_predict(x, T=mc_passes, return_std=True, apply_softmax=True)
         if isinstance(result, tuple) and len(result) == 3:
             logits, probs, uncertainty = result
-            return BatchOutputs(logits=logits, probs=probs, uncertainty=uncertainty)
+            return BatchOutputs(logits=logits, probs=probs, uncertainty=_reduce_uncertainty(uncertainty))
 
     output = model(x)
 
@@ -144,7 +160,7 @@ def extract_model_outputs(
     return BatchOutputs(
         logits=logits,
         probs=probs,
-        uncertainty=uncertainty,
+        uncertainty=_reduce_uncertainty(uncertainty),
         raw_logits=raw_logits,
         member_logits=member_logits,
     )
@@ -161,6 +177,16 @@ def build_records(
 ) -> List[Dict[str, Any]]:
     """One `predictions.csv` row per sample in the batch.
 
+    `class_logits` is always written: softmax is shift-invariant, so logits cannot be
+    recovered from `class_probs` afterwards, and logit-magnitude metrics
+    (Dempster-Shafer, energy, temperature scaling) are unrecoverable without them.
+    `raw_logits` (SNGP's pre-mean-field head output) and `uncertainty` follow the
+    optional-column pattern -- present only when the net emits them.
+
+    All list-valued columns are `json.dumps`-encoded, so readers can `json.loads` them
+    without the `ast.literal_eval` fallback the training-time callback's repr-encoded
+    lists need.
+
     Column order follows first-seen-key order in these dicts, since
     `pd.DataFrame(records)` preserves it.
     """
@@ -170,10 +196,22 @@ def build_records(
     preds_cpu = preds.detach().cpu().tolist()
     confs_cpu = confs.detach().cpu().tolist()
     probs_cpu = outputs.probs.detach().cpu().tolist()
+    logits_cpu = outputs.logits.detach().cpu().tolist()
+
+    raw_logits_cpu = None
+    if outputs.raw_logits is not None:
+        raw_logits_cpu = outputs.raw_logits.detach().cpu().tolist()
 
     unc_cpu = None
     if outputs.uncertainty is not None:
-        unc_cpu = to_cpu_tensor(outputs.uncertainty).reshape(-1).tolist()
+        unc = to_cpu_tensor(outputs.uncertainty).reshape(-1)
+        if unc.numel() != len(image_ids):
+            raise ValueError(
+                f"uncertainty has {unc.numel()} values for {len(image_ids)} samples; expected one "
+                "per sample. A per-class uncertainty must be reduced before record building "
+                "(see _reduce_uncertainty)."
+            )
+        unc_cpu = unc.tolist()
 
     records: List[Dict[str, Any]] = []
     for idx in range(len(image_ids)):
@@ -183,9 +221,12 @@ def build_records(
             "target": int(targets_cpu[idx]),
             "prediction": int(preds_cpu[idx]),
             "confidence": float(confs_cpu[idx]),
+            "class_logits": json.dumps(logits_cpu[idx]),
             "class_probs": json.dumps(probs_cpu[idx]),
             "stream": stream_name,
         }
+        if raw_logits_cpu is not None:
+            record["raw_logits"] = json.dumps(raw_logits_cpu[idx])
         if unc_cpu is not None:
             record["uncertainty"] = float(unc_cpu[idx])
         records.append(record)

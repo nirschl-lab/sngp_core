@@ -21,6 +21,17 @@ Tracked here so they aren't re-litigated on every change.
   coverage, stain-space effects, elastic deformation, a real-vs-simulated validation
   report) — see that package's own README. External package, not this repo's scope.
 
+## Stale data on disk
+
+- **The `uncertainty` column in every pre-existing `mc_*` inference run is wrong.**
+  `BaselineClassifier.mc_predict` returns a per-class std (`[B, C]`), but the old record
+  builder flattened it and took the first `B` values, so each row got another sample's
+  first-class std. Affects `infer/mc_baseline_classifier_{acevedo,wong}/**/predictions.csv`
+  written before the fix in `src/inference/records.py::_reduce_uncertainty` (mean over
+  classes, matching `predict_image.py`). No published number moves — nothing reads that
+  column; `csv/ood_metrics/*.csv` scores on max-softmax and entropy. Re-running those
+  checkpoints regenerates the column correctly.
+
 ## Known test flakiness
 
 Pre-existing, not caused by any particular change, verified against an untouched

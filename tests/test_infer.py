@@ -225,7 +225,16 @@ def test_build_records_emits_one_row_per_sample_with_expected_columns():
     )
 
     assert len(rows) == 2
-    assert list(rows[0]) == ["image_id", "fold", "target", "prediction", "confidence", "class_probs", "stream"]
+    assert list(rows[0]) == [
+        "image_id",
+        "fold",
+        "target",
+        "prediction",
+        "confidence",
+        "class_logits",
+        "class_probs",
+        "stream",
+    ]
     assert rows[0]["image_id"] == "a"
     assert rows[1]["target"] == 1
     # class_probs is JSON, not a repr'd Python list -- downstream readers json.loads it.
@@ -307,3 +316,138 @@ def test_write_outputs_accepts_a_dictconfig_save_section(tmp_path):
     )
     assert (tmp_path / "predictions.csv").exists()
     assert (tmp_path / "metrics.json").exists()
+
+
+# --- class_logits / raw_logits persistence, and the uncertainty reduction ---------
+
+
+def test_build_records_always_writes_class_logits():
+    """Softmax is shift-invariant, so logits are unrecoverable from class_probs --
+    they have to be persisted at write time or not at all."""
+    logits = torch.tensor([[2.0, 0.0], [-1.0, 3.0]])
+    rows = records.build_records(
+        image_ids=["a", "b"],
+        fold=["test", "test"],
+        targets=torch.tensor([0, 1]),
+        preds=torch.tensor([0, 1]),
+        outputs=_batch_outputs(logits),
+        stream_name="default",
+    )
+
+    assert json.loads(rows[0]["class_logits"]) == pytest.approx([2.0, 0.0])
+    assert json.loads(rows[1]["class_logits"]) == pytest.approx([-1.0, 3.0])
+
+
+def test_class_logits_precedes_class_probs_in_column_order():
+    rows = records.build_records(
+        image_ids=["a"],
+        fold=["test"],
+        targets=torch.tensor([0]),
+        preds=torch.tensor([0]),
+        outputs=_batch_outputs(torch.tensor([[1.0, 0.0]])),
+        stream_name="default",
+    )
+    columns = list(rows[0])
+    assert columns.index("class_logits") == columns.index("class_probs") - 1
+
+
+def test_class_logits_softmax_matches_class_probs_for_a_plain_forward():
+    """The consistency guarantee downstream consumers may rely on -- for every runner
+    path except MC-Dropout (see the paired test below)."""
+    logits = torch.tensor([[2.0, 0.0, -1.0]])
+    rows = records.build_records(
+        image_ids=["a"],
+        fold=["test"],
+        targets=torch.tensor([0]),
+        preds=torch.tensor([0]),
+        outputs=_batch_outputs(logits),
+        stream_name="default",
+    )
+
+    recovered = torch.softmax(torch.tensor(json.loads(rows[0]["class_logits"])), dim=0)
+    assert recovered.tolist() == pytest.approx(json.loads(rows[0]["class_probs"]))
+
+
+def test_class_logits_softmax_deliberately_differs_from_class_probs_under_mc_dropout():
+    """`mc_predict` returns mean-of-logits alongside mean-of-softmax, and those are not
+    the same thing. Pinned so nobody "fixes" it into a consistency bug report."""
+
+    class _McNet(torch.nn.Module):
+        def mc_predict(self, x, T, return_std, apply_softmax):
+            # Deliberately asymmetric: symmetric passes make the two estimators coincide.
+            per_pass = torch.tensor([[[4.0, 0.0]], [[0.0, 0.0]]])  # [T=2, B=1, C=2]
+            mean_logits = per_pass.mean(0)
+            mean_probs = torch.softmax(per_pass, dim=-1).mean(0)
+            return mean_logits, mean_probs, per_pass.std(0, unbiased=False)
+
+    out = records.extract_model_outputs(_McNet(), torch.zeros(1, 3), use_mc_dropout=True, mc_passes=2)
+    rows = records.build_records(
+        image_ids=["a"],
+        fold=["test"],
+        targets=torch.tensor([0]),
+        preds=torch.tensor([0]),
+        outputs=out,
+        stream_name="default",
+    )
+
+    recovered = torch.softmax(torch.tensor(json.loads(rows[0]["class_logits"])), dim=0)
+    assert recovered.tolist() != pytest.approx(json.loads(rows[0]["class_probs"]))
+    # softmax(mean logits [2, 0]) vs mean(softmax([4,0]), softmax([0,0])).
+    assert recovered.tolist() == pytest.approx([0.8808, 0.1192], abs=1e-4)
+    assert json.loads(rows[0]["class_probs"]) == pytest.approx([0.7411, 0.2589], abs=1e-4)
+
+
+def test_build_records_writes_raw_logits_only_when_the_net_emits_them():
+    with_raw = records.build_records(
+        image_ids=["a"],
+        fold=["test"],
+        targets=torch.tensor([0]),
+        preds=torch.tensor([0]),
+        outputs=_batch_outputs(torch.tensor([[1.0, 0.0]]), raw_logits=torch.tensor([[3.0, 1.0]])),
+        stream_name="default",
+    )
+    without_raw = records.build_records(
+        image_ids=["a"],
+        fold=["test"],
+        targets=torch.tensor([0]),
+        preds=torch.tensor([0]),
+        outputs=_batch_outputs(torch.tensor([[1.0, 0.0]])),
+        stream_name="default",
+    )
+
+    assert json.loads(with_raw[0]["raw_logits"]) == pytest.approx([3.0, 1.0])
+    assert "raw_logits" not in without_raw[0]
+
+
+def test_per_class_uncertainty_is_reduced_to_one_value_per_sample():
+    """mc_predict's std is [B, C]; the record column is one scalar per sample."""
+    per_class = torch.tensor([[0.2, 0.4], [1.0, 3.0]])
+    assert records._reduce_uncertainty(per_class).shape == (2, 1)
+    assert records._reduce_uncertainty(per_class).flatten().tolist() == pytest.approx([0.3, 2.0])
+
+
+def test_already_scalar_uncertainty_passes_through_unchanged():
+    """SNGP / DeepEnsemble emit [B, 1] and must not be touched."""
+    scalar = torch.tensor([[0.25], [0.75]])
+    assert torch.equal(records._reduce_uncertainty(scalar), scalar)
+    assert records._reduce_uncertainty(None) is None
+
+
+def test_build_records_rejects_a_misaligned_uncertainty_tensor():
+    """The old code flattened [B, C] and silently took the first B values, so every
+    mc_* run's uncertainty column was misaligned. Now it fails loudly."""
+    outputs = records.BatchOutputs(
+        logits=torch.zeros(2, 2),
+        probs=torch.full((2, 2), 0.5),
+        uncertainty=torch.tensor([[0.1, 0.2], [0.3, 0.4]]),  # unreduced [B, C]
+    )
+
+    with pytest.raises(ValueError, match="expected one per sample"):
+        records.build_records(
+            image_ids=["a", "b"],
+            fold=["test", "test"],
+            targets=torch.tensor([0, 1]),
+            preds=torch.tensor([0, 1]),
+            outputs=outputs,
+            stream_name="default",
+        )
