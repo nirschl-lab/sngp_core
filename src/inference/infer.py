@@ -5,31 +5,27 @@ import json
 import re
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple, Union
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Union
 
 import hydra
 from hydra import compose, initialize_config_dir
-import numpy as np
 import pandas as pd
 import rootutils
 import torch
 from loguru import logger
 from omegaconf import DictConfig, OmegaConf
 from torch.utils.data import DataLoader
-from torchmetrics.classification import (
-    Accuracy,
-    MulticlassAUROC,
-    MulticlassAveragePrecision,
-    MulticlassCalibrationError,
-    MulticlassF1Score,
-    MulticlassPrecision,
-    MulticlassRecall,
-)
 
 rootutils.setup_root(__file__, indicator=".project-root", pythonpath=True)
 
+from src.inference.records import (  # noqa: E402
+    build_metrics,
+    build_records,
+    extract_model_outputs,
+    resolve_device,
+    write_outputs,
+)
 from src.metrics.brier import brier_score  # noqa: E402
-from src.models.outputs import ModelOutput  # noqa: E402
 
 
 DEFAULT_INFER_RUNTIME_CFG: Dict[str, Any] = {
@@ -174,81 +170,6 @@ def _normalize_fold(fold: str) -> str:
     raise ValueError(f"Unsupported fold '{fold}'. Use train, val, test, or all.")
 
 
-def _resolve_device(device_name: str) -> torch.device:
-    if device_name == "cuda" and not torch.cuda.is_available():
-        logger.warning("CUDA requested but unavailable. Falling back to CPU.")
-        return torch.device("cpu")
-    return torch.device(device_name)
-
-
-def _to_cpu_tensor(x: Any) -> Optional[torch.Tensor]:
-    if x is None:
-        return None
-    if torch.is_tensor(x):
-        return x.detach().cpu()
-    return torch.as_tensor(x).detach().cpu()
-
-
-def _extract_logits_probs(
-    model: torch.nn.Module,
-    x: torch.Tensor,
-    use_mc_dropout: bool,
-    mc_passes: int,
-) -> Tuple[torch.Tensor, torch.Tensor, Optional[torch.Tensor]]:
-    """Return (logits, probs, uncertainty)."""
-
-    if use_mc_dropout and hasattr(model, "mc_predict"):
-        result = model.mc_predict(x, T=mc_passes, return_std=True, apply_softmax=True)
-        if isinstance(result, tuple) and len(result) == 3:
-            logits, probs, uncertainty = result
-            return logits, probs, uncertainty
-
-    output = model(x)
-
-    uncertainty = None
-    if isinstance(output, ModelOutput):
-        logits = output.logits
-        uncertainty = output.variance
-    elif isinstance(output, tuple):
-        # Legacy nets returning a bare (mean_field_logits, raw_logits, pred_var) tuple.
-        logits = output[0]
-        if len(output) >= 3 and torch.is_tensor(output[2]):
-            uncertainty = output[2]
-    else:
-        logits = output
-
-    probs = torch.softmax(logits, dim=1)
-    return logits, probs, uncertainty
-
-
-def _build_metrics(num_classes: int, metric_names: Sequence[str]) -> Dict[str, Any]:
-    metric_names = set(metric_names)
-    metrics: Dict[str, Any] = {}
-
-    if "acc" in metric_names:
-        metrics["acc"] = Accuracy(task="multiclass", num_classes=num_classes)
-    if "ece" in metric_names:
-        metrics["ece"] = MulticlassCalibrationError(num_classes=num_classes, n_bins=10, norm="l1")
-    if "precision" in metric_names:
-        metrics["precision"] = MulticlassPrecision(num_classes=num_classes, average="macro")
-    if "recall" in metric_names:
-        metrics["recall"] = MulticlassRecall(num_classes=num_classes, average="macro")
-    if "f1" in metric_names:
-        metrics["f1"] = MulticlassF1Score(num_classes=num_classes, average="macro")
-    if "precision_micro" in metric_names:
-        metrics["precision_micro"] = MulticlassPrecision(num_classes=num_classes, average="micro")
-    if "recall_micro" in metric_names:
-        metrics["recall_micro"] = MulticlassRecall(num_classes=num_classes, average="micro")
-    if "f1_micro" in metric_names:
-        metrics["f1_micro"] = MulticlassF1Score(num_classes=num_classes, average="micro")
-    if "auroc" in metric_names:
-        metrics["auroc"] = MulticlassAUROC(num_classes=num_classes, average="macro")
-    if "auprc" in metric_names:
-        metrics["auprc"] = MulticlassAveragePrecision(num_classes=num_classes, average="macro")
-
-    return metrics
-
-
 class BaseInferenceRunner:
     """Framework-agnostic inference wrapper around a torch model and dataloader."""
 
@@ -267,7 +188,7 @@ class BaseInferenceRunner:
         self.class_names = class_names or {}
         self.expected_num_classes = expected_num_classes
 
-        self.device = _resolve_device(str(self.cfg.infer.runtime.device))
+        self.device = resolve_device(str(self.cfg.infer.runtime.device))
         self.model.to(self.device)
         self.model.eval()
 
@@ -314,7 +235,7 @@ class BaseInferenceRunner:
     def _ensure_metrics(self, num_classes: int) -> None:
         if self._metric_states:
             return
-        self._metric_states = _build_metrics(num_classes, list(self.cfg.infer.metrics["items"]))
+        self._metric_states = build_metrics(num_classes, list(self.cfg.infer.metrics["items"]))
         for metric in self._metric_states.values():
             metric.to(self.device)
 
@@ -324,41 +245,6 @@ class BaseInferenceRunner:
                 metric.update(probs, targets)
             else:
                 metric.update(preds, targets)
-
-    def _append_records(
-        self,
-        image_ids: Sequence[Any],
-        fold: Sequence[Any],
-        targets: torch.Tensor,
-        preds: torch.Tensor,
-        probs: torch.Tensor,
-        uncertainty: Optional[torch.Tensor],
-        stream_name: str,
-    ) -> None:
-        confs = probs.max(dim=1).values
-
-        targets_cpu = targets.detach().cpu().tolist()
-        preds_cpu = preds.detach().cpu().tolist()
-        confs_cpu = confs.detach().cpu().tolist()
-        probs_cpu = probs.detach().cpu().tolist()
-
-        unc_cpu = None
-        if uncertainty is not None:
-            unc_cpu = _to_cpu_tensor(uncertainty).view(-1).tolist()
-
-        for idx in range(len(image_ids)):
-            record = {
-                "image_id": str(image_ids[idx]),
-                "fold": str(fold[idx]) if fold is not None else "unknown",
-                "target": int(targets_cpu[idx]),
-                "prediction": int(preds_cpu[idx]),
-                "confidence": float(confs_cpu[idx]),
-                "class_probs": json.dumps(probs_cpu[idx]),
-                "stream": stream_name,
-            }
-            if unc_cpu is not None:
-                record["uncertainty"] = float(unc_cpu[idx])
-            self._records.append(record)
 
     def _finalize(self) -> Dict[str, Any]:
         metrics: Dict[str, Any] = {}
@@ -382,17 +268,12 @@ class BaseInferenceRunner:
         elif self._skip_metrics:
             logger.warning(self._skip_metrics_reason)
 
-        if bool(self.cfg.infer.save.save_csv):
-            df = pd.DataFrame(self._records)
-            csv_path = self.output_root / "predictions.csv"
-            df.to_csv(csv_path, index=False)
-            logger.info(f"Saved predictions to {csv_path}")
-
-        if bool(self.cfg.infer.save.save_metrics_json):
-            metrics_path = self.output_root / "metrics.json"
-            with open(metrics_path, "w", encoding="utf-8") as f:
-                json.dump(metrics, f, indent=2)
-            logger.info(f"Saved metrics to {metrics_path}")
+        write_outputs(
+            output_root=self.output_root,
+            records=self._records,
+            metrics=metrics,
+            save_cfg=self.cfg.infer.save,
+        )
 
         return metrics
 
@@ -409,33 +290,34 @@ class ClassificationInferenceRunner(BaseInferenceRunner):
             x = x.to(self.device)
             targets = targets.to(self.device)
 
-            logits, probs, uncertainty = _extract_logits_probs(
+            outputs = extract_model_outputs(
                 model=self.model,
                 x=x,
                 use_mc_dropout=bool(self.cfg.infer.runtime.use_mc_dropout),
                 mc_passes=int(self.cfg.infer.runtime.mc_passes),
             )
-            if not torch.isfinite(logits).all():
+            if not torch.isfinite(outputs.logits).all():
                 raise RuntimeError("Encountered non-finite logits during inference.")
-            if not torch.isfinite(probs).all():
+            if not torch.isfinite(outputs.probs).all():
                 raise RuntimeError("Encountered non-finite probabilities during inference.")
-            preds = torch.argmax(probs, dim=1)
+            preds = torch.argmax(outputs.probs, dim=1)
 
-            num_classes = probs.shape[1]
+            num_classes = outputs.probs.shape[1]
             self._check_metric_compatibility(targets=targets, output_num_classes=num_classes)
 
             if bool(self.cfg.infer.metrics.enabled) and not self._skip_metrics:
                 self._ensure_metrics(num_classes=num_classes)
-                self._update_metrics(probs=probs, preds=preds, targets=targets)
+                self._update_metrics(probs=outputs.probs, preds=preds, targets=targets)
 
-            self._append_records(
-                image_ids=image_ids,
-                fold=fold,
-                targets=targets,
-                preds=preds,
-                probs=probs,
-                uncertainty=uncertainty,
-                stream_name="default",
+            self._records.extend(
+                build_records(
+                    image_ids=image_ids,
+                    fold=fold,
+                    targets=targets,
+                    preds=preds,
+                    outputs=outputs,
+                    stream_name="default",
+                )
             )
 
         return self._finalize()
@@ -498,7 +380,7 @@ def run_inference(cfg: DictConfig) -> Dict[str, Any]:
     cfg = _resolve_sections(cfg)
     fold = _normalize_fold(str(cfg.get("fold", "test")))
 
-    device = _resolve_device(str(cfg.infer.runtime.device))
+    device = resolve_device(str(cfg.infer.runtime.device))
 
     datamodule = _instantiate_datamodule(cfg)
 
