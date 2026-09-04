@@ -801,7 +801,7 @@ wheels = [
 [[package]]
 name = "histo-artifact-sim"
 version = "0.1.0"
-source = { git = "ssh://git@git.doit.wisc.edu/smph/path/nirschl-lab/histo-artifact-sim.git?rev=main#67153913cf2ae0d8b854c47d03e3a9394aaadfb8" }
+source = { git = "ssh://git@git.doit.wisc.edu/smph/path/nirschl-lab/histo-artifact-sim.git?rev=main#43d6e27068f02dbe843c10bae4927a4e89ec1bec" }
 dependencies = [
     { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "numpy", version = "2.3.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },

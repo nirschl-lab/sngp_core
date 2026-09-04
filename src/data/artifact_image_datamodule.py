@@ -1,4 +1,3 @@
-from dataclasses import replace
 from pathlib import Path
 from typing import Dict, Optional
 
@@ -53,16 +52,15 @@ def build_artifact_pipeline(
     bank or from the named policy. Both default to the policy here, which keeps the
     shipped `balanced` quartiles rather than re-deriving them.
 
-    `coverage_scaling="fixed"` is the reason this does not just call `from_assets` and
-    stop. Coverage is normally a fraction of a *field of view*: the assets are 40x cutouts
-    measured against a 1024px patch, so on Acevedo's 360px patch the same fragment covers
-    8.09x as much, which puts `tissue_component` at 433% and `bone_calcification` at 375%
-    -- total occlusion for several of eleven equally-weighted categories, and no longer a
-    robustness test of anything. `fixed` takes the quartiles literally at whatever size
-    the patch is, keeping artifacts visible without swallowing the cell. Deriving coverage
-    from the bank instead (`coverage="assets"`) does not avoid this: it folds the same
-    factor into the quartiles themselves. Pass `coverage_scaling=None` to keep whatever
-    the policy declares.
+    `coverage_scaling="fixed"` is what keeps artifacts legible. Coverage is normally a
+    fraction of a *field of view*: the assets are 40x cutouts measured against a 1024px
+    patch, so on Acevedo's 360px patch the same fragment covers 8.09x as much, which puts
+    `tissue_component` at 433% and `bone_calcification` at 375% -- total occlusion for
+    several of eleven equally-weighted categories, and no longer a robustness test of
+    anything. `fixed` takes the quartiles literally at whatever size the patch is.
+    Deriving coverage from the bank instead (`coverage="assets"`) does not avoid this: it
+    folds the same factor into the quartiles themselves. Pass `coverage_scaling=None` to
+    keep whatever the policy declares.
     """
     try:
         from histo_artifacts import ArtifactPipeline
@@ -79,23 +77,13 @@ def build_artifact_pipeline(
         coverage=coverage,
         weights=weights,
         reference_patch_px=reference_patch_px,
+        coverage_scaling=coverage_scaling,
         taxonomy_csv=taxonomy_csv,
         default_magnification=ASSET_MAGNIFICATION,
         # Loud by default: a configured category with no assets loses its weight and
         # silently changes the realized distribution.
         on_missing_category=on_missing_category,
     )
-
-    if coverage_scaling is not None and pipeline.config.coverage_scaling != coverage_scaling:
-        # Rebuilt rather than mutated: SimulationConfig is frozen, and the catalog is
-        # reused so this costs nothing -- the indexing already happened above.
-        pipeline = ArtifactPipeline(
-            pipeline.catalog,
-            replace(pipeline.config, coverage_scaling=coverage_scaling),
-            seed=seed,
-            patch_magnification=patch_magnification,
-            on_missing_category=on_missing_category,
-        )
 
     provenance = pipeline.provenance
     logger.info(
