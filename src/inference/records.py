@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Sequence
 
@@ -247,10 +248,16 @@ def write_outputs(
     records: Sequence[Mapping[str, Any]],
     metrics: Mapping[str, Any],
     save_cfg: Mapping[str, Any],
+    provenance: Optional[Mapping[str, Any]] = None,
 ) -> None:
-    """Write `predictions.csv` and `metrics.json` under `output_root`, per `save_cfg`."""
+    """Write `predictions.csv`, `metrics.json` and `run.json` under `output_root`.
+
+    Called from `_finalize`, so nothing is written for a run that crashed partway.
+    """
+    records = list(records)
+
     if _flag(save_cfg, "save_csv", True):
-        df = pd.DataFrame(list(records))
+        df = pd.DataFrame(records)
         csv_path = output_root / "predictions.csv"
         df.to_csv(csv_path, index=False)
         logger.info(f"Saved predictions to {csv_path}")
@@ -260,3 +267,15 @@ def write_outputs(
         with open(metrics_path, "w", encoding="utf-8") as f:
             json.dump(dict(metrics), f, indent=2)
         logger.info(f"Saved metrics to {metrics_path}")
+
+    if provenance is not None and _flag(save_cfg, "save_run_json", True):
+        run_json = dict(provenance)
+        run_json["written_at"] = datetime.now().isoformat(timespec="seconds")
+        run_json["n_rows"] = len(records)
+        # Column list so a manifest validator can answer "does this run have logits?"
+        # without opening a multi-MB CSV.
+        run_json["columns"] = list(records[0]) if records else []
+        run_path = output_root / "run.json"
+        with open(run_path, "w", encoding="utf-8") as f:
+            json.dump(run_json, f, indent=2, default=str)
+        logger.info(f"Saved run provenance to {run_path}")

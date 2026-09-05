@@ -58,6 +58,7 @@ DEFAULT_INFER_SAVE_CFG: Dict[str, Any] = {
     "run_name": "",
     "save_csv": True,
     "save_metrics_json": True,
+    "save_run_json": True,
     "save_images": False,
     "max_images_to_save": 64,
 }
@@ -181,12 +182,14 @@ class BaseInferenceRunner:
         class_names: Optional[Dict[int, str]] = None,
         expected_num_classes: Optional[int] = None,
         default_run_name: str = "",
+        provenance: Optional[Dict[str, Any]] = None,
     ) -> None:
         self.model = model
         self.dataloader = dataloader
         self.cfg = cfg
         self.class_names = class_names or {}
         self.expected_num_classes = expected_num_classes
+        self.provenance = provenance
 
         self.device = resolve_device(str(self.cfg.infer.runtime.device))
         self.model.to(self.device)
@@ -273,6 +276,7 @@ class BaseInferenceRunner:
             records=self._records,
             metrics=metrics,
             save_cfg=self.cfg.infer.save,
+            provenance=self.provenance,
         )
 
         return metrics
@@ -407,12 +411,14 @@ def run_inference(cfg: DictConfig) -> Dict[str, Any]:
     if not class_names and ckpt_meta.idx_to_class:
         class_names = ckpt_meta.idx_to_class
 
+    is_deep_ensemble = ckpt_meta.net_spec.get("name") == "deep_ensemble"
+
     default_run_name = derive_default_run_name(
         ckpt_path=cfg.ckpt_path,
         net_name=str(ckpt_meta.net_spec.get("name", "model")),
         data_name=str(cfg.data.name),
         use_mc_dropout=bool(cfg.infer.runtime.use_mc_dropout),
-        is_deep_ensemble=ckpt_meta.net_spec.get("name") == "deep_ensemble",
+        is_deep_ensemble=is_deep_ensemble,
     )
 
     expected_num_classes = None
@@ -420,6 +426,35 @@ def run_inference(cfg: DictConfig) -> Dict[str, Any]:
         dm_num_classes = getattr(datamodule, "num_classes")
         if isinstance(dm_num_classes, int):
             expected_num_classes = dm_num_classes
+
+    member_source: Optional[str] = None
+    num_members: Optional[int] = None
+    if is_deep_ensemble:
+        member_source = "ensemble"
+        num_members = ckpt_meta.net_spec.get("num_estimators")
+    elif bool(cfg.infer.runtime.use_mc_dropout):
+        member_source = "mc_dropout"
+        num_members = int(cfg.infer.runtime.mc_passes)
+
+    provenance: Dict[str, Any] = {
+        "predictions_csv_schema": 2,
+        "ckpt_path": str(cfg.ckpt_path),
+        "ckpt_run_id": _extract_ckpt_run_id(cfg.ckpt_path),
+        "net_spec": dict(ckpt_meta.net_spec),
+        "lit_module": ckpt_meta.lit_module,
+        "num_classes": ckpt_meta.num_classes,
+        "idx_to_class": ckpt_meta.idx_to_class,
+        "dataset_name": str(cfg.data.name),
+        "fold": fold,
+        "run_name": default_run_name,
+        "member_source": member_source,
+        "num_members": num_members,
+        "infer": {
+            "runtime": OmegaConf.to_container(cfg.infer.runtime, resolve=True),
+            "metrics": OmegaConf.to_container(cfg.infer.metrics, resolve=True),
+            "save": OmegaConf.to_container(cfg.infer.save, resolve=True),
+        },
+    }
 
     if dataloader is None:
         raise RuntimeError("Datamodule returned no test dataloader.")
@@ -450,6 +485,7 @@ def run_inference(cfg: DictConfig) -> Dict[str, Any]:
             class_names=class_names,
             expected_num_classes=expected_num_classes,
             default_run_name=default_run_name,
+            provenance=provenance,
         )
     else:
         logger.info("Detected standard classification dataloader format. Using ClassificationInferenceRunner.")
@@ -460,6 +496,7 @@ def run_inference(cfg: DictConfig) -> Dict[str, Any]:
             class_names=class_names,
             expected_num_classes=expected_num_classes,
             default_run_name=default_run_name,
+            provenance=provenance,
         )
 
     metrics = runner.run()

@@ -54,12 +54,14 @@ class ArtifactInferenceRunner:
 		class_names: Optional[Dict[int, str]] = None,
 		expected_num_classes: Optional[int] = None,
 		default_run_name: str = "",
+		provenance: Optional[Dict[str, Any]] = None,
 	) -> None:
 		self.model = model
 		self.dataloader = dataloader
 		self.cfg = cfg
 		self.class_names = class_names or {}
 		self.expected_num_classes = expected_num_classes
+		self.provenance = provenance
 
 		self.device = resolve_device(str(self.cfg.infer.runtime.device))
 		self.model.to(self.device)
@@ -155,6 +157,7 @@ class ArtifactInferenceRunner:
 			records=self._records,
 			metrics=metrics,
 			save_cfg=self.cfg.infer.save,
+			provenance=self.provenance,
 		)
 
 		return metrics

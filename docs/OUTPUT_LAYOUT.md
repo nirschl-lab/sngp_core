@@ -48,6 +48,7 @@ $EXPERIMENTS_HOME/$PROJECT_NAME/
 └── infer/[deep_ensemble_|mc_]<netname_dataset>/<ckpt_run_id>/<data.name>/
     ├── predictions.csv
     ├── metrics.json
+    ├── run.json                   # provenance sidecar, if infer.save.save_run_json=true (default)
     └── images/                    # artifact mode only, if infer.save.save_images=true
 ```
 
@@ -175,6 +176,14 @@ against the same dataset with a different `fold` (or a second time with the same
 the previous `predictions.csv`/`metrics.json` in place. Set `infer.save.run_name` explicitly (a
 manual override that bypasses the auto-derived path entirely) if you need distinct folders per
 fold or per rerun.
+
+Each run also writes a `run.json` provenance sidecar (`src/inference/records.py::write_outputs`,
+gated by `infer.save.save_run_json`, default on) -- the checkpoint path, its `net_spec`, `fold`,
+resolved `infer.{runtime,metrics,save}`, `member_source`/`num_members` (`"ensemble"`/`"mc_dropout"`/
+`null`, and how many), the exact `predictions.csv` column list, and a row count. It is the only
+place the checkpoint-to-run binding is recorded on disk -- see [§8](#8-known-quirks) for why
+nothing else records it -- and is written last, from `_finalize`, so a run that crashed partway
+leaves no `run.json` behind either.
 
 ## 6. Ensemble-member parallel training outputs
 

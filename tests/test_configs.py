@@ -236,3 +236,33 @@ class TestExperimentClassFreqConsistency:
         assert all(v == values[0] for v in values), (
             f"model.class_freq differs across experiment configs for dataset {dataset!r}: {resolved}"
         )
+
+
+class TestInferDefaultCfgKeysMatchYaml:
+    """`src/inference/infer.py`'s `DEFAULT_INFER_{RUNTIME,METRICS,SAVE}_CFG` dicts are a
+    no-Hydra fallback so the module works without config composition -- but that means
+    each one duplicates a `configs/infer/<section>/default.yaml`, and nothing enforces
+    they stay in sync. Assert matching *keys*, not values: `runtime.batch_size_override`
+    already disagrees (1024 in yaml, None in the code default) pre-existing this test --
+    see docs/KNOWN_ISSUES.md -- so a value-equality check would fail today for reasons
+    unrelated to what this guards against (a new flag added to one side and not the
+    other, e.g. `save_run_json`)."""
+
+    @pytest.mark.parametrize(
+        "cfg_attr,yaml_path,section",
+        [
+            ("DEFAULT_INFER_RUNTIME_CFG", "infer/runtime/default.yaml", "runtime"),
+            ("DEFAULT_INFER_METRICS_CFG", "infer/metrics/default.yaml", "metrics"),
+            ("DEFAULT_INFER_SAVE_CFG", "infer/save/default.yaml", "save"),
+        ],
+    )
+    def test_keys_match(self, cfg_attr: str, yaml_path: str, section: str):
+        from src.inference import infer
+
+        code_default = getattr(infer, cfg_attr)
+        yaml_default = OmegaConf.load(os.path.join(os.path.dirname(__file__), "..", "configs", yaml_path))
+
+        assert set(code_default) == set(yaml_default["infer"][section]), (
+            f"{cfg_attr} and configs/{yaml_path} have diverged -- a save/runtime/metrics "
+            "flag was added to one but not the other."
+        )

@@ -5,5 +5,9 @@ infer:
     run_name: ""
     save_csv: true
     save_metrics_json: true
+    # Provenance sidecar (ckpt path, net_spec, resolved infer.* sections, column list) --
+    # the only place the ckpt-to-run binding is recorded on disk, since infer.py never
+    # runs a real Hydra job and so gets no .hydra/ snapshot (see docs/OUTPUT_LAYOUT.md).
+    save_run_json: true
     save_images: false
     max_images_to_save: 64

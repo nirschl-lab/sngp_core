@@ -451,3 +451,66 @@ def test_build_records_rejects_a_misaligned_uncertainty_tensor():
             outputs=outputs,
             stream_name="default",
         )
+
+
+# --- run.json provenance sidecar ---------------------------------------------------
+
+
+def test_write_outputs_writes_run_json_with_provenance_and_derived_fields(tmp_path):
+    rows = [{"image_id": "a", "class_logits": "[1.0, 2.0]", "class_probs": "[0.1, 0.9]"}]
+    provenance = {
+        "predictions_csv_schema": 2,
+        "ckpt_path": "/data1/x/train/baseline_classifier_acevedo/runs/2026-08-20_14-03-11/checkpoints/best.ckpt",
+        "member_source": None,
+        "num_members": None,
+    }
+
+    records.write_outputs(
+        output_root=tmp_path,
+        records=rows,
+        metrics={"acc": 1.0},
+        save_cfg={"save_csv": True, "save_metrics_json": True, "save_run_json": True},
+        provenance=provenance,
+    )
+
+    run_json = json.loads((tmp_path / "run.json").read_text())
+    assert run_json["ckpt_path"] == provenance["ckpt_path"]
+    assert run_json["predictions_csv_schema"] == 2
+    assert run_json["n_rows"] == 1
+    assert run_json["columns"] == ["image_id", "class_logits", "class_probs"]
+    assert "written_at" in run_json
+
+
+def test_write_outputs_omits_run_json_when_the_flag_is_false(tmp_path):
+    records.write_outputs(
+        output_root=tmp_path,
+        records=[{"image_id": "a"}],
+        metrics={},
+        save_cfg={"save_csv": True, "save_metrics_json": True, "save_run_json": False},
+        provenance={"ckpt_path": "x"},
+    )
+    assert not (tmp_path / "run.json").exists()
+
+
+def test_write_outputs_omits_run_json_when_provenance_is_none(tmp_path):
+    records.write_outputs(
+        output_root=tmp_path,
+        records=[{"image_id": "a"}],
+        metrics={},
+        save_cfg={"save_csv": True, "save_metrics_json": True, "save_run_json": True},
+        provenance=None,
+    )
+    assert not (tmp_path / "run.json").exists()
+
+
+def test_write_outputs_run_json_columns_empty_when_no_records(tmp_path):
+    records.write_outputs(
+        output_root=tmp_path,
+        records=[],
+        metrics={},
+        save_cfg={"save_csv": True, "save_metrics_json": True, "save_run_json": True},
+        provenance={"ckpt_path": "x"},
+    )
+    run_json = json.loads((tmp_path / "run.json").read_text())
+    assert run_json["columns"] == []
+    assert run_json["n_rows"] == 0
