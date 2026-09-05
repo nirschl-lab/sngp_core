@@ -79,6 +79,10 @@ belongs to before writing anything:
   ensemble/MC-Dropout flags). `docs/MASTER_INFER_RESULTS_PATH.md`/
   `docs/MASTER_CHECKPONT_PATHS.md` are *generated from it* — see
   `docs/METRICS_GUIDE.md`'s "Run manifest" section before hand-editing either doc.
+- `src/metrics/run_manifest_metrics.py` — runs every registered metric across every
+  manifest entry in one command, writing `csv/run_metrics/metrics_long.csv`. This is
+  the thing to reach for when a request is "compute X across all the runs we track",
+  not a new per-checkpoint script.
 
 ## Doing the work
 

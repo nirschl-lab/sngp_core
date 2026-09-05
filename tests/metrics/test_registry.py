@@ -2,10 +2,6 @@
 src/metrics/registered.py's four initial metrics.
 """
 
-import json
-
-import numpy as np
-import pandas as pd
 import pytest
 
 from src.metrics.io import load_predictions
@@ -15,6 +11,7 @@ from src.metrics.registry import (
     get_metric,
     register_metric,
 )
+from tests.helpers.predictions import write_predictions_csv
 
 
 # --- registry mechanics --------------------------------------------------------------
@@ -83,33 +80,23 @@ def test_requires_and_needs_ood_are_stored_on_the_spec():
 # --- fixtures for the four registered metrics -----------------------------------------
 
 
-def _write_inference_csv(path, *, n, num_classes, confidences, seed, with_logits):
-    rng = np.random.default_rng(seed)
-    probs = np.zeros((n, num_classes))
-    for i, c in enumerate(confidences):
-        rest = (1 - c) / (num_classes - 1)
-        probs[i] = rest
-        probs[i, i % num_classes] = c
-    targets = probs.argmax(axis=1)
-    df = {
-        "image_id": [f"img{i}" for i in range(n)],
-        "fold": ["test"] * n,
-        "target": targets,
-        "prediction": probs.argmax(axis=1),
-        "confidence": probs.max(axis=1),
-        "class_probs": [json.dumps(p.tolist()) for p in probs],
-        "stream": ["default"] * n,
-    }
-    if with_logits:
-        logits = rng.normal(size=(n, num_classes))
-        df["class_logits"] = [json.dumps(row.tolist()) for row in logits]
-    path.parent.mkdir(parents=True, exist_ok=True)
-    pd.DataFrame(df).to_csv(path, index=False)
+def _write_inference_csv(path, *, n, num_classes, confidences, seed, with_logits, all_correct=False):
+    write_predictions_csv(
+        path,
+        n=n,
+        num_classes=num_classes,
+        confidences=confidences,
+        seed=seed,
+        with_logits=with_logits,
+        all_correct=all_correct,
+    )
 
 
 def test_basic_stats_reports_accuracy_confidence_and_entropy(tmp_path):
     path = tmp_path / "predictions.csv"
-    _write_inference_csv(path, n=4, num_classes=2, confidences=[0.9, 0.9, 0.9, 0.9], seed=0, with_logits=False)
+    _write_inference_csv(
+        path, n=4, num_classes=2, confidences=[0.9, 0.9, 0.9, 0.9], seed=0, with_logits=False, all_correct=True
+    )
     frame = load_predictions(path)
 
     rows = get_metric("basic_stats").fn(MetricContext(frame=frame))

@@ -38,6 +38,28 @@ unclaimed. Resolving real paths (everything except the label/id_dataset/run-id
 checks) needs `EXPERIMENTS_HOME`/`PROJECT_NAME` set (see `env_example`) or an explicit
 `--infer-root`.
 
+## Batch metrics across every tracked run
+
+[src/metrics/run_manifest_metrics.py](../src/metrics/run_manifest_metrics.py) runs
+every registered metric from `src/metrics/registry.py` (or a chosen subset) against
+every manifest entry (or a chosen subset):
+
+```bash
+uv run src/metrics/run_manifest_metrics.py
+uv run src/metrics/run_manifest_metrics.py --runs baseline_acevedo sngp_acevedo
+uv run src/metrics/run_manifest_metrics.py --metrics basic_stats dempster_shafer
+```
+
+Writes one long-format `csv/run_metrics/metrics_long.csv` (columns: `label, method,
+train_dataset, id_dataset, scope, metric, value, std, value_str, status, note`) --
+**never** `csv/ood_metrics/*.csv`, which stays `calculate_ood_metrics.py`'s own
+published output (confirmed to match exactly: a test reproduces every published
+`csv/ood_metrics/*.csv` value byte-for-byte from this driver). A run that can't
+support a requested metric gets a `status=skipped` row with a `note` explaining why
+(missing a required column, or no OOD datasets in that manifest entry) rather than
+being silently absent or crashing the rest of the batch -- one bad file for one OOD
+dataset only drops that dataset's row, not the whole run.
+
 ## Cross-dataset OOD AUROC
 
 [src/metrics/calculate_ood_metrics.py](../src/metrics/calculate_ood_metrics.py) computes

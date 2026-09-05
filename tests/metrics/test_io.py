@@ -9,7 +9,6 @@ is what pandas produces when a DataFrame column holds real list objects and gets
 
 import json
 
-import numpy as np
 import pandas as pd
 import pytest
 
@@ -28,52 +27,22 @@ from src.metrics.io import (
     probs_array,
     shannon_entropy_nats,
 )
+from tests.helpers.predictions import write_predictions_csv
 
 
 def _write_inference_csv(path, *, n=4, num_classes=2, with_logits=False, with_member_logits=False, members=3):
-    rng = np.random.default_rng(0)
-    probs = rng.dirichlet(alpha=[1] * num_classes, size=n)
-    df = {
-        "image_id": [f"img{i}" for i in range(n)],
-        "fold": ["test"] * n,
-        "target": rng.integers(0, num_classes, size=n),
-        "prediction": probs.argmax(axis=1),
-        "confidence": probs.max(axis=1),
-        "class_probs": [json.dumps(p.tolist()) for p in probs],
-        "stream": ["default"] * n,
-    }
-    if with_logits:
-        logits = rng.normal(size=(n, num_classes))
-        df["class_logits"] = [json.dumps(row.tolist()) for row in logits]
-    if with_member_logits:
-        member_logits = rng.normal(size=(n, members, num_classes))
-        df["member_logits"] = [json.dumps(row.tolist()) for row in member_logits]
-    path.parent.mkdir(parents=True, exist_ok=True)
-    pd.DataFrame(df).to_csv(path, index=False)
+    write_predictions_csv(
+        path,
+        n=n,
+        num_classes=num_classes,
+        with_logits=with_logits,
+        with_member_logits=with_member_logits,
+        members=members,
+    )
 
 
 def _write_callback_csv(path, *, n=4, num_classes=2):
-    rng = np.random.default_rng(1)
-    probs = rng.dirichlet(alpha=[1] * num_classes, size=n)
-    logits = rng.normal(size=(n, num_classes))
-    preds = probs.argmax(axis=1)
-    targets = rng.integers(0, num_classes, size=n)
-    # Real list objects, not JSON strings -- pandas repr-stringifies these on to_csv,
-    # same as TestArtifactsCallback's own DataFrame construction.
-    df = pd.DataFrame(
-        {
-            "image_id": [f"img{i}" for i in range(n)],
-            "target": targets,
-            "prediction": preds,
-            "prediction_prob_score": probs.max(axis=1),
-            "true_bin_label": (preds == targets).astype(int),
-            "class_logits": [row.tolist() for row in logits],
-            "class_probs": [row.tolist() for row in probs],
-            "fold": ["test"] * n,
-        }
-    )
-    path.parent.mkdir(parents=True, exist_ok=True)
-    df.to_csv(path, index=False)
+    write_predictions_csv(path, n=n, num_classes=num_classes, schema="callback", seed=1)
 
 
 # --- schema detection ---------------------------------------------------------------
