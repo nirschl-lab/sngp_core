@@ -83,6 +83,26 @@ class BaselineClassifier(nn.Module):
         self.apply(self._set_dropout_train)
 
     @torch.no_grad()
+    def mc_forward_samples(self, x: torch.Tensor, T: int = 20) -> torch.Tensor:
+        """Perform T stochastic passes with dropout active and BN frozen.
+
+        Returns the per-pass logits, shape `(T, B, C)` -- the raw material both
+        `mc_predict` (mean/std reduction) and inference's optional per-pass
+        persistence (`infer.save.save_member_logits`) build on, so each pass is
+        computed exactly once regardless of which of those a caller wants.
+        """
+        was_training = self.training
+        try:
+            self.train(True)
+            self.apply(self._set_batchnorm_eval)
+            self.apply(self._set_dropout_train)
+
+            all_logits = [self.forward(x).logits for _ in range(T)]
+            return torch.stack(all_logits, 0)  # (T, B, C)
+        finally:
+            self.train(was_training)
+
+    @torch.no_grad()
     def mc_predict(
         self,
         x: torch.Tensor,
@@ -94,26 +114,12 @@ class BaselineClassifier(nn.Module):
         Perform T stochastic passes with dropout active and BN frozen.
         Returns mean (and optional std) of probs (or logits if apply_softmax=False).
         """
-        was_training = self.training
-        try:
-            self.train(True)
-            self.apply(self._set_batchnorm_eval)
-            self.apply(self._set_dropout_train)
+        logits_stack = self.mc_forward_samples(x, T=T)  # (T, B, C)
+        probs_stack = F.softmax(logits_stack, dim=-1) if apply_softmax else logits_stack
 
-            all_logits = []
-            all_probs = []
-            for _ in range(T):
-                logits = self.forward(x).logits
-                all_logits.append(logits)
-                all_probs.append(F.softmax(logits, dim=-1) if apply_softmax else logits)
-
-            logits_stack = torch.stack(all_logits, 0)  # (T, B, C)
-            probs_stack = torch.stack(all_probs, 0)    # (T, B, C)
-            mean_logits = logits_stack.mean(0)
-            mean_probs = probs_stack.mean(0)
-            if return_std:
-                std = logits_stack.std(0, unbiased=False)
-                return mean_logits, mean_probs, std
-            return mean_logits, mean_probs
-        finally:
-            self.train(was_training)
+        mean_logits = logits_stack.mean(0)
+        mean_probs = probs_stack.mean(0)
+        if return_std:
+            std = logits_stack.std(0, unbiased=False)
+            return mean_logits, mean_probs, std
+        return mean_logits, mean_probs

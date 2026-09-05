@@ -46,6 +46,7 @@ Written by `ClassificationInferenceRunner`/`ArtifactInferenceRunner` to
 | `stream` | `"real"`/`"artifact"` in artifact mode, `"default"` otherwise. **Always present** -- never key schema detection on it |
 | `raw_logits` | JSON-encoded list. Only when the net emits it (SNGP's pre-mean-field head output) |
 | `uncertainty` | one scalar per sample. Only when the model exposes it (SNGP/ensemble variance, MC-Dropout std) |
+| `member_logits` | JSON-encoded nested list, `[M, C]` per row. Only when `infer.save.save_member_logits=true` **and** the net has members -- ensemble members or MC-Dropout passes (same shape convention either way). Off by default: multiplies row size by roughly `M` |
 
 No `true_bin_label` — derive it as `prediction == target`.
 

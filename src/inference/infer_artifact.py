@@ -179,12 +179,14 @@ class ArtifactInferenceRunner:
 				"artifact": batch["artifact_simulated_image"].to(self.device),
 			}
 
+			save_member_logits = bool(self.cfg.infer.save.save_member_logits)
 			for stream_name, x in stream_tensors.items():
 				outputs = extract_model_outputs(
 					model=self.model,
 					x=x,
 					use_mc_dropout=bool(self.cfg.infer.runtime.use_mc_dropout),
 					mc_passes=int(self.cfg.infer.runtime.mc_passes),
+					capture_members=save_member_logits,
 				)
 				preds = torch.argmax(outputs.probs, dim=1)
 				num_classes = outputs.probs.shape[1]
@@ -205,6 +207,7 @@ class ArtifactInferenceRunner:
 						preds=preds,
 						outputs=outputs,
 						stream_name=stream_name,
+						save_member_logits=save_member_logits,
 					)
 				)
 

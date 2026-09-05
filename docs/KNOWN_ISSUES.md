@@ -31,6 +31,14 @@ Tracked here so they aren't re-litigated on every change.
   classes, matching `predict_image.py`). No published number moves — nothing reads that
   column; `csv/ood_metrics/*.csv` scores on max-softmax and entropy. Re-running those
   checkpoints regenerates the column correctly.
+- **Every pre-existing `mc_*` inference run is unseeded and therefore not
+  reproducible.** `configs/infer.yaml`'s `seed` field was declared but never applied
+  before `run_inference` started calling `set_random_seed` (see
+  [docs/INFERENCE_GUIDE.md](../docs/INFERENCE_GUIDE.md)). Deterministic checkpoints
+  (baseline without MC-Dropout, SNGP, Deep Ensemble) are unaffected -- this only
+  matters for MC-Dropout's stochastic forward passes. Re-running an `mc_*` checkpoint
+  with `seed` set will not reproduce the exact numbers already published for it, since
+  those were never seeded to begin with.
 
 ## Known test flakiness
 

@@ -38,7 +38,12 @@ Top-level fields in [configs/infer.yaml](configs/infer.yaml):
 - `fold`: `train`, `validation` (`val` also accepted), `test`, or `all` (train + val +
   test combined, not just the test split); defaults to `test`
 - `save_path`: output directory root
-- tags, seed, task_name
+- `seed`: if set, seeds `numpy`/`random`/`torch`/Lightning before inference runs
+  (`src/utils/random_seed.py::set_random_seed`) -- the only source of non-determinism
+  this reaches is MC-Dropout's stochastic forward passes; deterministic checkpoints
+  (baseline without MC-Dropout, SNGP, Deep Ensemble) are unaffected either way.
+  `null` (default) leaves the run unseeded.
+- tags, task_name (cosmetic/logging only)
 
 ## Basic Usage
 
@@ -167,6 +172,11 @@ uv run src/inference/infer.py \
   averaged per batch; runtime scales roughly linearly with it.
 - The resulting per-sample predictive std is written to predictions.csv's
   `uncertainty` column, same column SNGP/ensemble uncertainty is written to.
+- Set `infer.save.save_member_logits=true` to additionally persist the raw per-pass
+  logits (`[T, C]` per row, JSON-encoded) needed for epistemic/aleatoric
+  decomposition -- off by default since it multiplies row size by roughly `T` (same
+  flag, same column shape, for a Deep Ensemble's per-member logits). Set `seed` above
+  if you need the run to be reproducible.
 
 ## Notes
 

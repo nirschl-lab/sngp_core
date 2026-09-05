@@ -123,6 +123,7 @@ def extract_model_outputs(
     *,
     use_mc_dropout: bool,
     mc_passes: int,
+    capture_members: bool = False,
 ) -> BatchOutputs:
     """Run one batch through `model` and collect everything a record may need.
 
@@ -130,8 +131,25 @@ def extract_model_outputs(
     on `BaselineClassifier`); note it returns the *mean* of per-pass logits alongside
     the *mean of per-pass softmax*, so `softmax(logits) != probs` for MC runs. That
     asymmetry is inherent to the estimator, not a bug -- see `docs/KNOWN_ISSUES.md`.
+
+    `capture_members=True` additionally populates `member_logits` -- `[M, B, C]`,
+    ensemble members or MC-Dropout passes (the same shape convention either way, so
+    `build_records` doesn't need to know which). For an ensemble this is free (already
+    on `ModelOutput`); for MC-Dropout it means calling `mc_forward_samples` directly
+    instead of `mc_predict`, which runs the same `T` forward passes either way -- never
+    both -- and reduces them here rather than inside `mc_predict`.
     """
     if use_mc_dropout and hasattr(model, "mc_predict"):
+        if capture_members and hasattr(model, "mc_forward_samples"):
+            logits_stack = model.mc_forward_samples(x, T=mc_passes)  # [T, B, C]
+            probs_stack = torch.softmax(logits_stack, dim=-1)
+            uncertainty = logits_stack.std(dim=0, unbiased=False)
+            return BatchOutputs(
+                logits=logits_stack.mean(dim=0),
+                probs=probs_stack.mean(dim=0),
+                uncertainty=_reduce_uncertainty(uncertainty),
+                member_logits=logits_stack,
+            )
         result = model.mc_predict(x, T=mc_passes, return_std=True, apply_softmax=True)
         if isinstance(result, tuple) and len(result) == 3:
             logits, probs, uncertainty = result
@@ -175,6 +193,7 @@ def build_records(
     preds: torch.Tensor,
     outputs: BatchOutputs,
     stream_name: str,
+    save_member_logits: bool = False,
 ) -> List[Dict[str, Any]]:
     """One `predictions.csv` row per sample in the batch.
 
@@ -183,6 +202,11 @@ def build_records(
     (Dempster-Shafer, energy, temperature scaling) are unrecoverable without them.
     `raw_logits` (SNGP's pre-mean-field head output) and `uncertainty` follow the
     optional-column pattern -- present only when the net emits them.
+
+    `member_logits` (`[M, C]` per row -- ensemble members or MC-Dropout passes, the
+    same shape either way) is written only when `save_member_logits=True` *and*
+    `outputs.member_logits` is present, since it is far larger than every other column
+    combined (`infer.save.save_member_logits` defaults to off for exactly this reason).
 
     All list-valued columns are `json.dumps`-encoded, so readers can `json.loads` them
     without the `ast.literal_eval` fallback the training-time callback's repr-encoded
@@ -214,6 +238,11 @@ def build_records(
             )
         unc_cpu = unc.tolist()
 
+    member_logits_cpu = None
+    if save_member_logits and outputs.member_logits is not None:
+        # [M, B, C] -> [B, M, C], so member_logits_cpu[idx] is this sample's [M, C].
+        member_logits_cpu = outputs.member_logits.detach().cpu().permute(1, 0, 2).tolist()
+
     records: List[Dict[str, Any]] = []
     for idx in range(len(image_ids)):
         record = {
@@ -230,6 +259,8 @@ def build_records(
             record["raw_logits"] = json.dumps(raw_logits_cpu[idx])
         if unc_cpu is not None:
             record["uncertainty"] = float(unc_cpu[idx])
+        if member_logits_cpu is not None:
+            record["member_logits"] = json.dumps(member_logits_cpu[idx])
         records.append(record)
     return records
 

@@ -514,3 +514,97 @@ def test_write_outputs_run_json_columns_empty_when_no_records(tmp_path):
     run_json = json.loads((tmp_path / "run.json").read_text())
     assert run_json["columns"] == []
     assert run_json["n_rows"] == 0
+
+
+# --- member_logits: capture_members / save_member_logits opt-in ---------------------
+
+
+def test_extract_model_outputs_ensemble_member_logits_is_free_regardless_of_capture_members():
+    """DeepEnsemble already returns member_logits on ModelOutput -- no extra compute,
+    so it should show up whether or not capture_members is requested."""
+    logits = torch.tensor([[1.0, 2.0]])
+    member_logits = torch.stack([logits, logits + 1.0, logits + 2.0])  # [M=3, B=1, C=2]
+    model = _FakeNet(ModelOutput(logits=logits, member_logits=member_logits))
+
+    for capture_members in (False, True):
+        out = records.extract_model_outputs(
+            model, torch.zeros(1, 3), use_mc_dropout=False, mc_passes=5, capture_members=capture_members
+        )
+        assert out.member_logits.shape == (3, 1, 2)
+
+
+def test_extract_model_outputs_mc_dropout_without_capture_members_omits_member_logits():
+    class _McNet(torch.nn.Module):
+        def mc_predict(self, x, T, return_std, apply_softmax):
+            per_pass = torch.randn(T, x.shape[0], 2)
+            return per_pass.mean(0), torch.softmax(per_pass, dim=-1).mean(0), per_pass.std(0, unbiased=False)
+
+    out = records.extract_model_outputs(
+        _McNet(), torch.zeros(2, 3), use_mc_dropout=True, mc_passes=4, capture_members=False
+    )
+    assert out.member_logits is None
+
+
+def test_extract_model_outputs_mc_dropout_with_capture_members_populates_member_logits():
+    class _McNet(torch.nn.Module):
+        def mc_predict(self, x, T, return_std, apply_softmax):
+            raise AssertionError("capture_members=True must call mc_forward_samples, not mc_predict")
+
+        def mc_forward_samples(self, x, T):
+            torch.manual_seed(0)
+            return torch.randn(T, x.shape[0], 2)
+
+    out = records.extract_model_outputs(
+        _McNet(), torch.zeros(2, 3), use_mc_dropout=True, mc_passes=4, capture_members=True
+    )
+
+    assert out.member_logits.shape == (4, 2, 2)
+    torch.manual_seed(0)
+    expected_stack = torch.randn(4, 2, 2)
+    assert torch.allclose(out.logits, expected_stack.mean(0))
+    assert torch.allclose(out.probs, torch.softmax(expected_stack, dim=-1).mean(0))
+    assert torch.allclose(out.uncertainty, expected_stack.std(0, unbiased=False).mean(dim=1, keepdim=True))
+
+
+def test_build_records_writes_member_logits_only_when_flag_and_data_both_present():
+    member_logits = torch.stack(
+        [torch.tensor([[1.0, 0.0], [0.0, 1.0]]), torch.tensor([[2.0, 0.0], [0.0, 2.0]])]
+    )  # [M=2, B=2, C=2]
+    outputs = _batch_outputs(torch.tensor([[1.0, 0.0], [0.0, 1.0]]), member_logits=member_logits)
+
+    with_flag = records.build_records(
+        image_ids=["a", "b"],
+        fold=["test", "test"],
+        targets=torch.tensor([0, 1]),
+        preds=torch.tensor([0, 1]),
+        outputs=outputs,
+        stream_name="default",
+        save_member_logits=True,
+    )
+    without_flag = records.build_records(
+        image_ids=["a", "b"],
+        fold=["test", "test"],
+        targets=torch.tensor([0, 1]),
+        preds=torch.tensor([0, 1]),
+        outputs=outputs,
+        stream_name="default",
+        save_member_logits=False,
+    )
+
+    assert "member_logits" not in without_flag[0]
+    # member_logits_cpu[idx] is that sample's [M, C]: sample 0 across both members.
+    assert json.loads(with_flag[0]["member_logits"]) == [[1.0, 0.0], [2.0, 0.0]]
+    assert json.loads(with_flag[1]["member_logits"]) == [[0.0, 1.0], [0.0, 2.0]]
+
+
+def test_build_records_omits_member_logits_when_flag_set_but_no_member_data():
+    rows = records.build_records(
+        image_ids=["a"],
+        fold=["test"],
+        targets=torch.tensor([0]),
+        preds=torch.tensor([0]),
+        outputs=_batch_outputs(torch.tensor([[1.0, 0.0]])),
+        stream_name="default",
+        save_member_logits=True,
+    )
+    assert "member_logits" not in rows[0]

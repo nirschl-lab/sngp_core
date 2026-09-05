@@ -26,6 +26,7 @@ from src.inference.records import (  # noqa: E402
     write_outputs,
 )
 from src.metrics.brier import brier_score  # noqa: E402
+from src.utils.random_seed import set_random_seed  # noqa: E402
 
 
 DEFAULT_INFER_RUNTIME_CFG: Dict[str, Any] = {
@@ -59,6 +60,7 @@ DEFAULT_INFER_SAVE_CFG: Dict[str, Any] = {
     "save_csv": True,
     "save_metrics_json": True,
     "save_run_json": True,
+    "save_member_logits": False,
     "save_images": False,
     "max_images_to_save": 64,
 }
@@ -294,11 +296,13 @@ class ClassificationInferenceRunner(BaseInferenceRunner):
             x = x.to(self.device)
             targets = targets.to(self.device)
 
+            save_member_logits = bool(self.cfg.infer.save.save_member_logits)
             outputs = extract_model_outputs(
                 model=self.model,
                 x=x,
                 use_mc_dropout=bool(self.cfg.infer.runtime.use_mc_dropout),
                 mc_passes=int(self.cfg.infer.runtime.mc_passes),
+                capture_members=save_member_logits,
             )
             if not torch.isfinite(outputs.logits).all():
                 raise RuntimeError("Encountered non-finite logits during inference.")
@@ -321,6 +325,7 @@ class ClassificationInferenceRunner(BaseInferenceRunner):
                     preds=preds,
                     outputs=outputs,
                     stream_name="default",
+                    save_member_logits=save_member_logits,
                 )
             )
 
@@ -383,6 +388,9 @@ def run_inference(cfg: DictConfig) -> Dict[str, Any]:
 
     cfg = _resolve_sections(cfg)
     fold = _normalize_fold(str(cfg.get("fold", "test")))
+
+    if cfg.get("seed") is not None:
+        set_random_seed(int(cfg.seed))
 
     device = resolve_device(str(cfg.infer.runtime.device))
 

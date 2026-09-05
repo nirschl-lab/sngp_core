@@ -9,5 +9,8 @@ infer:
     # the only place the ckpt-to-run binding is recorded on disk, since infer.py never
     # runs a real Hydra job and so gets no .hydra/ snapshot (see docs/OUTPUT_LAYOUT.md).
     save_run_json: true
+    # Per-row [M, C] ensemble-member/MC-Dropout-pass logits -- opt-in: ~4.8x a row's
+    # size for a 5-member ensemble, ~8.7x for T=10 MC passes. Off by default.
+    save_member_logits: false
     save_images: false
     max_images_to_save: 64
