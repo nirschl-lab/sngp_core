@@ -63,6 +63,17 @@ belongs to before writing anything:
   auxiliary training losses.
 - `src/metrics/dempster_shafer_uncertainity.py` — standalone Dempster-Shafer
   uncertainty from logits.
+- `src/metrics/registry.py` + `src/metrics/registered.py` — a metric registry
+  (`METRIC_REGISTRY`, `register_metric`, `get_metric`, mirroring
+  `src/models/registry.py`'s shape) mapping a plain name to a function
+  `MetricContext -> list[MetricRow]`. `registered.py` is where the four current
+  metrics (`ood_auroc_msp`, `ood_auroc_entropy`, `dempster_shafer`, `basic_stats`)
+  live; importing `src.metrics` at all populates the registry (see `registered.py`'s
+  docstring), so nothing special is needed to "activate" it. A `MetricSpec.requires`
+  (a subset of `PredictionFrame.capabilities`) lets a caller check whether a run can
+  even run a given metric before calling it -- `dempster_shafer` declares
+  `requires={"logits"}`, so it's the right pattern to copy for a new metric that only
+  some runs can support.
 
 ## Doing the work
 
@@ -84,6 +95,11 @@ belongs to before writing anything:
   `require=[...]`) before reaching for `logits_array`/`member_logits_array` — a run
   written before its needed column existed should fail with a clear
   `MissingPredictionData`, not a bare `KeyError` partway through.
+- **A metric meant to run across every tracked inference run in one command** (not a
+  one-off analysis): write it as a `MetricContext -> list[MetricRow]` function in
+  `src/metrics/registered.py` and decorate it with `@register_metric(...)`, following
+  `dempster_shafer`'s shape. Don't write a new standalone argparse script for this —
+  that's exactly the per-metric-script sprawl the registry replaces.
 
 ## Never
 
