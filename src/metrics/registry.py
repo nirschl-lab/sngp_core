@@ -21,9 +21,10 @@ from src.metrics.io import PredictionFrame
 class MetricContext:
     """Everything a metric function is handed.
 
-    `run` is typically a manifest entry (label/method/train_dataset/... -- see
-    `src/metrics/manifest.py`), kept as a loosely-typed `Mapping` here rather than a
-    concrete class so this module doesn't need to depend on the manifest module.
+    `run` carries whatever identifying info the caller has about this prediction file
+    (e.g. `src/metrics/run_metrics.py` puts `label`/`run_dir`/`dataset` there), kept as
+    a loosely-typed `Mapping` here rather than a concrete class so this module doesn't
+    need to depend on any particular driver's notion of run identity.
     """
 
     frame: PredictionFrame
@@ -82,7 +83,7 @@ def register_metric(
     `{"logits"}`) -- a driver compares this against `frame.capabilities` and skips
     with a reason rather than calling `fn` and hitting a `MissingPredictionData`
     partway through. `needs_ood` marks a metric that only makes sense with at least
-    one OOD frame (a manifest entry with a single eval dataset has none).
+    one OOD frame (a run with no sibling dataset directories on disk has none).
     """
 
     def decorator(fn: MetricFn) -> MetricFn:

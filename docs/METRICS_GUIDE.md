@@ -17,8 +17,8 @@ is covered by `pytest tests/metrics/` per `.claude/rules/testing.md`.
 
 [src/metrics/run_metrics.py](../src/metrics/run_metrics.py) runs every registered
 metric from `src/metrics/registry.py` (or a chosen subset) against a set of
-`predictions.csv` files — no manifest, no YAML list of tracked runs. Point it at
-explicit paths and/or a recursive glob; each run's identity and OOD candidates are
+`predictions.csv` files. Point it at explicit paths and/or a recursive glob — no
+config file listing runs required; each run's identity and OOD candidates are
 inferred straight from the on-disk layout (`<run_dir>/<dataset_name>/predictions.csv`,
 see [OUTPUT_LAYOUT.md](OUTPUT_LAYOUT.md)) — every sibling dataset directory under the
 same `run_dir` becomes an OOD frame for `needs_ood` metrics automatically:
