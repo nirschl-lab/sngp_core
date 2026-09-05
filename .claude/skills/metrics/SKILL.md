@@ -75,12 +75,13 @@ belongs to before writing anything:
   `requires={"logits"}`, so it's the right pattern to copy for a new metric that only
   some runs can support.
 - `src/metrics/run_metrics.py` — runs every registered metric against a set of
-  `predictions.csv` files (explicit paths and/or a recursive `--glob`, no manifest)
-  in one command, writing/upserting `csv/run_metrics/metrics_long.csv`. Each run's
-  OOD candidates come from sibling dataset directories under the same `run_dir` on
-  disk. This is the thing to reach for when a request is "compute X across a batch of
-  runs", not a new per-checkpoint script — see `docs/METRICS_GUIDE.md`'s "Batch
-  metrics from prediction CSVs" section.
+  `predictions.csv` files (explicit paths and/or a recursive `--glob`) in one command,
+  writing/upserting `csv/run_metrics/metrics_long.csv`. Each run's OOD candidates come
+  from sibling dataset directories under the same `run_dir` on disk. This is the thing
+  to reach for when a request is "compute X across a batch of runs", not a new
+  per-checkpoint script — see `docs/METRICS_GUIDE.md`'s "Batch metrics from prediction
+  CSVs" section, including "Adding a new metric to already-computed runs" for the
+  register-then-rerun recipe.
 
 ## Doing the work
 

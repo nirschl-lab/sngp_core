@@ -1,4 +1,4 @@
-"""Tests for src/metrics/run_metrics.py -- the manifest-free batch driver.
+"""Tests for src/metrics/run_metrics.py -- the disk-discovery batch driver.
 
 A synthetic two-run `infer/`-shaped tmp_path tree covers the mechanics (expected
 rows/statuses, the no-sibling-OOD skip, a missing-logits skip, a missing OOD sibling

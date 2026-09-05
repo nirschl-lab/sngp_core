@@ -40,6 +40,30 @@ a new metric to `registered.py` **upserts** into the existing output CSV (rows k
 on `label`/`metric`/`scope`) instead of overwriting it, so you don't have to re-point
 it at every historical run just to pick up the new metric.
 
+### Adding a new metric to already-computed runs
+
+You already have `predictions.csv` files on disk from past inference runs and want a
+new metric's values added without recomputing or disturbing anything else:
+
+1. Write the metric as a `MetricContext -> list[MetricRow]` function in
+   [src/metrics/registered.py](../src/metrics/registered.py) and decorate it with
+   `@register_metric("your_metric_name", ...)` — see `dempster_shafer` there for the
+   shape, including `requires=`/`needs_ood=` if the metric only applies to some runs.
+2. Re-run `run_metrics.py` over the same predictions.csv files as before, restricted
+   to just the new metric so nothing else is recomputed:
+
+   ```bash
+   uv run src/metrics/run_metrics.py \
+     --glob '/data1/.../infer/**/predictions.csv' \
+     --metrics your_metric_name
+   ```
+
+Because the output is upserted, this only adds/updates rows for `your_metric_name` in
+`csv/run_metrics/metrics_long.csv` — every other metric's already-computed rows for
+those same runs are left untouched. This does **not** touch each run's own
+`metrics.json` (that's `infer.py`'s per-run output, written once at inference time) —
+`csv/run_metrics/metrics_long.csv` is the one file this workflow updates.
+
 ## Cross-dataset OOD AUROC
 
 [src/metrics/calculate_ood_metrics.py](../src/metrics/calculate_ood_metrics.py) computes

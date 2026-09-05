@@ -1,13 +1,13 @@
 """Batch metric driver: run every registered metric (or a chosen subset) across a set
 of prediction CSVs discovered on disk, writing one long-format CSV.
 
-No manifest, no YAML list of tracked runs -- point it at explicit predictions.csv
-paths and/or a glob, and each run's identity and OOD candidates are inferred from the
-on-disk layout (`<run_dir>/<dataset_name>/predictions.csv`, see
-docs/OUTPUT_LAYOUT.md): every sibling dataset directory under the same run_dir becomes
-an OOD frame for `needs_ood` metrics automatically. Re-running after registering a new
-metric in src/metrics/registered.py upserts only the rows for that metric into the
-existing output CSV -- everything else already there is left alone.
+Point it at explicit predictions.csv paths and/or a glob; each run's identity and OOD
+candidates are inferred from the on-disk layout (`<run_dir>/<dataset_name>/
+predictions.csv`, see docs/OUTPUT_LAYOUT.md) -- every sibling dataset directory under
+the same run_dir becomes an OOD frame for `needs_ood` metrics automatically. Re-running
+after registering a new metric in src/metrics/registered.py upserts only the rows for
+that metric into the existing output CSV -- everything else already there is left
+alone (see docs/METRICS_GUIDE.md's "Adding a new metric to already-computed runs").
 
 Usage:
     uv run src/metrics/run_metrics.py --predictions <path/to/predictions.csv> [<path> ...]

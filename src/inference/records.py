@@ -303,8 +303,8 @@ def write_outputs(
         run_json = dict(provenance)
         run_json["written_at"] = datetime.now().isoformat(timespec="seconds")
         run_json["n_rows"] = len(records)
-        # Column list so a manifest validator can answer "does this run have logits?"
-        # without opening a multi-MB CSV.
+        # Column list so a caller can answer "does this run have logits?" without
+        # opening a multi-MB CSV.
         run_json["columns"] = list(records[0]) if records else []
         run_path = output_root / "run.json"
         with open(run_path, "w", encoding="utf-8") as f:

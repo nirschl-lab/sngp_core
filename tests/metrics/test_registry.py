@@ -184,9 +184,9 @@ def test_ood_auroc_matches_calculate_ood_metrics_exactly(tmp_path):
 
 
 def test_ood_auroc_empty_ood_frames_yields_no_rows(tmp_path):
-    """A manifest entry with a single eval dataset (e.g. wong_ucdavis) has no OOD
-    frames at all -- the metric itself degrades to zero rows; a driver is responsible
-    for turning that into an explicit skip status, not this function."""
+    """A run with no sibling OOD dataset on disk (e.g. wong_ucdavis) has no OOD frames
+    at all -- the metric itself degrades to zero rows; a driver is responsible for
+    turning that into an explicit skip status, not this function."""
     path = tmp_path / "predictions.csv"
     _write_inference_csv(path, n=3, num_classes=2, confidences=[0.9, 0.8, 0.7], seed=0, with_logits=False)
 
