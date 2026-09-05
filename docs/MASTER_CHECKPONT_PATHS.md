@@ -1,6 +1,3 @@
-<!-- generated from configs/runs/infer_manifest.yaml -- do not edit by hand.
-     Regenerate with `uv run src/metrics/manifest.py --write-master-docs`. -->
-
 baseline_acevedo:
 ```bash
 /data1/maheswararao/experiments/uncertaity-aware-ml/train/baseline_classifier_acevedo/runs/2026-08-25_14-31-36/checkpoints/best.ckpt

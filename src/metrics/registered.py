@@ -81,8 +81,8 @@ def _ood_auroc_entropy(ctx: MetricContext) -> List[MetricRow]:
 )
 def _dempster_shafer(ctx: MetricContext) -> List[MetricRow]:
     """Skips (via `requires={"logits"}`) on any run written before
-    `predictions_csv_schema: 2` -- which, until the backfill in
-    `scripts/inference/rerun_with_logits.sh` runs, is every run on disk today."""
+    `predictions_csv_schema: 2` -- which, until that checkpoint/dataset is manually
+    re-run through `infer.py`, is every run on disk today."""
     logits = logits_array(ctx.frame)
     uncertainty = DempsterShaferUncertainty(logits)
     return [MetricRow(metric="dempster_shafer", value=float(np.mean(uncertainty)), scope="run")]

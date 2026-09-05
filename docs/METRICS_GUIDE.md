@@ -13,52 +13,32 @@ re-parsing `class_probs` from scratch; `src/metrics/auc.py`'s `AUROC`/
 Untested-by-policy does **not** apply here (unlike `src/visualization/**`) — `src/metrics/**`
 is covered by `pytest tests/metrics/` per `.claude/rules/testing.md`.
 
-## Run manifest
+## Batch metrics from prediction CSVs
 
-[configs/runs/infer_manifest.yaml](../configs/runs/infer_manifest.yaml) is the
-machine-readable record of every tracked inference run — which checkpoint, which
-inference run-folder, which datasets it was evaluated against, whether it's an
-ensemble or MC-Dropout. `docs/MASTER_INFER_RESULTS_PATH.md` and
-`docs/MASTER_CHECKPONT_PATHS.md` are **generated from it** (a header in each says so)
-— edit the manifest, not those docs directly.
-
-[src/metrics/manifest.py](../src/metrics/manifest.py) loads/validates it and
-regenerates the two docs:
+[src/metrics/run_metrics.py](../src/metrics/run_metrics.py) runs every registered
+metric from `src/metrics/registry.py` (or a chosen subset) against a set of
+`predictions.csv` files — no manifest, no YAML list of tracked runs. Point it at
+explicit paths and/or a recursive glob; each run's identity and OOD candidates are
+inferred straight from the on-disk layout (`<run_dir>/<dataset_name>/predictions.csv`,
+see [OUTPUT_LAYOUT.md](OUTPUT_LAYOUT.md)) — every sibling dataset directory under the
+same `run_dir` becomes an OOD frame for `needs_ood` metrics automatically:
 
 ```bash
-uv run src/metrics/manifest.py --validate           # checks + confirms the docs are current
-uv run src/metrics/manifest.py --write-master-docs  # regenerates both docs after an edit
+uv run src/metrics/run_metrics.py --predictions /path/to/run/acevedo/predictions.csv
+uv run src/metrics/run_metrics.py --glob '/data1/.../infer/**/predictions.csv'
+uv run src/metrics/run_metrics.py --glob '...' --metrics basic_stats dempster_shafer
 ```
 
-`--validate` checks (with no GPU): labels are unique and filename-safe, each
-`id_dataset` is one of its own `eval_datasets`, the run-id embedded in `run_dir`
-matches the one in `ckpt`, every `run_dir` exists with a `predictions.csv` for each of
-its `eval_datasets`/`paired_streams`, and nothing on disk under a `run_dir` is
-unclaimed. Resolving real paths (everything except the label/id_dataset/run-id
-checks) needs `EXPERIMENTS_HOME`/`PROJECT_NAME` set (see `env_example`) or an explicit
-`--infer-root`.
-
-## Batch metrics across every tracked run
-
-[src/metrics/run_manifest_metrics.py](../src/metrics/run_manifest_metrics.py) runs
-every registered metric from `src/metrics/registry.py` (or a chosen subset) against
-every manifest entry (or a chosen subset):
-
-```bash
-uv run src/metrics/run_manifest_metrics.py
-uv run src/metrics/run_manifest_metrics.py --runs baseline_acevedo sngp_acevedo
-uv run src/metrics/run_manifest_metrics.py --metrics basic_stats dempster_shafer
-```
-
-Writes one long-format `csv/run_metrics/metrics_long.csv` (columns: `label, method,
-train_dataset, id_dataset, scope, metric, value, std, value_str, status, note`) --
-**never** `csv/ood_metrics/*.csv`, which stays `calculate_ood_metrics.py`'s own
-published output (confirmed to match exactly: a test reproduces every published
-`csv/ood_metrics/*.csv` value byte-for-byte from this driver). A run that can't
-support a requested metric gets a `status=skipped` row with a `note` explaining why
-(missing a required column, or no OOD datasets in that manifest entry) rather than
-being silently absent or crashing the rest of the batch -- one bad file for one OOD
-dataset only drops that dataset's row, not the whole run.
+Writes one long-format `csv/run_metrics/metrics_long.csv` (columns: `label, run_dir,
+dataset, scope, metric, value, std, value_str, status, note`) — **never**
+`csv/ood_metrics/*.csv`, which stays `calculate_ood_metrics.py`'s own published
+output. A file that can't support a requested metric gets a `status=skipped` row with
+a `note` explaining why (missing a required column, or no sibling OOD datasets on
+disk) rather than being silently absent or crashing the rest of the batch — one bad
+OOD sibling only drops that dataset's row, not the whole run. Re-running after adding
+a new metric to `registered.py` **upserts** into the existing output CSV (rows keyed
+on `label`/`metric`/`scope`) instead of overwriting it, so you don't have to re-point
+it at every historical run just to pick up the new metric.
 
 ## Cross-dataset OOD AUROC
 

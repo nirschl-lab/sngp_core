@@ -134,20 +134,13 @@ Files produced (depending on infer.save flags):
 
 `predictions_csv_schema: 2` (this doc's `predictions.csv` shape) added `class_logits`;
 runs written before that have none, and it can't be derived after the fact (softmax
-is shift-invariant). To re-run every checkpoint tracked in
-`configs/runs/infer_manifest.yaml` and pick up the new columns:
-
-```bash
-scripts/inference/rerun_with_logits.sh                    # snapshot + safety gate + print the commands
-EXECUTE=1 scripts/inference/rerun_with_logits.sh          # snapshot + gate + actually run the backfill
-```
-
-It snapshots the existing `infer/` tree first (since `derive_default_run_name` is
-deterministic, a plain re-run overwrites `predictions.csv`/`metrics.json` in place),
-then re-runs one deterministic checkpoint into a scratch directory and requires its
-`metrics.json` to come back byte-identical to the existing one before touching
-anything for real. See the script's own header comment for the `mc_*` caveat
-(unseeded, so re-running one will not reproduce its currently-published numbers).
+is shift-invariant) — the only fix is to manually re-run `infer.py` against the same
+checkpoint and dataset. Since `derive_default_run_name` is deterministic from
+checkpoint path + flags, a plain re-run overwrites the existing `predictions.csv`/
+`metrics.json` in place, so back up the run directory first if you want to keep the
+old files around for comparison. MC-Dropout runs (`mc_*`) are unseeded by default, so
+re-running one will not reproduce its currently-published numbers unless you also
+pass the same `seed=...`.
 
 ## Useful Overrides
 

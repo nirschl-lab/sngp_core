@@ -1,6 +1,3 @@
-<!-- generated from configs/runs/infer_manifest.yaml -- do not edit by hand.
-     Regenerate with `uv run src/metrics/manifest.py --write-master-docs`. -->
-
 baseline_acevedo:
 ```bash
 /data1/maheswararao/experiments/uncertaity-aware-ml/infer/baseline_classifier_acevedo/2026-08-25_14-31-36
@@ -62,25 +59,25 @@ off the same checkpoint don't collide in a shared `wong/` folder.
 
 baseline_wong_ucdavis:
 ```bash
-/data1/maheswararao/experiments/uncertaity-aware-ml/infer/baseline_classifier_wong/2026-09-01_16-56-30
+/data1/maheswararao/experiments/uncertaity-aware-ml/infer/baseline_classifier_wong/2026-09-01_16-56-30/wong_ucdavis
 ```
 
 baseline_wong_ucdavis_ensemble:
 ```bash
-/data1/maheswararao/experiments/uncertaity-aware-ml/infer/deep_ensemble_baseline_classifier_wong/2026-09-01_17-00-38
+/data1/maheswararao/experiments/uncertaity-aware-ml/infer/deep_ensemble_baseline_classifier_wong/2026-09-01_17-00-38/wong_ucdavis
 ```
 
 mc_baseline_wong_ucdavis:
 ```bash
-/data1/maheswararao/experiments/uncertaity-aware-ml/infer/mc_baseline_classifier_wong/2026-09-01_16-56-30
+/data1/maheswararao/experiments/uncertaity-aware-ml/infer/mc_baseline_classifier_wong/2026-09-01_16-56-30/wong_ucdavis
 ```
 
 sngp_wong_ucdavis:
 ```bash
-/data1/maheswararao/experiments/uncertaity-aware-ml/infer/sngp_classifier_wong/2026-09-01_16-58-05
+/data1/maheswararao/experiments/uncertaity-aware-ml/infer/sngp_classifier_wong/2026-09-01_16-58-05/wong_ucdavis
 ```
 
 sngp_wong_ucdavis_ensemble:
 ```bash
-/data1/maheswararao/experiments/uncertaity-aware-ml/infer/deep_ensemble_sngp_classifier_wong/2026-09-01_17-00-17
+/data1/maheswararao/experiments/uncertaity-aware-ml/infer/deep_ensemble_sngp_classifier_wong/2026-09-01_17-00-17/wong_ucdavis
 ```

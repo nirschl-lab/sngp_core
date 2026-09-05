@@ -74,15 +74,13 @@ belongs to before writing anything:
   even run a given metric before calling it -- `dempster_shafer` declares
   `requires={"logits"}`, so it's the right pattern to copy for a new metric that only
   some runs can support.
-- `configs/runs/infer_manifest.yaml` + `src/metrics/manifest.py` — the machine-readable
-  record of every tracked inference run (checkpoint, run-folder, eval datasets,
-  ensemble/MC-Dropout flags). `docs/MASTER_INFER_RESULTS_PATH.md`/
-  `docs/MASTER_CHECKPONT_PATHS.md` are *generated from it* — see
-  `docs/METRICS_GUIDE.md`'s "Run manifest" section before hand-editing either doc.
-- `src/metrics/run_manifest_metrics.py` — runs every registered metric across every
-  manifest entry in one command, writing `csv/run_metrics/metrics_long.csv`. This is
-  the thing to reach for when a request is "compute X across all the runs we track",
-  not a new per-checkpoint script.
+- `src/metrics/run_metrics.py` — runs every registered metric against a set of
+  `predictions.csv` files (explicit paths and/or a recursive `--glob`, no manifest)
+  in one command, writing/upserting `csv/run_metrics/metrics_long.csv`. Each run's
+  OOD candidates come from sibling dataset directories under the same `run_dir` on
+  disk. This is the thing to reach for when a request is "compute X across a batch of
+  runs", not a new per-checkpoint script — see `docs/METRICS_GUIDE.md`'s "Batch
+  metrics from prediction CSVs" section.
 
 ## Doing the work
 
