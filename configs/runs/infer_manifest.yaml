@@ -1,0 +1,221 @@
+# Machine-readable manifest of tracked inference runs.
+#
+# NOT a Hydra config group -- nothing composes this via `hydra.compose`; it's plain
+# data read directly by `src/metrics/manifest.py::load_manifest` (via
+# `OmegaConf.load` + `to_container(resolve=True)`, the same pattern
+# `scripts/data/compute_class_freq.py`/`scripts/compare_methods.py` already use for a
+# YAML file that isn't a Hydra config).
+#
+# This is the source of truth the two MASTER_*.md docs are *generated* from -- see
+# `src/metrics/manifest.py::render_master_docs` and
+# `src/metrics/run_manifest_metrics.py --validate` (which checks the checked-in
+# markdown still matches what this file would generate). Do not hand-edit
+# docs/MASTER_INFER_RESULTS_PATH.md / docs/MASTER_CHECKPONT_PATHS.md; edit this file
+# and regenerate instead.
+#
+# Every path below is relative -- `run_dir` to `infer_root`, `ckpt` to `${paths.log_dir}`
+# (i.e. `infer_root`'s parent) -- never a literal `/data1/...` string, since this file
+# is checked into git and the project publishes to the HF Hub (see
+# .claude/rules/conventions.md on absolute paths belonging in configs, resolved from
+# `.env`, not hardcoded in anything checked in).
+#
+# Field meanings:
+#   label          stable output-filename stem (matches the existing csv/ood_metrics/
+#                  stems where one already exists -- see docs/OUTPUT_LAYOUT.md and
+#                  docs/METRICS_GUIDE.md). Not parsed for meaning; method/is_ensemble/
+#                  uses_mc_dropout below are the actual truth.
+#   method         baseline | mc_dropout | sngp | deep_ensemble | sngp_deep_ensemble
+#   train_dataset  the dataset the checkpoint was trained on (data.name at train time)
+#   is_ensemble    true for an assembled Deep Ensemble checkpoint
+#   uses_mc_dropout  true when this run applied infer.runtime.use_mc_dropout=true
+#                    against a *baseline* checkpoint -- not a separate checkpoint,
+#                    see `ckpt` below
+#   run_dir        relative to infer_root: <method_dataset>/<ckpt_run_id>
+#   ckpt           relative to ${paths.log_dir}: the training checkpoint this run's
+#                  ckpt_path pointed at
+#   id_dataset     in-distribution dataset for OOD comparisons
+#   eval_datasets  every dataset this run_dir has a <eval_dataset>/predictions.csv leaf
+#                  for
+#   paired_streams real+artifact-simulated leaves under this run_dir (evaluated with
+#                  `data=artifact_image_classifier`) -- kept OUT of eval_datasets so a
+#                  real/artifact-mixed frame can never silently enter the OOD fan-out
+schema_version: 1
+infer_root: ${oc.env:EXPERIMENTS_HOME}/${oc.env:PROJECT_NAME}/infer
+
+runs:
+  - label: baseline_acevedo
+    method: baseline
+    train_dataset: acevedo
+    is_ensemble: false
+    uses_mc_dropout: false
+    run_dir: baseline_classifier_acevedo/2026-08-25_14-31-36
+    ckpt: train/baseline_classifier_acevedo/runs/2026-08-25_14-31-36/checkpoints/best.ckpt
+    id_dataset: acevedo
+    eval_datasets: [acevedo, jung, kather2016, kather2018, nirschl2018, tang, wong]
+    paired_streams: []
+
+  - label: baseline_acevedo_ensemble
+    method: deep_ensemble
+    train_dataset: acevedo
+    is_ensemble: true
+    uses_mc_dropout: false
+    run_dir: deep_ensemble_baseline_classifier_acevedo/2026-08-25_15-31-22
+    ckpt: train/baseline_classifier_acevedo/ensemble_members/2026-08-25_15-31-22/checkpoints/ensemble.ckpt
+    id_dataset: acevedo
+    eval_datasets: [acevedo, jung, kather2016, kather2018, nirschl2018, tang, wong]
+    paired_streams: []
+
+  # De-warted from the original doc's "mc_baseline_acevedo_ensemble" -- this is
+  # MC-Dropout on the plain baseline checkpoint above, not an ensemble. Matches the
+  # existing csv/ood_metrics/mc_baseline_acevedo.csv stem.
+  - label: mc_baseline_acevedo
+    method: mc_dropout
+    train_dataset: acevedo
+    is_ensemble: false
+    uses_mc_dropout: true
+    run_dir: mc_baseline_classifier_acevedo/2026-08-25_14-31-36
+    ckpt: train/baseline_classifier_acevedo/runs/2026-08-25_14-31-36/checkpoints/best.ckpt
+    id_dataset: acevedo
+    eval_datasets: [acevedo, jung, kather2016, kather2018, nirschl2018, tang, wong]
+    paired_streams: []
+
+  - label: sngp_acevedo
+    method: sngp
+    train_dataset: acevedo
+    is_ensemble: false
+    uses_mc_dropout: false
+    run_dir: sngp_classifier_acevedo/2026-08-25_14-32-45
+    ckpt: train/sngp_classifier_acevedo/runs/2026-08-25_14-32-45/checkpoints/best.ckpt
+    id_dataset: acevedo
+    eval_datasets: [acevedo, jung, kather2016, kather2018, nirschl2018, tang, wong]
+    # The one paired real/artifact-simulated run in the tree (data=artifact_image_classifier).
+    paired_streams: [acevedo_artifact]
+
+  - label: sngp_acevedo_ensemble
+    method: sngp_deep_ensemble
+    train_dataset: acevedo
+    is_ensemble: true
+    uses_mc_dropout: false
+    run_dir: deep_ensemble_sngp_classifier_acevedo/2026-08-25_15-34-35
+    ckpt: train/sngp_classifier_acevedo/ensemble_members/2026-08-25_15-34-35/checkpoints/ensemble.ckpt
+    id_dataset: acevedo
+    eval_datasets: [acevedo, jung, kather2016, kather2018, nirschl2018, tang, wong]
+    paired_streams: []
+
+  - label: baseline_wong
+    method: baseline
+    train_dataset: wong
+    is_ensemble: false
+    uses_mc_dropout: false
+    run_dir: baseline_classifier_wong/2026-08-27_14-23-47
+    ckpt: train/baseline_classifier_wong/runs/2026-08-27_14-23-47/checkpoints/best.ckpt
+    id_dataset: wong
+    eval_datasets: [acevedo, jung, kather2016, kather2018, nirschl2018, tang, wong]
+    paired_streams: []
+
+  - label: baseline_wong_ensemble
+    method: deep_ensemble
+    train_dataset: wong
+    is_ensemble: true
+    uses_mc_dropout: false
+    run_dir: deep_ensemble_baseline_classifier_wong/2026-08-27_14-37-17
+    ckpt: train/baseline_classifier_wong/ensemble_members/2026-08-27_14-37-17/checkpoints/ensemble.ckpt
+    id_dataset: wong
+    eval_datasets: [acevedo, jung, kather2016, kather2018, nirschl2018, tang, wong]
+    paired_streams: []
+
+  # De-warted from "mc_baseline_wong_ensemble" -- MC-Dropout on the baseline
+  # checkpoint above, not an ensemble. Matches csv/ood_metrics/mc_baseline_wong.csv.
+  - label: mc_baseline_wong
+    method: mc_dropout
+    train_dataset: wong
+    is_ensemble: false
+    uses_mc_dropout: true
+    run_dir: mc_baseline_classifier_wong/2026-08-27_14-23-47
+    ckpt: train/baseline_classifier_wong/runs/2026-08-27_14-23-47/checkpoints/best.ckpt
+    id_dataset: wong
+    eval_datasets: [acevedo, jung, kather2016, kather2018, nirschl2018, tang, wong]
+    paired_streams: []
+
+  - label: sngp_wong
+    method: sngp
+    train_dataset: wong
+    is_ensemble: false
+    uses_mc_dropout: false
+    run_dir: sngp_classifier_wong/2026-08-31_16-36-39
+    ckpt: train/sngp_classifier_wong/runs/2026-08-31_16-36-39/checkpoints/best.ckpt
+    id_dataset: wong
+    eval_datasets: [acevedo, jung, kather2016, kather2018, nirschl2018, tang, wong]
+    paired_streams: []
+
+  - label: sngp_wong_ensemble
+    method: sngp_deep_ensemble
+    train_dataset: wong
+    is_ensemble: true
+    uses_mc_dropout: false
+    run_dir: deep_ensemble_sngp_classifier_wong/2026-08-27_14-43-32
+    ckpt: train/sngp_classifier_wong/ensemble_members/2026-08-27_14-43-32/checkpoints/ensemble.ckpt
+    id_dataset: wong
+    eval_datasets: [acevedo, jung, kather2016, kather2018, nirschl2018, tang, wong]
+    paired_streams: []
+
+  # Wong (UC Davis) models. Each run is the in-distribution test split of the UC
+  # Davis institution subset (`data=wong data.datamodule.institution=ucdavis
+  # fold=test`); the `wong_ucdavis` leaf comes from `data.name=wong_ucdavis`, set so
+  # per-institution runs off the same checkpoint don't collide in a shared `wong/`
+  # folder. Only one eval dataset each, so no OOD comparison is possible from these
+  # entries alone -- ood_auroc_* metrics report `needs_ood` skips for all five.
+  - label: baseline_wong_ucdavis
+    method: baseline
+    train_dataset: wong
+    is_ensemble: false
+    uses_mc_dropout: false
+    run_dir: baseline_classifier_wong/2026-09-01_16-56-30
+    ckpt: train/baseline_classifier_wong/runs/2026-09-01_16-56-30/checkpoints/best.ckpt
+    id_dataset: wong_ucdavis
+    eval_datasets: [wong_ucdavis]
+    paired_streams: []
+
+  - label: baseline_wong_ucdavis_ensemble
+    method: deep_ensemble
+    train_dataset: wong
+    is_ensemble: true
+    uses_mc_dropout: false
+    run_dir: deep_ensemble_baseline_classifier_wong/2026-09-01_17-00-38
+    ckpt: train/baseline_classifier_wong/ensemble_members/2026-09-01_17-00-38/checkpoints/ensemble.ckpt
+    id_dataset: wong_ucdavis
+    eval_datasets: [wong_ucdavis]
+    paired_streams: []
+
+  - label: mc_baseline_wong_ucdavis
+    method: mc_dropout
+    train_dataset: wong
+    is_ensemble: false
+    uses_mc_dropout: true
+    run_dir: mc_baseline_classifier_wong/2026-09-01_16-56-30
+    ckpt: train/baseline_classifier_wong/runs/2026-09-01_16-56-30/checkpoints/best.ckpt
+    id_dataset: wong_ucdavis
+    eval_datasets: [wong_ucdavis]
+    paired_streams: []
+
+  - label: sngp_wong_ucdavis
+    method: sngp
+    train_dataset: wong
+    is_ensemble: false
+    uses_mc_dropout: false
+    run_dir: sngp_classifier_wong/2026-09-01_16-58-05
+    ckpt: train/sngp_classifier_wong/runs/2026-09-01_16-58-05/checkpoints/best.ckpt
+    id_dataset: wong_ucdavis
+    eval_datasets: [wong_ucdavis]
+    paired_streams: []
+
+  - label: sngp_wong_ucdavis_ensemble
+    method: sngp_deep_ensemble
+    train_dataset: wong
+    is_ensemble: true
+    uses_mc_dropout: false
+    run_dir: deep_ensemble_sngp_classifier_wong/2026-09-01_17-00-17
+    ckpt: train/sngp_classifier_wong/ensemble_members/2026-09-01_17-00-17/checkpoints/ensemble.ckpt
+    id_dataset: wong_ucdavis
+    eval_datasets: [wong_ucdavis]
+    paired_streams: []

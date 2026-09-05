@@ -74,6 +74,11 @@ belongs to before writing anything:
   even run a given metric before calling it -- `dempster_shafer` declares
   `requires={"logits"}`, so it's the right pattern to copy for a new metric that only
   some runs can support.
+- `configs/runs/infer_manifest.yaml` + `src/metrics/manifest.py` — the machine-readable
+  record of every tracked inference run (checkpoint, run-folder, eval datasets,
+  ensemble/MC-Dropout flags). `docs/MASTER_INFER_RESULTS_PATH.md`/
+  `docs/MASTER_CHECKPONT_PATHS.md` are *generated from it* — see
+  `docs/METRICS_GUIDE.md`'s "Run manifest" section before hand-editing either doc.
 
 ## Doing the work
 

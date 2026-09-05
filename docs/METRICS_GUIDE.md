@@ -3,12 +3,40 @@
 Offline/research metric scripts live in [src/metrics/](../src/metrics/) — driven by
 prediction CSVs from inference/eval runs, not by live training (that's the
 `torchmetrics`/`LitModuleBase` tier, see `docs/DEVELOPMENT.md`'s "Metrics &
-Visualization" section). `src/metrics/auc.py` holds the shared building blocks
-(`AUROC`, `_parse_class_probs`, `_normalized_entropy`) that scripts in this directory
-reuse rather than re-deriving.
+Visualization" section). [src/metrics/io.py](../src/metrics/io.py) is the shared
+loader for both prediction-CSV schemas (`load_predictions` → a `PredictionFrame` with
+normalized `confidence`/`correct`/`probs`/`entropy_norm`/`entropy_nats` columns and a
+`capabilities` set) that everything else in this directory builds on rather than
+re-parsing `class_probs` from scratch; `src/metrics/auc.py`'s `AUROC`/
+`AUROC_across_dataset` are the shared AUROC building blocks.
 
 Untested-by-policy does **not** apply here (unlike `src/visualization/**`) — `src/metrics/**`
 is covered by `pytest tests/metrics/` per `.claude/rules/testing.md`.
+
+## Run manifest
+
+[configs/runs/infer_manifest.yaml](../configs/runs/infer_manifest.yaml) is the
+machine-readable record of every tracked inference run — which checkpoint, which
+inference run-folder, which datasets it was evaluated against, whether it's an
+ensemble or MC-Dropout. `docs/MASTER_INFER_RESULTS_PATH.md` and
+`docs/MASTER_CHECKPONT_PATHS.md` are **generated from it** (a header in each says so)
+— edit the manifest, not those docs directly.
+
+[src/metrics/manifest.py](../src/metrics/manifest.py) loads/validates it and
+regenerates the two docs:
+
+```bash
+uv run src/metrics/manifest.py --validate           # checks + confirms the docs are current
+uv run src/metrics/manifest.py --write-master-docs  # regenerates both docs after an edit
+```
+
+`--validate` checks (with no GPU): labels are unique and filename-safe, each
+`id_dataset` is one of its own `eval_datasets`, the run-id embedded in `run_dir`
+matches the one in `ckpt`, every `run_dir` exists with a `predictions.csv` for each of
+its `eval_datasets`/`paired_streams`, and nothing on disk under a `run_dir` is
+unclaimed. Resolving real paths (everything except the label/id_dataset/run-id
+checks) needs `EXPERIMENTS_HOME`/`PROJECT_NAME` set (see `env_example`) or an explicit
+`--infer-root`.
 
 ## Cross-dataset OOD AUROC
 
