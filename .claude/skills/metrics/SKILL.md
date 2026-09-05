@@ -32,8 +32,24 @@ belongs to before writing anything:
 
 ## Reference implementations
 
+- `src/metrics/io.py` — shared loader for both CSV schemas: `load_predictions(path,
+  fold=..., require=...)` returns a `PredictionFrame` (normalized `confidence`/
+  `correct`/`probs`/`entropy_norm`/`entropy_nats`/`stream_canonical` columns, plus a
+  `capabilities` set telling you what's actually in this file -- `"logits"` only on
+  runs written after `predictions_csv_schema: 2`, `"member_logits"` only when
+  `infer.save.save_member_logits` was on, `"paired_streams"` only for a real+artifact
+  run). Also has the canonical `parse_float_list`/`normalized_entropy`/
+  `shannon_entropy_nats`/`filter_fold`/`canonicalize_stream` -- **use these, don't
+  re-derive them**; `auc.py`'s `_parse_class_probs`/`_normalized_entropy` and
+  `artifact_quantification.py`'s `_parse_class_probs`/`_normalized_entropy_from_probs`
+  are now thin aliases for exactly this reason.
 - `src/metrics/auc.py` — `AUROC` (single ID/OOD pair), `AUROC_across_dataset` (one ID
-  dataset vs many OOD datasets, bootstrapped over 10 seeds).
+  dataset vs many OOD datasets, bootstrapped over 10 seeds). Takes a `fold_policy`
+  (`OodFoldPolicy` from `io.py`) -- defaults to `LEGACY_ISBI_FOLD_POLICY`, which
+  filters the ID frame to `fold=='test'` but leaves OOD unfiltered; that asymmetry is
+  load-bearing for every already-published number, so don't change the default to
+  "fix" it. Pass `SYMMETRIC_FOLD_POLICY` for a new analysis that wants both frames
+  filtered the same way.
 - `src/paper_helpers/ood_metrics/runner.py::run_ood_comparison` — the generalized,
   parametrized cross-dataset comparison across methods. **Use this, don't write a new
   copy-paste script.** `acevedo.py`/`kather2018.py`/`wong.py` in the same package are
@@ -60,8 +76,14 @@ belongs to before writing anything:
   exact CSV columns it needs — schema differs from the OOD-comparison one, check
   `references/csv_schema.md`).
 - **Calibration**: `src/metrics/smooth_ece.py` functions operate on
-  `(confidences, correctness)` arrays directly — pull those from either CSV schema's
-  `prediction_prob_score`/`confidence` + `true_bin_label`/`(prediction==target)` columns.
+  `(confidences, correctness)` arrays directly — `load_predictions(path).df[["confidence",
+  "correct"]]` gives you both, already normalized across either CSV schema.
+- **A new metric that reads a prediction CSV directly** (not through
+  `run_ood_comparison`/`quantify_artifact_impact`): start from `load_predictions`, not
+  a fresh `pd.read_csv` + your own parser. Check `frame.capabilities` (or pass
+  `require=[...]`) before reaching for `logits_array`/`member_logits_array` — a run
+  written before its needed column existed should fail with a clear
+  `MissingPredictionData`, not a bare `KeyError` partway through.
 
 ## Never
 
@@ -69,6 +91,12 @@ belongs to before writing anything:
   — that duplication (3 near-identical ~60-line scripts) is exactly what this
   project's migration consolidated into `runner.py`.
 - Assume the two CSV schemas are interchangeable — check `references/csv_schema.md`.
+- Re-derive `class_probs`/`class_logits` parsing, entropy, or fold-filtering inline —
+  `src/metrics/io.py` is that canonical implementation now; a third copy is exactly
+  the duplication this file already had to clean up once
+  (`artifact_quantification.py`'s `_build_stream_df` still has its own copy of the
+  stream-canonicalization step deliberately, not the probability-parsing one — see
+  that module's imports).
 - Add a new metric computation inline inside a notebook if it's meant to feed a
   paper figure — put it in `src/metrics/` or `src/paper_helpers/` so it's reusable
   and testable (`tests/paper_helpers/test_ood_runner.py` is the smoke-test pattern to

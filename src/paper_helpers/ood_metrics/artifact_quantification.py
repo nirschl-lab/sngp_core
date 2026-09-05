@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import ast
-import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
@@ -17,6 +15,9 @@ from sklearn.metrics import (
 	roc_auc_score,
 	roc_curve,
 )
+
+from src.metrics.io import normalized_entropy as _normalized_entropy_from_probs
+from src.metrics.io import parse_float_list as _parse_class_probs
 
 
 REAL_STREAM_CANDIDATES = {"real", "clean", "original", "id", "in", "in_distribution"}
@@ -65,37 +66,6 @@ def _build_confidence_score(
 		raise ValueError(f"Unsupported confidence score mode: {mode}")
 
 	return y_true, score, score_label
-
-
-def _parse_class_probs(value: Any) -> list[float] | None:
-	"""Parse probabilities from JSON-like strings or Python list strings."""
-	if isinstance(value, list):
-		return [float(v) for v in value]
-
-	if isinstance(value, str):
-		text = value.strip()
-		if not text:
-			return None
-		try:
-			parsed = json.loads(text)
-		except json.JSONDecodeError:
-			parsed = ast.literal_eval(text)
-
-		if isinstance(parsed, list):
-			return [float(v) for v in parsed]
-
-	return None
-
-
-def _normalized_entropy_from_probs(probs: list[float], eps: float = 1e-12) -> float:
-	p = np.asarray(probs, dtype=float)
-	p = np.clip(p, eps, 1.0)
-	p = p / np.sum(p)
-	k = p.size
-	if k <= 1:
-		return 0.0
-	entropy = -np.sum(p * np.log(p))
-	return float(entropy / np.log(k))
 
 
 def _canonicalize_stream(value: str) -> str:

@@ -26,21 +26,16 @@ ROOT = rootutils.setup_root(__file__, indicator=".project-root", pythonpath=True
 
 from src.metrics.auc import AUROC, _normalized_entropy, _parse_class_probs, seeds  # noqa: E402
 from src.metrics.auc import sample_rate as DEFAULT_SAMPLE_RATE  # noqa: E402
+from src.metrics.io import filter_fold  # noqa: E402
 
 
-def _load_scores(predictions_csv: Path, fold: str | None = None) -> tuple[pd.Series, pd.Series]:
+def load_ood_scores(predictions_csv: Path, fold: str | None = None) -> tuple[pd.Series, pd.Series]:
     """Load a predictions.csv and return (msp_scores, entropy_scores)."""
     if not predictions_csv.exists():
         raise FileNotFoundError(f"No predictions.csv at {predictions_csv}")
 
     df = pd.read_csv(predictions_csv)
-
-    if fold is not None:
-        if "fold" not in df.columns:
-            raise KeyError(f"{predictions_csv} has no 'fold' column to filter on.")
-        df = df[df["fold"] == fold]
-        if df.empty:
-            raise ValueError(f"No rows with fold={fold!r} in {predictions_csv}")
+    df = filter_fold(df, fold, source=predictions_csv)
 
     if "confidence" not in df.columns:
         raise KeyError(f"{predictions_csv} is missing the 'confidence' column needed for msp AUROC.")
@@ -55,7 +50,12 @@ def _load_scores(predictions_csv: Path, fold: str | None = None) -> tuple[pd.Ser
     return msp_scores, entropy_scores
 
 
-def _auroc_mean_std(id_scores: pd.Series, ood_scores: pd.Series, score_is_uncertainty: bool, sample_rate: int) -> str:
+def _auroc_mean_std_parts(
+    id_scores: pd.Series, ood_scores: pd.Series, score_is_uncertainty: bool, sample_rate: int
+) -> tuple[float, float]:
+    """Mean and std of AUROC across `seeds`, as floats -- the core `_auroc_mean_std`
+    (below) formats into `"mean ± std"` for, and what a metric-registry adapter wants
+    directly rather than re-parsing that string."""
     n_samples = min(sample_rate, len(id_scores), len(ood_scores))
     if n_samples == 0:
         raise ValueError("No valid rows available to compute AUROC.")
@@ -68,7 +68,12 @@ def _auroc_mean_std(id_scores: pd.Series, ood_scores: pd.Series, score_is_uncert
         )
         for seed in seeds
     ]
-    return f"{np.mean(auroc_list):.4f} ± {np.std(auroc_list):.4f}"
+    return float(np.mean(auroc_list)), float(np.std(auroc_list))
+
+
+def _auroc_mean_std(id_scores: pd.Series, ood_scores: pd.Series, score_is_uncertainty: bool, sample_rate: int) -> str:
+    mean, std = _auroc_mean_std_parts(id_scores, ood_scores, score_is_uncertainty, sample_rate)
+    return f"{mean:.4f} ± {std:.4f}"
 
 
 def compute_ood_auroc(
@@ -81,11 +86,11 @@ def compute_ood_auroc(
     """Cross-dataset OOD AUROC (msp + entropy) for one in-distribution dataset against
     each of `ood_datasets`, reading `<run_dir>/<name>/predictions.csv` for each name.
     """
-    id_msp, id_entropy = _load_scores(run_dir / indist / "predictions.csv", fold=fold)
+    id_msp, id_entropy = load_ood_scores(run_dir / indist / "predictions.csv", fold=fold)
 
     rows = []
     for name in ood_datasets:
-        ood_msp, ood_entropy = _load_scores(run_dir / name / "predictions.csv", fold=fold)
+        ood_msp, ood_entropy = load_ood_scores(run_dir / name / "predictions.csv", fold=fold)
         try:
             msp_auroc = _auroc_mean_std(id_msp, ood_msp, score_is_uncertainty=False, sample_rate=sample_rate)
             entropy_auroc = _auroc_mean_std(
