@@ -3,11 +3,11 @@
 ### Acevedo
 | Model | Accuracy ↑ | Precision ↑ | Recall ↑ | F1 ↑ | AUROC ↑ | AUPRC ↑ | ECE (×10⁻²) ↓ | NLL (×10⁻²) ↓ | Brier (×10⁻²) ↓ | Precision (Micro) ↑ | Recall (Micro) ↑ | F1 (Micro) ↑ |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| Baseline Classifier | 0.9813 | 0.9798 | 0.9814 | 0.9804 | 0.9996 | 0.9978 | 4.5967 | 9.4385 | — | 0.9813 | 0.9813 | 0.9813 |
-| Deep Ensemble | **0.9889** | **0.9880** | **0.9888** | **0.9884** | **0.9999** | **0.9990** | **4.0026** | **6.8317** | — | **0.9889** | **0.9889** | **0.9889** |
-| Monte Carlo Dropout | 0.9816 | 0.9802 | 0.9819 | 0.9808 | 0.9996 | 0.9978 | 4.7886 | 9.5676 | — | 0.9816 | 0.9816 | 0.9816 |
-| SNGP | 0.9819 | 0.9819 | 0.9792 | 0.9803 | 0.9994 | 0.9963 | 7.6791 | 12.9793 | — | 0.9819 | 0.9819 | 0.9819 |
-| SNGP Ensemble | 0.9880 | 0.9870 | 0.9878 | 0.9874 | 0.9997 | 0.9981 | 7.3047 | 10.8912 | — | 0.9880 | 0.9880 | 0.9880 |
+| Baseline Classifier | 0.9813 | 0.9798 | 0.9814 | 0.9804 | 0.9996 | 0.9978 | 4.5967 | 9.4385 | 3.7386 | 0.9813 | 0.9813 | 0.9813 |
+| Deep Ensemble | **0.9889** | **0.9880** | **0.9888** | **0.9884** | **0.9999** | **0.9990** | **4.0026** | **6.8317** | **2.5308** | **0.9889** | **0.9889** | **0.9889** |
+| Monte Carlo Dropout | 0.9816 | 0.9802 | 0.9819 | 0.9808 | 0.9996 | 0.9978 | 4.7886 | 9.5676 | 3.7790 | 0.9816 | 0.9816 | 0.9816 |
+| SNGP | 0.9819 | 0.9819 | 0.9792 | 0.9803 | 0.9994 | 0.9963 | 7.6791 | 12.9793 | 4.1757 | 0.9819 | 0.9819 | 0.9819 |
+| SNGP Ensemble | 0.9880 | 0.9870 | 0.9878 | 0.9874 | 0.9997 | 0.9981 | 7.3047 | 10.8912 | 3.2163 | 0.9880 | 0.9880 | 0.9880 |
 
 ### Wong (All institutions)
 | Model | Accuracy ↑ | Precision ↑ | Recall ↑ | F1 ↑ | AUROC ↑ | AUPRC ↑ | ECE (×10⁻²) ↓ | NLL (×10⁻²) ↓ | Brier (×10⁻²) ↓ | Precision (Micro) ↑ | Recall (Micro) ↑ | F1 (Micro) ↑ |
@@ -83,15 +83,18 @@ Simulation has two independent axes — **config** (real artifact cutouts pasted
 image) and **procedural** (acquisition degradations: stain shift, blur, noise,
 compression, geometry) — see [DATASETS.md](DATASETS.md#artifact-robustness-evaluation).
 Each is tested here with the other axis switched off, so a drop can be attributed to one
-axis rather than to "simulation" generically. `AUROC (Entropy)` is how well the model's
-own predictive entropy separates real from artifact-affected inputs (0.5 = no better than
-chance); `ECE` is expected calibration error (same ×10⁻² convention as the in-distribution
-table above) computed separately on each stream, so it isolates whether confidence stays
-trustworthy under artifacts rather than just whether accuracy holds. The rest is accuracy
-on the real vs. artifact-simulated stream of the same images; AUPR and FPR95 (same
-real-vs-artifact framing as AUROC) and the additional Calibration/Classification/Selective-
-Classification tables below are computed from each run's `predictions.csv`/`metrics.json` --
-paths in [MASTER_INFER_RESULTS_PATH.md](MASTER_INFER_RESULTS_PATH.md).
+axis rather than to "simulation" generically. Every table below is computed on the
+artifact/corrupted stream alone (Accuracy, Brier, NLL, mean entropy, the ECE-variant
+calibration metrics, and the risk-coverage/selective-classification metrics) except OOD
+Detection, which is inherently a real-vs-artifact comparison: `AUROC (Entropy)` is how
+well the model's own predictive entropy separates real from artifact-affected inputs (0.5
+= no better than chance), with AUPR/FPR95 alongside it in the same framing. Real/
+in-distribution numbers for these same checkpoints (Accuracy, ECE, Brier, ...) are in the
+"In-Distribution" section at the top of this document and are not repeated here. Each axis
+renders as a 2x2 grid — Classification (top-left), Calibration (top-right), OOD Detection
+(bottom-left), Selective Classification (bottom-right) — computed from each run's
+`predictions.csv`/`metrics.json`, paths in
+[MASTER_INFER_RESULTS_PATH.md](MASTER_INFER_RESULTS_PATH.md).
 Every row but Monte Carlo Dropout is bit-reproducible run to run (the simulator's own seed
 is content-derived, see DATASETS.md); MC-Dropout draws a fresh random mask per forward pass
 with no pinned seed, so its numbers drift by less than ~0.1pp between identical reruns --
@@ -100,15 +103,26 @@ noise, not a finding.
 ### Model Trained on Acevedo and tested with different artifact secnarios
 
 **Config axis — one pasted artifact overlay (`count=1`, `artifact_balanced`, procedural off)**
-| Model | Accuracy (Real) ↑ | Accuracy (Artifact) ↑ | Accuracy Drop ↓ | ECE (Real) (×10⁻²) ↓ | ECE (Artifact) (×10⁻²) ↓ | AUROC (Entropy) ↑ |
-|---|---:|---:|---:|---:|---:|---:|
-| Baseline Classifier | 0.9813 | 0.7672 | 0.2141 | 4.60 | 10.53 | 0.6124 |
-| Deep Ensemble | **0.9889** | 0.7727 | 0.2161 | **4.00** | 10.11 | 0.6168 |
-| Monte Carlo Dropout | 0.9810 | 0.7660 | 0.2150 | 4.73 | 10.38 | 0.6137 |
-| SNGP | 0.9819 | 0.7839 | **0.1980** | 7.68 | **3.06** | 0.6428 |
-| SNGP Ensemble | 0.9880 | **0.7856** | 0.2024 | 7.30 | 3.48 | **0.6755** |
 
-*Calibration (Artifact)*
+<table>
+<tr>
+<td valign="top">
+
+**Classification (Artifact)**
+
+| Model | Accuracy (Artifact) ↑ | Brier (×10⁻²) ↓ | NLL (×10⁻²) ↓ | Mean Entropy |
+|---|---:|---:|---:|---:|
+| Baseline Classifier | 0.7672 | 37.00 | 123.54 | 0.1813 |
+| Deep Ensemble | 0.7727 | 35.75 | 115.69 | 0.1762 |
+| Monte Carlo Dropout | 0.7660 | 36.93 | 122.07 | 0.1854 |
+| SNGP | 0.7839 | 32.04 | 77.78 | 0.3223 |
+| SNGP Ensemble | **0.7856** | **29.61** | **70.54** | 0.3467 |
+
+</td>
+<td valign="top">
+
+**Calibration (Artifact)**
+
 | Model | ECE (Artifact) (×10⁻²) ↓ | ECE+ (×10⁻²) ↓ | ECE− (×10⁻²) ↓ | MCE (×10⁻²) ↓ | SmECE (×10⁻²) ↓ | aECE (×10⁻²) ↓ |
 |---|---:|---:|---:|---:|---:|---:|
 | Baseline Classifier | 10.53 | 10.52 | 0.00 | 100.00 | 8.96 | 10.52 |
@@ -117,7 +131,13 @@ noise, not a finding.
 | SNGP | **3.06** | 2.50 | 0.56 | **9.18** | 3.33 | 3.55 |
 | SNGP Ensemble | 3.48 | **1.56** | 1.91 | 16.65 | **3.26** | **3.42** |
 
-*OOD Detection (extra) — Real vs. Artifact*
+</td>
+</tr>
+<tr>
+<td valign="top">
+
+**OOD Detection — Real vs. Artifact**
+
 | Model | AUROC (Entropy) ↑ | AUPR (Entropy) ↑ | FPR95 (Entropy) ↓ |
 |---|---:|---:|---:|
 | Baseline Classifier | 0.6124 | 0.6590 | 0.9456 |
@@ -126,16 +146,11 @@ noise, not a finding.
 | SNGP | 0.6428 | 0.6796 | 0.9169 |
 | SNGP Ensemble | **0.6755** | **0.7259** | **0.9076** |
 
-*Classification (Artifact)*
-| Model | Brier (×10⁻²) ↓ | NLL (×10⁻²) ↓ | Mean Entropy |
-|---|---:|---:|---:|
-| Baseline Classifier | 37.00 | 123.54 | 0.1813 |
-| Deep Ensemble | 35.75 | 115.69 | 0.1762 |
-| Monte Carlo Dropout | 36.93 | 122.07 | 0.1854 |
-| SNGP | 32.04 | 77.78 | 0.3223 |
-| SNGP Ensemble | **29.61** | **70.54** | 0.3467 |
+</td>
+<td valign="top">
 
-*Selective Classification (Artifact)*
+**Selective Classification (Artifact)**
+
 | Model | AURC (×10⁻²) ↓ | AUGRC (×10⁻²) ↓ | Cov@5%Risk ↑ | Risk@80%Cov (×10⁻²) ↓ |
 |---|---:|---:|---:|---:|
 | Baseline Classifier | 16.75 | 7.21 | — | 14.25 |
@@ -144,16 +159,31 @@ noise, not a finding.
 | SNGP | 7.03 | 5.08 | 0.4773 | 12.17 |
 | SNGP Ensemble | **5.23** | **4.17** | **0.6692** | **10.23** |
 
-**Procedural axis — one graded acquisition degradation (`severity=1`, `procedural_ood`, config off)**
-| Model | Accuracy (Real) ↑ | Accuracy (Artifact) ↑ | Accuracy Drop ↓ | ECE (Real) (×10⁻²) ↓ | ECE (Artifact) (×10⁻²) ↓ | AUROC (Entropy) ↑ |
-|---|---:|---:|---:|---:|---:|---:|
-| Baseline Classifier | 0.9813 | 0.9786 | 0.0026 | 4.60 | 4.75 | 0.5136 |
-| Deep Ensemble | **0.9889** | **0.9883** | **0.0006** | **4.00** | **4.39** | **0.5205** |
-| Monte Carlo Dropout | 0.9810 | 0.9786 | 0.0023 | 4.73 | 4.94 | 0.5136 |
-| SNGP | 0.9819 | 0.9801 | 0.0018 | 7.68 | 7.96 | 0.5125 |
-| SNGP Ensemble | 0.9880 | 0.9874 | **0.0006** | 7.30 | 7.57 | 0.5147 |
+</td>
+</tr>
+</table>
 
-*Calibration (Artifact)*
+**Procedural axis — one graded acquisition degradation (`severity=1`, `procedural_ood`, config off)**
+
+<table>
+<tr>
+<td valign="top">
+
+**Classification (Artifact)**
+
+| Model | Accuracy (Artifact) ↑ | Brier (×10⁻²) ↓ | NLL (×10⁻²) ↓ | Mean Entropy |
+|---|---:|---:|---:|---:|
+| Baseline Classifier | 0.9786 | 4.08 | 10.16 | 0.1100 |
+| Deep Ensemble | **0.9883** | **2.76** | **7.45** | 0.0919 |
+| Monte Carlo Dropout | 0.9786 | 4.12 | 10.34 | 0.1129 |
+| SNGP | 0.9801 | 4.60 | 13.86 | 0.1931 |
+| SNGP Ensemble | 0.9874 | 3.45 | 11.46 | 0.1765 |
+
+</td>
+<td valign="top">
+
+**Calibration (Artifact)**
+
 | Model | ECE (Artifact) (×10⁻²) ↓ | ECE+ (×10⁻²) ↓ | ECE− (×10⁻²) ↓ | MCE (×10⁻²) ↓ | SmECE (×10⁻²) ↓ | aECE (×10⁻²) ↓ |
 |---|---:|---:|---:|---:|---:|---:|
 | Baseline Classifier | 4.75 | 0.01 | 4.74 | **17.53** | 4.60 | 4.74 |
@@ -162,7 +192,13 @@ noise, not a finding.
 | SNGP | 7.96 | **0.00** | 7.96 | 80.15 | 7.96 | 7.96 |
 | SNGP Ensemble | 7.57 | 0.00 | 7.57 | 63.84 | 7.57 | 7.57 |
 
-*OOD Detection (extra) — Real vs. Artifact*
+</td>
+</tr>
+<tr>
+<td valign="top">
+
+**OOD Detection — Real vs. Artifact**
+
 | Model | AUROC (Entropy) ↑ | AUPR (Entropy) ↑ | FPR95 (Entropy) ↓ |
 |---|---:|---:|---:|
 | Baseline Classifier | 0.5136 | 0.5144 | 0.9512 |
@@ -171,16 +207,11 @@ noise, not a finding.
 | SNGP | 0.5125 | 0.5105 | 0.9471 |
 | SNGP Ensemble | 0.5147 | 0.5118 | **0.9424** |
 
-*Classification (Artifact)*
-| Model | Brier (×10⁻²) ↓ | NLL (×10⁻²) ↓ | Mean Entropy |
-|---|---:|---:|---:|
-| Baseline Classifier | 4.08 | 10.16 | 0.1100 |
-| Deep Ensemble | **2.76** | **7.45** | 0.0919 |
-| Monte Carlo Dropout | 4.12 | 10.34 | 0.1129 |
-| SNGP | 4.60 | 13.86 | 0.1931 |
-| SNGP Ensemble | 3.45 | 11.46 | 0.1765 |
+</td>
+<td valign="top">
 
-*Selective Classification (Artifact)*
+**Selective Classification (Artifact)**
+
 | Model | AURC (×10⁻²) ↓ | AUGRC (×10⁻²) ↓ | Cov@5%Risk ↑ | Risk@80%Cov (×10⁻²) ↓ |
 |---|---:|---:|---:|---:|
 | Baseline Classifier | 0.14 | 0.11 | **1.0000** | 0.07 |
@@ -189,19 +220,25 @@ noise, not a finding.
 | SNGP | 0.16 | 0.13 | 1.0000 | 0.22 |
 | SNGP Ensemble | 0.09 | 0.07 | 1.0000 | 0.11 |
 
+</td>
+</tr>
+</table>
+
 At these settings, a single pasted artifact overlay drops accuracy roughly 80-100x more
-than one mild graded acquisition degradation — SNGP and its ensemble are the most robust
-to pasted artifacts and the best at flagging them via entropy, but that separation mostly
-disappears on the procedural axis, where every model stays close to its real-stream
-accuracy. Calibration tells a different story from accuracy: on the config axis, SNGP's
-and SNGP Ensemble's ECE actually *improves* under artifacts (7.68→3.06, 7.30→3.48) even as
-their accuracy drops ~20pp — they get more uncertain in roughly the right proportion to
-how much worse they're doing — while the baseline-family models' ECE more than doubles
+than one mild graded acquisition degradation (compare each Classification quadrant's
+Accuracy (Artifact) above against the same checkpoint's Accuracy in the In-Distribution
+section) — SNGP and its ensemble are the most robust to pasted artifacts and the best at
+flagging them via entropy, but that separation mostly disappears on the procedural axis,
+where every model stays close to its real-stream accuracy. Calibration tells a different
+story from accuracy: on the config axis, SNGP's and SNGP Ensemble's ECE actually *improves*
+under artifacts relative to their In-Distribution ECE (7.68→3.06, 7.30→3.48) even as their
+accuracy drops ~20pp — they get more uncertain in roughly the right proportion to how much
+worse they're doing — while the baseline-family models' ECE more than doubles
 (4.0-4.7→10.1-10.5), i.e. they stay overconfident on inputs they're now getting wrong. On
 the procedural axis, ECE barely moves for any model, consistent with the accuracy numbers.
-See the Calibration/OOD-Detection/Classification/Selective-Classification tables above for
-additional diagnostics (ECE+/ECE−/MCE/SmECE/aECE, AUPR/FPR95, Brier/NLL/mean-entropy,
-AURC/AUGRC/Cov@5%Risk/Risk@80%Cov) computed on the artifact stream alone.
+See the Classification/Calibration/OOD-Detection/Selective-Classification grid above for
+additional diagnostics (Accuracy, ECE+/ECE−/MCE/SmECE/aECE, AUPR/FPR95, Brier/NLL/mean-
+entropy, AURC/AUGRC/Cov@5%Risk/Risk@80%Cov) computed on the artifact stream alone.
 
 ### Model Trained on Wong and tested with different artifact secnarios
 

@@ -3,9 +3,13 @@ artifact-simulation section, computed from the already-existing artifact-axis-sw
 predictions.csv/metrics.json files (see docs/MASTER_INFER_RESULTS_PATH.md).
 
 Only the artifact/corrupted stream is reported (or, for the two-stream OOD-detection
-row, the same real-vs-artifact framing the existing AUROC(Entropy) column already
-uses) -- the real/in-distribution numbers already live at the top of docs/RESULTS.md
-and are intentionally not recomputed here. See `.claude/skills/metrics/SKILL.md` and
+table, the same real-vs-artifact framing the existing AUROC(Entropy) column already
+uses) -- the real/in-distribution numbers (including Brier, backfilled from each run's
+`real_baseline/metrics.json`) live entirely in the "In-Distribution" section at the top
+of docs/RESULTS.md and are intentionally not repeated here. Renders as a 2x2 grid per
+axis -- Classification (top-left), Calibration (top-right), OOD Detection (bottom-left),
+Selective Classification (bottom-right) -- mirroring the torch-uncertainty tutorial's own
+table grouping. See `.claude/skills/metrics/SKILL.md` and
 `src/paper_helpers/ood_metrics/artifact_quantification.py::quantify_artifact_impact`
 (which this wraps) for the underlying metric definitions.
 
@@ -79,6 +83,23 @@ def _render_table(headers: list[str], rows: list[list[str]]) -> str:
     return "\n".join(lines)
 
 
+def _render_2x2_grid(top_left: str, top_right: str, bottom_left: str, bottom_right: str) -> str:
+    """Wrap 4 markdown tables in an HTML <table> grid. GFM parses markdown inside a raw
+    HTML block only when it's set off by blank lines, hence the blank lines around each
+    table below -- dropping them silently degrades to unrendered pipe-and-dash text."""
+
+    def cell(md: str) -> str:
+        return f"<td valign=\"top\">\n\n{md}\n\n</td>"
+
+    return (
+        "<table>\n<tr>\n"
+        f"{cell(top_left)}\n{cell(top_right)}\n"
+        "</tr>\n<tr>\n"
+        f"{cell(bottom_left)}\n{cell(bottom_right)}\n"
+        "</tr>\n</table>"
+    )
+
+
 def render_artifact_axis_tables(
     model_csv_map: dict[str, str | Path],
     real_csv_map: dict[str, str | Path],
@@ -105,7 +126,7 @@ def render_artifact_axis_tables(
             [r["model"], artifact_ece, r["artifact_ece_plus"], r["artifact_ece_minus"], r["artifact_mce"], r["artifact_smece"], r["artifact_aece"]]
         )
         ood_rows.append([r["model"], r["auroc_entropy"], r["aupr_entropy"], r["fpr95_entropy"]])
-        classification_rows.append([r["model"], r["artifact_brier"], r["artifact_nll"], r["mean_entropy_artifact"]])
+        classification_rows.append([r["model"], r["acc_artifact"], r["artifact_brier"], r["artifact_nll"], r["mean_entropy_artifact"]])
         selective_rows.append([r["model"], r["artifact_aurc"], r["artifact_augrc"], r["artifact_cov_5risk"], r["artifact_risk_80cov"]])
 
     def build(headers, rows, fmts, directions):
@@ -131,10 +152,10 @@ def render_artifact_axis_tables(
         [True, True, False],
     )
     classification_md = build(
-        ["Model", "Brier (×10⁻²) ↓", "NLL (×10⁻²) ↓", "Mean Entropy"],
+        ["Model", "Accuracy (Artifact) ↑", "Brier (×10⁻²) ↓", "NLL (×10⁻²) ↓", "Mean Entropy"],
         classification_rows,
-        [_fmt_scaled, _fmt_scaled, _fmt_unscaled],
-        [False, False, None],
+        [_fmt_unscaled, _fmt_scaled, _fmt_scaled, _fmt_unscaled],
+        [True, False, False, None],
     )
     selective_md = build(
         ["Model", "AURC (×10⁻²) ↓", "AUGRC (×10⁻²) ↓", "Cov@5%Risk ↑", "Risk@80%Cov (×10⁻²) ↓"],
@@ -143,13 +164,13 @@ def render_artifact_axis_tables(
         [False, False, True, False],
     )
 
-    return (
-        f"**{axis_label}**\n\n"
-        f"*Calibration (Artifact)*\n\n{calibration_md}\n\n"
-        f"*OOD Detection (extra) — Real vs. Artifact*\n\n{ood_md}\n\n"
-        f"*Classification (Artifact)*\n\n{classification_md}\n\n"
-        f"*Selective Classification (Artifact)*\n\n{selective_md}\n"
+    grid = _render_2x2_grid(
+        top_left=f"**Classification (Artifact)**\n\n{classification_md}",
+        top_right=f"**Calibration (Artifact)**\n\n{calibration_md}",
+        bottom_left=f"**OOD Detection — Real vs. Artifact**\n\n{ood_md}",
+        bottom_right=f"**Selective Classification (Artifact)**\n\n{selective_md}",
     )
+    return f"**{axis_label}**\n\n{grid}\n"
 
 
 def main() -> None:
