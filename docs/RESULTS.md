@@ -27,11 +27,6 @@
 | SNGP | 0.9827 | 0.9845 | 0.9800 | 0.9821 | 0.9983 | 0.9957 | 5.6070 | 9.7136 | 3.7980 | 0.9827 | 0.9827 | 0.9827 |
 | SNGP Ensemble | **0.9910** | **0.9926** | **0.9889** | **0.9906** | **0.9997** | **0.9991** | **3.5961** | **5.8695** | **1.8979** | **0.9910** | **0.9910** | **0.9910** |
 
-**Notes.** The Wong (UC Davis) models are trained on the UC Davis institution subset
-of Wong only (`data.datamodule.institution=ucdavis`) and evaluated here on that same
-subset's test split, so this table is in-distribution for the UC Davis scanner. The
-Wong (All institutions) table above uses the unfiltered dataset for both training and
-evaluation; the two are therefore not directly comparable row-for-row.
 ---
 
 # Out-of-Distribution (OOD) settings
@@ -84,7 +79,42 @@ in-distribution/OOD pair.
 
 # Artifact Simulation: Testing under the influence of artifacts
 
+Simulation has two independent axes — **config** (real artifact cutouts pasted onto the
+image) and **procedural** (acquisition degradations: stain shift, blur, noise,
+compression, geometry) — see [DATASETS.md](DATASETS.md#artifact-robustness-evaluation).
+Each is tested here with the other axis switched off, so a drop can be attributed to one
+axis rather than to "simulation" generically. `AUROC (Entropy)` is how well the model's
+own predictive entropy separates real from artifact-affected inputs (0.5 = no better than
+chance); the rest is accuracy on the real vs. artifact-simulated stream of the same
+images. Full metrics (confidence/entropy shift, prediction-flip rate, AUPR, FPR@95) are in
+each run's `metrics.json` — paths in
+[MASTER_INFER_RESULTS_PATH.md](MASTER_INFER_RESULTS_PATH.md).
+
 ### Model Trained on Acevedo and tested with different artifact secnarios
+
+**Config axis — one pasted artifact overlay (`count=1`, `artifact_balanced`, procedural off)**
+| Model | Accuracy (Real) ↑ | Accuracy (Artifact) ↑ | Accuracy Drop ↓ | AUROC (Entropy) ↑ |
+|---|---:|---:|---:|---:|
+| Baseline Classifier | 0.9813 | 0.7672 | 0.2141 | 0.6124 |
+| Deep Ensemble | **0.9889** | 0.7727 | 0.2161 | 0.6168 |
+| Monte Carlo Dropout | 0.9807 | 0.7663 | 0.2144 | 0.6137 |
+| SNGP | 0.9819 | 0.7839 | **0.1980** | 0.6428 |
+| SNGP Ensemble | 0.9880 | **0.7856** | 0.2024 | **0.6755** |
+
+**Procedural axis — one graded acquisition degradation (`severity=1`, `procedural_ood`, config off)**
+| Model | Accuracy (Real) ↑ | Accuracy (Artifact) ↑ | Accuracy Drop ↓ | AUROC (Entropy) ↑ |
+|---|---:|---:|---:|---:|
+| Baseline Classifier | 0.9813 | 0.9786 | 0.0026 | 0.5136 |
+| Deep Ensemble | **0.9889** | **0.9883** | **0.0006** | **0.5205** |
+| Monte Carlo Dropout | 0.9807 | 0.9786 | 0.0020 | 0.5136 |
+| SNGP | 0.9819 | 0.9801 | 0.0018 | 0.5125 |
+| SNGP Ensemble | 0.9880 | 0.9874 | **0.0006** | 0.5147 |
+
+At these settings, a single pasted artifact overlay drops accuracy roughly 80-100x more
+than one mild graded acquisition degradation — SNGP and its ensemble are the most robust
+to pasted artifacts and the best at flagging them via entropy, but that separation mostly
+disappears on the procedural axis, where every model stays close to its real-stream
+accuracy.
 
 ### Model Trained on Wong and tested with different artifact secnarios
 
