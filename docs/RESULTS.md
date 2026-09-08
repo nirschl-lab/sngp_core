@@ -110,26 +110,26 @@ noise, not a finding.
 
 **Classification (Artifact)**
 
-| Model | Accuracy (Artifact) ↑ | Brier (×10⁻²) ↓ | NLL (×10⁻²) ↓ | Mean Entropy |
-|---|---:|---:|---:|---:|
-| Baseline Classifier | 0.7672 | 37.00 | 123.54 | 0.1813 |
-| Deep Ensemble | 0.7727 | 35.75 | 115.69 | 0.1762 |
-| Monte Carlo Dropout | 0.7660 | 36.93 | 122.07 | 0.1854 |
-| SNGP | 0.7839 | 32.04 | 77.78 | 0.3223 |
-| SNGP Ensemble | **0.7856** | **29.61** | **70.54** | 0.3467 |
+| Model | Accuracy (Artifact) ↑ | Precision ↑ | Recall ↑ | F1 ↑ | Brier (×10⁻²) ↓ | NLL (×10⁻²) ↓ | Mean Entropy |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| Baseline Classifier | 0.7672 | 0.7846 | 0.7616 | 0.7604 | 37.00 | 123.54 | 0.1813 |
+| Deep Ensemble | 0.7727 | 0.8003 | 0.7609 | 0.7704 | 35.75 | 115.69 | 0.1762 |
+| Monte Carlo Dropout | 0.7660 | 0.7836 | 0.7599 | 0.7590 | 36.93 | 122.07 | 0.1854 |
+| SNGP | 0.7839 | **0.8175** | 0.7609 | 0.7785 | 32.04 | 77.78 | 0.3223 |
+| SNGP Ensemble | **0.7856** | 0.8113 | **0.7686** | **0.7816** | **29.61** | **70.54** | 0.3467 |
 
 </td>
 <td valign="top">
 
-**Calibration (Artifact)**
+**Selective Classification (Artifact)**
 
-| Model | ECE (Artifact) (×10⁻²) ↓ | ECE+ (×10⁻²) ↓ | ECE− (×10⁻²) ↓ | MCE (×10⁻²) ↓ | SmECE (×10⁻²) ↓ | aECE (×10⁻²) ↓ |
-|---|---:|---:|---:|---:|---:|---:|
-| Baseline Classifier | 10.53 | 10.52 | 0.00 | 100.00 | 8.96 | 10.52 |
-| Deep Ensemble | 10.11 | 10.11 | **0.00** | 100.00 | 9.06 | 10.11 |
-| Monte Carlo Dropout | 10.38 | 10.38 | 0.00 | 100.00 | 8.87 | 10.38 |
-| SNGP | **3.06** | 2.50 | 0.56 | **9.18** | 3.33 | 3.55 |
-| SNGP Ensemble | 3.48 | **1.56** | 1.91 | 16.65 | **3.26** | **3.42** |
+| Model | AURC (×10⁻²) ↓ | AUGRC (×10⁻²) ↓ | Cov@5%Risk ↑ | Risk@80%Cov (×10⁻²) ↓ |
+|---|---:|---:|---:|---:|
+| Baseline Classifier | 16.75 | 7.21 | — | 14.25 |
+| Deep Ensemble | 16.71 | 7.16 | — | 13.52 |
+| Monte Carlo Dropout | 16.64 | 7.17 | — | 14.22 |
+| SNGP | 7.03 | 5.08 | 0.4773 | 12.17 |
+| SNGP Ensemble | **5.23** | **4.17** | **0.6692** | **10.23** |
 
 </td>
 </tr>
@@ -149,15 +149,15 @@ noise, not a finding.
 </td>
 <td valign="top">
 
-**Selective Classification (Artifact)**
+**Calibration (Artifact)**
 
-| Model | AURC (×10⁻²) ↓ | AUGRC (×10⁻²) ↓ | Cov@5%Risk ↑ | Risk@80%Cov (×10⁻²) ↓ |
-|---|---:|---:|---:|---:|
-| Baseline Classifier | 16.75 | 7.21 | — | 14.25 |
-| Deep Ensemble | 16.71 | 7.16 | — | 13.52 |
-| Monte Carlo Dropout | 16.64 | 7.17 | — | 14.22 |
-| SNGP | 7.03 | 5.08 | 0.4773 | 12.17 |
-| SNGP Ensemble | **5.23** | **4.17** | **0.6692** | **10.23** |
+| Model | ECE (Artifact) (×10⁻²) ↓ | ECE+ (×10⁻²) ↓ | ECE− (×10⁻²) ↓ | MCE (×10⁻²) ↓ | SmECE (×10⁻²) ↓ | aECE (×10⁻²) ↓ |
+|---|---:|---:|---:|---:|---:|---:|
+| Baseline Classifier | 10.53 | 10.52 | 0.00 | 100.00 | 8.96 | 10.52 |
+| Deep Ensemble | 10.11 | 10.11 | **0.00** | 100.00 | 9.06 | 10.11 |
+| Monte Carlo Dropout | 10.38 | 10.38 | 0.00 | 100.00 | 8.87 | 10.38 |
+| SNGP | **3.06** | 2.50 | 0.56 | **9.18** | 3.33 | 3.55 |
+| SNGP Ensemble | 3.48 | **1.56** | 1.91 | 16.65 | **3.26** | **3.42** |
 
 </td>
 </tr>
@@ -171,26 +171,26 @@ noise, not a finding.
 
 **Classification (Artifact)**
 
-| Model | Accuracy (Artifact) ↑ | Brier (×10⁻²) ↓ | NLL (×10⁻²) ↓ | Mean Entropy |
-|---|---:|---:|---:|---:|
-| Baseline Classifier | 0.9786 | 4.08 | 10.16 | 0.1100 |
-| Deep Ensemble | **0.9883** | **2.76** | **7.45** | 0.0919 |
-| Monte Carlo Dropout | 0.9786 | 4.12 | 10.34 | 0.1129 |
-| SNGP | 0.9801 | 4.60 | 13.86 | 0.1931 |
-| SNGP Ensemble | 0.9874 | 3.45 | 11.46 | 0.1765 |
+| Model | Accuracy (Artifact) ↑ | Precision ↑ | Recall ↑ | F1 ↑ | Brier (×10⁻²) ↓ | NLL (×10⁻²) ↓ | Mean Entropy |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| Baseline Classifier | 0.9786 | 0.9769 | 0.9790 | 0.9777 | 4.08 | 10.16 | 0.1100 |
+| Deep Ensemble | **0.9883** | **0.9872** | **0.9879** | **0.9875** | **2.76** | **7.45** | 0.0919 |
+| Monte Carlo Dropout | 0.9786 | 0.9769 | 0.9790 | 0.9777 | 4.12 | 10.34 | 0.1129 |
+| SNGP | 0.9801 | 0.9794 | 0.9782 | 0.9786 | 4.60 | 13.86 | 0.1931 |
+| SNGP Ensemble | 0.9874 | 0.9868 | 0.9868 | 0.9867 | 3.45 | 11.46 | 0.1765 |
 
 </td>
 <td valign="top">
 
-**Calibration (Artifact)**
+**Selective Classification (Artifact)**
 
-| Model | ECE (Artifact) (×10⁻²) ↓ | ECE+ (×10⁻²) ↓ | ECE− (×10⁻²) ↓ | MCE (×10⁻²) ↓ | SmECE (×10⁻²) ↓ | aECE (×10⁻²) ↓ |
-|---|---:|---:|---:|---:|---:|---:|
-| Baseline Classifier | 4.75 | 0.01 | 4.74 | **17.53** | 4.60 | 4.74 |
-| Deep Ensemble | **4.39** | 0.02 | **4.37** | 37.62 | **4.17** | **4.35** |
-| Monte Carlo Dropout | 4.94 | 0.02 | 4.92 | 38.92 | 4.80 | 4.90 |
-| SNGP | 7.96 | **0.00** | 7.96 | 80.15 | 7.96 | 7.96 |
-| SNGP Ensemble | 7.57 | 0.00 | 7.57 | 63.84 | 7.57 | 7.57 |
+| Model | AURC (×10⁻²) ↓ | AUGRC (×10⁻²) ↓ | Cov@5%Risk ↑ | Risk@80%Cov (×10⁻²) ↓ |
+|---|---:|---:|---:|---:|
+| Baseline Classifier | 0.14 | 0.11 | **1.0000** | 0.07 |
+| Deep Ensemble | **0.07** | **0.05** | 1.0000 | **0.04** |
+| Monte Carlo Dropout | 0.15 | 0.12 | 1.0000 | 0.07 |
+| SNGP | 0.16 | 0.13 | 1.0000 | 0.22 |
+| SNGP Ensemble | 0.09 | 0.07 | 1.0000 | 0.11 |
 
 </td>
 </tr>
@@ -210,15 +210,15 @@ noise, not a finding.
 </td>
 <td valign="top">
 
-**Selective Classification (Artifact)**
+**Calibration (Artifact)**
 
-| Model | AURC (×10⁻²) ↓ | AUGRC (×10⁻²) ↓ | Cov@5%Risk ↑ | Risk@80%Cov (×10⁻²) ↓ |
-|---|---:|---:|---:|---:|
-| Baseline Classifier | 0.14 | 0.11 | **1.0000** | 0.07 |
-| Deep Ensemble | **0.07** | **0.05** | 1.0000 | **0.04** |
-| Monte Carlo Dropout | 0.15 | 0.12 | 1.0000 | 0.07 |
-| SNGP | 0.16 | 0.13 | 1.0000 | 0.22 |
-| SNGP Ensemble | 0.09 | 0.07 | 1.0000 | 0.11 |
+| Model | ECE (Artifact) (×10⁻²) ↓ | ECE+ (×10⁻²) ↓ | ECE− (×10⁻²) ↓ | MCE (×10⁻²) ↓ | SmECE (×10⁻²) ↓ | aECE (×10⁻²) ↓ |
+|---|---:|---:|---:|---:|---:|---:|
+| Baseline Classifier | 4.75 | 0.01 | 4.74 | **17.53** | 4.60 | 4.74 |
+| Deep Ensemble | **4.39** | 0.02 | **4.37** | 37.62 | **4.17** | **4.35** |
+| Monte Carlo Dropout | 4.94 | 0.02 | 4.92 | 38.92 | 4.80 | 4.90 |
+| SNGP | 7.96 | **0.00** | 7.96 | 80.15 | 7.96 | 7.96 |
+| SNGP Ensemble | 7.57 | 0.00 | 7.57 | 63.84 | 7.57 | 7.57 |
 
 </td>
 </tr>
@@ -236,9 +236,9 @@ accuracy drops ~20pp — they get more uncertain in roughly the right proportion
 worse they're doing — while the baseline-family models' ECE more than doubles
 (4.0-4.7→10.1-10.5), i.e. they stay overconfident on inputs they're now getting wrong. On
 the procedural axis, ECE barely moves for any model, consistent with the accuracy numbers.
-See the Classification/Calibration/OOD-Detection/Selective-Classification grid above for
-additional diagnostics (Accuracy, ECE+/ECE−/MCE/SmECE/aECE, AUPR/FPR95, Brier/NLL/mean-
-entropy, AURC/AUGRC/Cov@5%Risk/Risk@80%Cov) computed on the artifact stream alone.
+See the Classification/Selective-Classification/OOD-Detection/Calibration grid above for
+additional diagnostics (Accuracy/Precision/Recall/F1, AURC/AUGRC/Cov@5%Risk/Risk@80%Cov,
+AUPR/FPR95, ECE+/ECE−/MCE/SmECE/aECE) computed on the artifact stream alone.
 
 ### Model Trained on Wong and tested with different artifact secnarios
 

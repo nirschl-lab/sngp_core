@@ -7,9 +7,10 @@ table, the same real-vs-artifact framing the existing AUROC(Entropy) column alre
 uses) -- the real/in-distribution numbers (including Brier, backfilled from each run's
 `real_baseline/metrics.json`) live entirely in the "In-Distribution" section at the top
 of docs/RESULTS.md and are intentionally not repeated here. Renders as a 2x2 grid per
-axis -- Classification (top-left), Calibration (top-right), OOD Detection (bottom-left),
-Selective Classification (bottom-right) -- mirroring the torch-uncertainty tutorial's own
-table grouping. See `.claude/skills/metrics/SKILL.md` and
+axis -- Classification (top-left), Selective Classification (top-right), OOD Detection
+(bottom-left), Calibration (bottom-right) -- the two widest tables (Classification,
+Calibration) are placed on opposite rows so each row pairs a wide table with a narrower
+one. See `.claude/skills/metrics/SKILL.md` and
 `src/paper_helpers/ood_metrics/artifact_quantification.py::quantify_artifact_impact`
 (which this wraps) for the underlying metric definitions.
 
@@ -65,15 +66,14 @@ def _bold_best(values: list[str], raw: list[float], higher_is_better: bool | Non
     return out
 
 
-def _load_artifact_ece(metrics_json_path: str | Path) -> float:
-    """The existing "ECE (Artifact)" anchor column -- already computed at inference time
-    into `metrics.json["artifact.ece"]` (see src/inference/infer_artifact.py), not part of
-    `quantify_artifact_impact`'s own output. NaN if the file/key is missing."""
+def _load_artifact_metrics_json(metrics_json_path: str | Path, keys: list[str]) -> dict[str, float]:
+    """Pull `artifact.<key>` values already computed at inference time into `metrics.json`
+    (see `src/inference/infer_artifact.py`) -- covers ECE (the anchor column) as well as
+    Precision/Recall/F1, none of which `quantify_artifact_impact` computes itself. NaN for
+    any key missing from the file (or if the file itself is missing)."""
     path = Path(metrics_json_path)
-    if not path.exists():
-        return float("nan")
-    data = json.loads(path.read_text())
-    return float(data.get("artifact.ece", float("nan")))
+    data = json.loads(path.read_text()) if path.exists() else {}
+    return {key: float(data.get(f"artifact.{key}", float("nan"))) for key in keys}
 
 
 def _render_table(headers: list[str], rows: list[list[str]]) -> str:
@@ -121,12 +121,23 @@ def render_artifact_axis_tables(
     classification_rows = []
     selective_rows = []
     for _, r in summary_df.iterrows():
-        artifact_ece = _load_artifact_ece(metrics_json_map[r["model"]])
+        from_json = _load_artifact_metrics_json(metrics_json_map[r["model"]], ["ece", "precision", "recall", "f1"])
         calibration_rows.append(
-            [r["model"], artifact_ece, r["artifact_ece_plus"], r["artifact_ece_minus"], r["artifact_mce"], r["artifact_smece"], r["artifact_aece"]]
+            [r["model"], from_json["ece"], r["artifact_ece_plus"], r["artifact_ece_minus"], r["artifact_mce"], r["artifact_smece"], r["artifact_aece"]]
         )
         ood_rows.append([r["model"], r["auroc_entropy"], r["aupr_entropy"], r["fpr95_entropy"]])
-        classification_rows.append([r["model"], r["acc_artifact"], r["artifact_brier"], r["artifact_nll"], r["mean_entropy_artifact"]])
+        classification_rows.append(
+            [
+                r["model"],
+                r["acc_artifact"],
+                from_json["precision"],
+                from_json["recall"],
+                from_json["f1"],
+                r["artifact_brier"],
+                r["artifact_nll"],
+                r["mean_entropy_artifact"],
+            ]
+        )
         selective_rows.append([r["model"], r["artifact_aurc"], r["artifact_augrc"], r["artifact_cov_5risk"], r["artifact_risk_80cov"]])
 
     def build(headers, rows, fmts, directions):
@@ -152,10 +163,10 @@ def render_artifact_axis_tables(
         [True, True, False],
     )
     classification_md = build(
-        ["Model", "Accuracy (Artifact) ↑", "Brier (×10⁻²) ↓", "NLL (×10⁻²) ↓", "Mean Entropy"],
+        ["Model", "Accuracy (Artifact) ↑", "Precision ↑", "Recall ↑", "F1 ↑", "Brier (×10⁻²) ↓", "NLL (×10⁻²) ↓", "Mean Entropy"],
         classification_rows,
-        [_fmt_unscaled, _fmt_scaled, _fmt_scaled, _fmt_unscaled],
-        [True, False, False, None],
+        [_fmt_unscaled, _fmt_unscaled, _fmt_unscaled, _fmt_unscaled, _fmt_scaled, _fmt_scaled, _fmt_unscaled],
+        [True, True, True, True, False, False, None],
     )
     selective_md = build(
         ["Model", "AURC (×10⁻²) ↓", "AUGRC (×10⁻²) ↓", "Cov@5%Risk ↑", "Risk@80%Cov (×10⁻²) ↓"],
@@ -164,11 +175,14 @@ def render_artifact_axis_tables(
         [False, False, True, False],
     )
 
+    # Classification (8 cols incl. Model) and Calibration (7 cols) are the two wide tables --
+    # pairing each with a narrower one (Selective Classification: 5 cols, OOD Detection: 4
+    # cols) balances row width better than putting the two wide ones on the same row.
     grid = _render_2x2_grid(
         top_left=f"**Classification (Artifact)**\n\n{classification_md}",
-        top_right=f"**Calibration (Artifact)**\n\n{calibration_md}",
+        top_right=f"**Selective Classification (Artifact)**\n\n{selective_md}",
         bottom_left=f"**OOD Detection — Real vs. Artifact**\n\n{ood_md}",
-        bottom_right=f"**Selective Classification (Artifact)**\n\n{selective_md}",
+        bottom_right=f"**Calibration (Artifact)**\n\n{calibration_md}",
     )
     return f"**{axis_label}**\n\n{grid}\n"
 
