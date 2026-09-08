@@ -3,6 +3,12 @@
 infer:
   save:
     run_name: ""
+    # Artifact mode only: which stream(s) to actually run/save. The real (clean) stream is
+    # bit-identical for every artifact/procedural config against the same checkpoint, so a
+    # count/severity sweep should narrow this to [artifact] (after a one-time [real] run) --
+    # see docs/DATASETS.md's "Saving sweep results" section. Ignored by
+    # ClassificationInferenceRunner, which has no streams.
+    streams: [real, artifact]
     save_csv: true
     save_metrics_json: true
     # Provenance sidecar (ckpt path, net_spec, resolved infer.* sections, column list) --

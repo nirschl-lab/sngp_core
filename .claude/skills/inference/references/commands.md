@@ -36,6 +36,36 @@ uv run src/inference/infer.py ckpt_path=./checkpoints/acevedo_sngp_resnet18/mode
   infer.save.save_images=true
 ```
 
+## Artifact/procedural axis sweep (count, severity), without resaving the real stream
+
+Two independent axes as of the `d0b2ae7` package rev -- see
+[docs/DATASETS.md](../../../docs/DATASETS.md#artifact-robustness-evaluation). The real/clean
+stream is bit-identical across every count/severity variant against one checkpoint, so it's run
+once (`infer.save.streams=[real]`) and every swept variant writes only the artifact stream
+(`infer.save.streams=[artifact]`) -- narrowing `infer.save.streams` also skips the excluded
+stream's forward pass entirely, not just its CSV row. Same convention for `run_name` shape,
+Acevedo baseline shown:
+
+```bash
+# Once per checkpoint: shared real-stream baseline (clean arm -- both axes off)
+uv run src/inference/infer.py ckpt_path=<ckpt> data=artifact_image_classifier \
+  data.datamodule.artifact_config_path=none data.datamodule.artifact_procedural_config=none \
+  infer.save.streams=[real] \
+  infer.save.run_name=baseline_classifier_acevedo/<ckpt_run_id>/acevedo_artifact/real_baseline
+
+# Artifact axis only: count=1 overlay, procedural axis off
+uv run src/inference/infer.py ckpt_path=<ckpt> data=artifact_image_classifier \
+  data.datamodule.artifact_config_path=artifact_balanced data.datamodule.artifact_procedural_config=none \
+  data.datamodule.artifact_count=1 infer.save.streams=[artifact] \
+  infer.save.run_name=baseline_classifier_acevedo/<ckpt_run_id>/acevedo_artifact/config/count_1
+
+# Procedural axis only: severity=1 grading, artifact axis off
+uv run src/inference/infer.py ckpt_path=<ckpt> data=artifact_image_classifier \
+  data.datamodule.artifact_config_path=none data.datamodule.artifact_procedural_config=procedural_ood \
+  data.datamodule.artifact_severity=1 infer.save.streams=[artifact] \
+  infer.save.run_name=baseline_classifier_acevedo/<ckpt_run_id>/acevedo_artifact/procedural/severity_1
+```
+
 Wong (4 classes), baseline / MC-Dropout / SNGP -- same pattern, override the dataset:
 ```bash
 uv run src/inference/infer.py ckpt_path=./checkpoints/wong_sngp_resnet18/model.ckpt \

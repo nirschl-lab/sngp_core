@@ -69,6 +69,23 @@ class ArtifactInferenceRunner:
 
 		self.output_root = _resolve_output_root(cfg, default_run_name)
 
+		# Which stream(s) to actually run/save -- see configs/infer/save/default.yaml. A
+		# count/severity sweep narrows this to ["artifact"] (after a one-time ["real"] run)
+		# so the model never runs a forward pass on the redundant real-image stream.
+		streams = list(self.cfg.infer.save.get("streams", ["real", "artifact"]) or ["real", "artifact"])
+		invalid = set(streams) - {"real", "artifact"}
+		if invalid:
+			raise ValueError(f"infer.save.streams may only contain 'real'/'artifact', got {sorted(invalid)}")
+		if not streams:
+			raise ValueError("infer.save.streams must name at least one of 'real'/'artifact'")
+		self._streams = set(streams)
+
+		# Run-level artifact-axis knobs (see ArtifactImageDataModule): constant for every
+		# sample in this run, so read once here rather than round-tripped through the batch.
+		datamodule_cfg = self.cfg.data.datamodule
+		self._artifact_count = datamodule_cfg.get("artifact_count")
+		self._artifact_severity = datamodule_cfg.get("artifact_severity")
+
 		self._records: List[Dict[str, Any]] = []
 		# per-stream metric states, e.g. {"real": {"acc": ..., ...}, "artifact": {...}}
 		self._metric_states: Dict[str, Dict[str, Any]] = {}
@@ -174,9 +191,11 @@ class ArtifactInferenceRunner:
 			fold = batch.get("fold", ["test"] * len(image_ids))
 			targets = batch["target"].to(self.device)
 
+			# Only the requested streams are even moved to device -- this is where a sweep
+			# run's compute savings come from, not just the CSV it writes.
+			batch_keys = {"real": "real_image", "artifact": "artifact_simulated_image"}
 			stream_tensors = {
-				"real": batch["real_image"].to(self.device),
-				"artifact": batch["artifact_simulated_image"].to(self.device),
+				name: batch[key].to(self.device) for name, key in batch_keys.items() if name in self._streams
 			}
 
 			save_member_logits = bool(self.cfg.infer.save.save_member_logits)
@@ -199,6 +218,9 @@ class ArtifactInferenceRunner:
 						stream_name=stream_name, probs=outputs.probs, preds=preds, targets=targets
 					)
 
+				# count/severity/percent_pixels_affected describe the simulated artifact --
+				# meaningless for the real/clean stream, so left unset there.
+				is_artifact = stream_name == "artifact"
 				self._records.extend(
 					build_records(
 						image_ids=image_ids,
@@ -208,6 +230,9 @@ class ArtifactInferenceRunner:
 						outputs=outputs,
 						stream_name=stream_name,
 						save_member_logits=save_member_logits,
+						count=self._artifact_count if is_artifact else None,
+						severity=self._artifact_severity if is_artifact else None,
+						percent_pixels_affected=batch["percent_pixels_affected"] if is_artifact else None,
 					)
 				)
 
@@ -217,10 +242,12 @@ class ArtifactInferenceRunner:
 				limit = min(batch_size, budget)
 				for i in range(limit):
 					image_id = str(image_ids[i]).replace("/", "_")
-					real_path = image_dir / f"{image_id}_real.png"
-					art_path = image_dir / f"{image_id}_artifact.png"
-					_save_tensor_image(batch["real_image"][i], real_path)
-					_save_tensor_image(batch["artifact_simulated_image"][i], art_path)
+					if "real" in self._streams:
+						_save_tensor_image(batch["real_image"][i], image_dir / f"{image_id}_real.png")
+					if "artifact" in self._streams:
+						_save_tensor_image(
+							batch["artifact_simulated_image"][i], image_dir / f"{image_id}_artifact.png"
+						)
 				saved_images += limit
 
 		return self._finalize()

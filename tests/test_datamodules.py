@@ -413,6 +413,55 @@ def test_artifact_datamodule_test_stage_builds_paired_samples(monkeypatch: pytes
     assert "artifact_mask" in batch
     assert batch["artifact_mask"].shape[-2:] == batch["artifact_simulated_image"].shape[-2:]
     assert batch["artifact_labels"].shape == (1, len(_FAKE_LABEL_NAMES))
+    # No overlay in this fake simulator's mask (all zero), so nothing is "affected".
+    assert batch["percent_pixels_affected"][0].item() == pytest.approx(0.0)
+
+
+def test_artifact_datamodule_percent_pixels_affected_thresholds_the_alpha_mask(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`artifact_mask` is per-pixel blend alpha (0-255), not a 0/1 flag -- a soft-edged
+    overlay shades off toward its border. percent_pixels_affected has to threshold at >0
+    (fraction of pixels touched at all) rather than average the raw alpha, which would
+    report a much smaller (and, summed over full-alpha pixels near 255, easily >100%)
+    number instead of a real coverage percentage."""
+
+    def _fake_simulator(image, seed=None, count=None):
+        height, width = np.asarray(image).shape[:2]
+        mask = np.zeros((height, width), dtype=np.uint8)
+        # Half the pixels get a low, non-255 alpha -- still "affected", not "half-affected".
+        mask[: height // 2, :] = 5
+        return {
+            "image": image,
+            "artifact_mask": mask,
+            "instance_mask": np.zeros((height, width), dtype=np.uint16),
+            "artifact_labels": np.zeros(len(_FAKE_LABEL_NAMES), dtype=np.float32),
+            "metadata": {},
+        }
+
+    _fake_simulator.label_names = _FAKE_LABEL_NAMES
+    monkeypatch.setattr(
+        "src.data.artifact_image_datamodule.build_artifact_pipeline",
+        lambda **_kwargs: _fake_simulator,
+    )
+    monkeypatch.setattr(
+        "src.data.base_image_datamodule.datasets.load_dataset",
+        lambda _name: _fake_load_dataset_for_artifact(),
+    )
+
+    dm = ArtifactImageDataModule(
+        dataset_name="dummy",
+        artifact_bank_dir="/nonexistent-asset-bank",
+        num_classes=2,
+        batch_size=1,
+        num_workers=0,
+        pin_memory=False,
+        simulate_artifacts_for_test=True,
+    )
+    dm.setup(stage="test")
+
+    batch = next(iter(dm.test_dataloader()))
+    assert batch["percent_pixels_affected"][0].item() == pytest.approx(50.0, abs=1.0)
 
 
 def test_artifact_datamodule_seeds_each_sample_independently(

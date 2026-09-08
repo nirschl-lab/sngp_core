@@ -8,6 +8,7 @@ import torch
 from omegaconf import DictConfig, OmegaConf
 
 from src.inference import infer, records
+from src.inference.infer_artifact import ArtifactInferenceRunner
 from src.models.outputs import ModelOutput
 
 
@@ -277,6 +278,37 @@ def test_build_records_carries_the_stream_name():
         stream_name="artifact",
     )
     assert rows[0]["stream"] == "artifact"
+
+
+def test_build_records_omits_count_severity_and_percent_pixels_affected_by_default():
+    rows = records.build_records(
+        image_ids=["a"],
+        fold=["test"],
+        targets=torch.tensor([0]),
+        preds=torch.tensor([0]),
+        outputs=_batch_outputs(torch.tensor([[1.0, 0.0]])),
+        stream_name="real",
+    )
+    assert "count" not in rows[0]
+    assert "severity" not in rows[0]
+    assert "percent_pixels_affected" not in rows[0]
+
+
+def test_build_records_includes_count_severity_and_percent_pixels_affected_when_passed():
+    rows = records.build_records(
+        image_ids=["a", "b"],
+        fold=["test", "test"],
+        targets=torch.tensor([0, 1]),
+        preds=torch.tensor([0, 1]),
+        outputs=_batch_outputs(torch.tensor([[1.0, 0.0], [0.0, 1.0]])),
+        stream_name="artifact",
+        count=1,
+        severity=3,
+        percent_pixels_affected=torch.tensor([2.5, 0.0]),
+    )
+    assert [r["count"] for r in rows] == [1, 1]
+    assert [r["severity"] for r in rows] == [3, 3]
+    assert [r["percent_pixels_affected"] for r in rows] == pytest.approx([2.5, 0.0])
 
 
 def test_write_outputs_writes_both_files(tmp_path):
@@ -608,3 +640,74 @@ def test_build_records_omits_member_logits_when_flag_set_but_no_member_data():
         save_member_logits=True,
     )
     assert "member_logits" not in rows[0]
+
+
+def _artifact_cfg(tmp_path: Path, streams: list, artifact_count=None, artifact_severity=None) -> DictConfig:
+    return OmegaConf.create(
+        {
+            "save_path": str(tmp_path),
+            "infer": {
+                "runtime": {"device": "cpu", "use_mc_dropout": False, "mc_passes": 1},
+                "metrics": {"enabled": False, "items": []},
+                "save": {
+                    "run_name": "run",
+                    "streams": streams,
+                    "save_csv": True,
+                    "save_metrics_json": True,
+                    "save_run_json": False,
+                    "save_member_logits": False,
+                    "save_images": False,
+                    "max_images_to_save": 64,
+                },
+            },
+            "data": {"datamodule": {"artifact_count": artifact_count, "artifact_severity": artifact_severity}},
+        }
+    )
+
+
+def _artifact_batch() -> dict:
+    return {
+        "image_id": ["a", "b"],
+        "fold": ["test", "test"],
+        "target": torch.tensor([0, 1]),
+        "real_image": torch.zeros(2, 3, 4, 4),
+        "artifact_simulated_image": torch.ones(2, 3, 4, 4),
+        "percent_pixels_affected": torch.tensor([2.5, 0.0]),
+    }
+
+
+def test_artifact_runner_narrowed_to_artifact_stream_skips_real_forward_pass_and_rows(tmp_path):
+    """`infer.save.streams=[artifact]` -- the sweep-run shape -- must never touch the real
+    stream: no forward pass, no records, and count/severity/percent_pixels_affected land
+    only on the rows it does write."""
+    model = _FakeNet(ModelOutput(logits=torch.tensor([[1.0, 0.0], [0.0, 1.0]])))
+    cfg = _artifact_cfg(tmp_path, streams=["artifact"], artifact_count=1, artifact_severity=None)
+    runner = ArtifactInferenceRunner(model=model, dataloader=[_artifact_batch()], cfg=cfg)
+
+    runner.run()
+
+    streams_seen = {r["stream"] for r in runner._records}
+    assert streams_seen == {"artifact"}
+    assert all(r["count"] == 1 for r in runner._records)
+    assert [r["percent_pixels_affected"] for r in runner._records] == pytest.approx([2.5, 0.0])
+
+
+def test_artifact_runner_default_streams_writes_both(tmp_path):
+    model = _FakeNet(ModelOutput(logits=torch.tensor([[1.0, 0.0], [0.0, 1.0]])))
+    cfg = _artifact_cfg(tmp_path, streams=["real", "artifact"])
+    runner = ArtifactInferenceRunner(model=model, dataloader=[_artifact_batch()], cfg=cfg)
+
+    runner.run()
+
+    streams_seen = {r["stream"] for r in runner._records}
+    assert streams_seen == {"real", "artifact"}
+    # Real-stream rows never carry the artifact-only fields.
+    real_rows = [r for r in runner._records if r["stream"] == "real"]
+    assert all("count" not in r and "percent_pixels_affected" not in r for r in real_rows)
+
+
+def test_artifact_runner_rejects_invalid_stream_name(tmp_path):
+    model = _FakeNet(ModelOutput(logits=torch.tensor([[1.0, 0.0]])))
+    cfg = _artifact_cfg(tmp_path, streams=["bogus"])
+    with pytest.raises(ValueError, match="real.*artifact"):
+        ArtifactInferenceRunner(model=model, dataloader=[_artifact_batch()], cfg=cfg)

@@ -194,6 +194,9 @@ def build_records(
     outputs: BatchOutputs,
     stream_name: str,
     save_member_logits: bool = False,
+    count: Optional[int] = None,
+    severity: Optional[int] = None,
+    percent_pixels_affected: Optional[Sequence[float]] = None,
 ) -> List[Dict[str, Any]]:
     """One `predictions.csv` row per sample in the batch.
 
@@ -202,6 +205,14 @@ def build_records(
     (Dempster-Shafer, energy, temperature scaling) are unrecoverable without them.
     `raw_logits` (SNGP's pre-mean-field head output) and `uncertainty` follow the
     optional-column pattern -- present only when the net emits them.
+
+    `count`/`severity`/`percent_pixels_affected` follow the same optional-column pattern,
+    for the artifact-mode axis knobs (`ArtifactImageDataModule`'s `artifact_count` and
+    `artifact_severity`) and the per-sample measured `artifact_mask` coverage. `count` and
+    `severity` are run-level constants (same value every call), so the caller passes a
+    single scalar; `percent_pixels_affected` varies per sample (artifact placement differs
+    per image), so it's one value per row like `uncertainty`. None of the three apply to
+    the real/clean stream -- pass them only when building artifact-stream records.
 
     `member_logits` (`[M, C]` per row -- ensemble members or MC-Dropout passes, the
     same shape either way) is written only when `save_member_logits=True` *and*
@@ -243,6 +254,16 @@ def build_records(
         # [M, B, C] -> [B, M, C], so member_logits_cpu[idx] is this sample's [M, C].
         member_logits_cpu = outputs.member_logits.detach().cpu().permute(1, 0, 2).tolist()
 
+    pixels_cpu = None
+    if percent_pixels_affected is not None:
+        pixels_cpu = to_cpu_tensor(percent_pixels_affected).reshape(-1)
+        if pixels_cpu.numel() != len(image_ids):
+            raise ValueError(
+                f"percent_pixels_affected has {pixels_cpu.numel()} values for {len(image_ids)} "
+                "samples; expected one per sample."
+            )
+        pixels_cpu = pixels_cpu.tolist()
+
     records: List[Dict[str, Any]] = []
     for idx in range(len(image_ids)):
         record = {
@@ -261,6 +282,12 @@ def build_records(
             record["uncertainty"] = float(unc_cpu[idx])
         if member_logits_cpu is not None:
             record["member_logits"] = json.dumps(member_logits_cpu[idx])
+        if count is not None:
+            record["count"] = int(count)
+        if severity is not None:
+            record["severity"] = int(severity)
+        if pixels_cpu is not None:
+            record["percent_pixels_affected"] = float(pixels_cpu[idx])
         records.append(record)
     return records
 

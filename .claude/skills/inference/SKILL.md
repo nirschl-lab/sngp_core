@@ -75,6 +75,16 @@ For artifact (paired real/simulated-artifact) inference, use
 flag or script needed. `infer.save.save_images=true` saves the paired real/artifact
 images alongside predictions.
 
+Artifact simulation is two independent axes (`data.datamodule.artifact_config_path`/
+`artifact_count` for which real cutouts get pasted; `artifact_procedural_config`/
+`artifact_severity` for which acquisition degradations fire) — see
+`docs/DATASETS.md`'s "Artifact-robustness evaluation" section. Sweeping either axis should
+NOT resave the real stream every run: it's bit-identical across every count/severity
+variant against one checkpoint. Run once with `infer.save.streams=[real]`, then each swept
+variant with `infer.save.streams=[artifact]` — see `references/commands.md`'s "Artifact/
+procedural axis sweep" section for the exact commands and `real_baseline`/`config/`/
+`procedural/` folder convention.
+
 `references/commands.md` has real recorded invocations (cross-dataset OOD tests,
 `fold=all` sweeps, MC-Dropout runs) — treat as examples of shape, not literal copies;
 always confirm `ckpt_path`/`save_path` against what actually exists first.

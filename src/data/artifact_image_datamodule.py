@@ -13,10 +13,17 @@ from src.data.components.hf_dataset import HFDataset, _apply_transform
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
-#: A policy shipped inside histo-artifact-sim, resolved by name. `load_config` treats the
+#: A policy shipped inside histo-artifact-sim, resolved by name. `resolve_policy` treats the
 #: value as a filesystem path when one exists and as a builtin name otherwise, so a
-#: generated policy file still works here.
-DEFAULT_ARTIFACT_CONFIG = "balanced"
+#: generated policy file still works here. This is the *artifact* axis (which cutouts get
+#: pasted); the *procedural* axis (acquisition degradations) is independent -- see
+#: DEFAULT_PROCEDURAL_CONFIG below.
+DEFAULT_ARTIFACT_CONFIG = "artifact_balanced"
+
+#: Left unset by default, which resolves to "procedural_minimal" inside the package (only
+#: illumination_gradient + local_blur fire). Pass "procedural_standard"/"procedural_ood", or
+#: "none" to switch the axis off entirely -- see docs/DATASETS.md.
+DEFAULT_PROCEDURAL_CONFIG = None
 
 #: Acevedo's native patch edge -- the simulator runs on the raw image, before the
 #: datamodule's resize/crop. Only consulted when coverage is derived from the bank
@@ -41,6 +48,10 @@ def build_artifact_pipeline(
     weights: str = "config",
     coverage_scaling: Optional[str] = "fixed",
     on_missing_category: str = "error",
+    procedural: Optional[str] = DEFAULT_PROCEDURAL_CONFIG,
+    severity: Optional[int] = None,
+    ladder: Optional[str] = None,
+    count: Optional[int] = None,
 ):
     """Build the artifact simulator from an asset bank.
 
@@ -48,9 +59,16 @@ def build_artifact_pipeline(
     (under `$HISTO_ARTIFACTS_CACHE`), so there is no manifest CSV to keep in sync -- adding
     or removing an asset invalidates the cache on its own.
 
+    `config_spec`/`coverage`/`weights`/`coverage_scaling` govern the *artifact* axis (which
+    cutouts get pasted, how large, how often); `procedural`/`severity`/`ladder` govern the
+    independent *procedural* axis (acquisition degradations); `count` pins an exact overlay
+    count on the artifact axis. Either axis can be switched off with `config_spec="none"` /
+    `procedural="none"` -- see docs/DATASETS.md for the two-axis split and the `none`
+    ablation pattern.
+
     `coverage` and `weights` choose whether artifact *size* and *frequency* come from the
     bank or from the named policy. Both default to the policy here, which keeps the
-    shipped `balanced` quartiles rather than re-deriving them.
+    shipped `artifact_balanced` quartiles rather than re-deriving them.
 
     `coverage_scaling="fixed"` is what keeps artifacts legible. Coverage is normally a
     fraction of a *field of view*: the assets are 40x cutouts measured against a 1024px
@@ -83,13 +101,22 @@ def build_artifact_pipeline(
         # Loud by default: a configured category with no assets loses its weight and
         # silently changes the realized distribution.
         on_missing_category=on_missing_category,
+        procedural=procedural,
+        severity=severity,
+        ladder=ladder,
+        count=count,
     )
 
     provenance = pipeline.provenance
     logger.info(
-        "Artifact simulator ready: config={} config_id={} manifest_id={} "
-        "assets={} coverage_scaling={} patch_magnification={}x reference_patch_px={}",
+        "Artifact simulator ready: config={} procedural={} severity={} ladder={} count={} "
+        "config_id={} manifest_id={} assets={} coverage_scaling={} patch_magnification={}x "
+        "reference_patch_px={}",
         config_spec,
+        procedural,
+        severity,
+        ladder,
+        count,
         provenance["config_id"],
         provenance["manifest_id"],
         provenance["catalog_size"],
@@ -167,6 +194,20 @@ class ArtifactHFDataset(Dataset):
             # brightness/contrast) modify the image but are reported in artifact_labels,
             # never merged into the mask.
             "artifact_mask": artifact_mask,
+            # Per-sample, unlike count/severity (run-level knobs pulled straight off cfg by
+            # the inference runner): placement varies per image, so this has to travel with
+            # the sample. Most procedural effects are whole-frame and never touch
+            # artifact_mask (see the comment above), so this is usually 0 on a
+            # procedural-axis run -- except when `local_blur` fires, the one procedural
+            # effect registered with local (not global/warp) scope, which does localize
+            # into the mask same as an overlay would. That's the expected signal, not a bug.
+            #
+            # artifact_mask is per-pixel blend alpha (uint8, 0-255), not a 0/1 flag -- a
+            # soft-edged overlay shades off toward its border rather than cutting sharply,
+            # so most affected pixels sit well under 255. Thresholding at >0 is what makes
+            # this "fraction of pixels touched at all" rather than "average blend strength",
+            # which is the coverage question downstream analysis actually wants to ask.
+            "percent_pixels_affected": float((artifact_mask > 0).float().mean()) * 100.0,
             "artifact_labels": torch.from_numpy(simulated["artifact_labels"]),
             "target": label,
             "fold": self.fold,
@@ -202,6 +243,10 @@ class ArtifactImageDataModule(BaseImageDataModule):
         artifact_weights: str = "config",
         artifact_coverage_scaling: Optional[str] = "fixed",
         artifact_on_missing_category: str = "error",
+        artifact_procedural_config: Optional[str] = DEFAULT_PROCEDURAL_CONFIG,
+        artifact_severity: Optional[int] = None,
+        artifact_ladder: Optional[str] = None,
+        artifact_count: Optional[int] = None,
         simulate_artifacts_for_test: bool = True,
     ) -> None:
         super().__init__(
@@ -228,6 +273,10 @@ class ArtifactImageDataModule(BaseImageDataModule):
         self.artifact_weights = artifact_weights
         self.artifact_coverage_scaling = artifact_coverage_scaling
         self.artifact_on_missing_category = artifact_on_missing_category
+        self.artifact_procedural_config = artifact_procedural_config
+        self.artifact_severity = artifact_severity
+        self.artifact_ladder = artifact_ladder
+        self.artifact_count = artifact_count
         self.simulate_artifacts_for_test = simulate_artifacts_for_test
         self.artifact_pipeline = None
         #: Label space of `artifact_labels`: policy categories, then `global:*` effects.
@@ -255,6 +304,10 @@ class ArtifactImageDataModule(BaseImageDataModule):
                 weights=self.artifact_weights,
                 coverage_scaling=self.artifact_coverage_scaling,
                 on_missing_category=self.artifact_on_missing_category,
+                procedural=self.artifact_procedural_config,
+                severity=self.artifact_severity,
+                ladder=self.artifact_ladder,
+                count=self.artifact_count,
             )
             self.artifact_label_names = self.artifact_pipeline.label_names
 

@@ -35,11 +35,35 @@ datamodule:
   # Categorises the bank per asset. Regenerate with scripts/artifact/build_taxonomy.py --
   # the flat folder layout alone puts 17% of assets in categories no policy mentions.
   artifact_taxonomy_csv: ${paths.root_dir}/data/artifact/artifact_taxonomy_by_image.csv
-  # A policy shipped in histo-artifact-sim ("balanced" or "empirical"); a path to a
-  # generated policy file also works. balanced gives all 11 categories equal occurrence,
-  # which is what makes rare ones (focus, scratch_glass) measurable.
-  artifact_config_path: balanced
+
+  # -- Artifact axis: which real cutouts get pasted, how large, how often. --
+  # A policy shipped in histo-artifact-sim ("artifact_balanced" or "artifact_empirical"); a
+  # path to a generated policy file, or "none" to switch this axis off, also works.
+  # artifact_balanced gives all 11 categories equal occurrence, which is what makes rare
+  # ones (focus, scratch_glass) measurable -- use it for training/evaluation.
+  # artifact_empirical instead mirrors real slide prevalence (debris dominates), for a
+  # held-out test set meant to reflect what a deployed model actually meets.
+  artifact_config_path: artifact_balanced
+  # Pins an exact overlay count per image, overriding the policy's own random
+  # clean/overlay-probability draw entirely. null = policy's own random draw.
+  artifact_count: null
   artifact_seed: 42
+
+  # -- Procedural axis: which acquisition degradations (stain shift, blur, noise,
+  # compression, geometry, ...) fire, independent of the artifact axis above. --
+  # null (default) resolves to "procedural_minimal" inside the package; other options are
+  # "procedural_standard", "procedural_ood" (all 13 effects -- what severity grading is
+  # meant to be used with), a path to a generated policy, or "none" to switch this axis
+  # off entirely. See docs/DATASETS.md for the two-axis split and the `none` ablation
+  # pattern (config=none + procedural=none is the clean baseline arm).
+  artifact_procedural_config: null
+  # Grades how strong a *firing* procedural effect is (1..5 for the default ladder) --
+  # independent of how often it fires, which stays with artifact_procedural_config. null =
+  # ungraded (each effect uses its policy's own fixed parameter range).
+  artifact_severity: null
+  # Severity ladder to grade with; null = the shipped "histo_c". Only consulted when
+  # artifact_severity is set.
+  artifact_ladder: null
   # The optics the patches are read as. Recorded in provenance and used whenever
   # coverage is rescaled.
   artifact_patch_magnification: 40

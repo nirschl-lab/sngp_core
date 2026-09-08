@@ -390,11 +390,36 @@ def _plot_comparison_bars(results_df: pd.DataFrame, save_path: Path) -> None:
 	plt.close(fig)
 
 
+def _load_paired_csv(csv_path: str | Path, real_csv_path: str | Path | None) -> pd.DataFrame:
+	"""Read one model's artifact predictions, joining in a shared real-stream CSV if needed.
+
+	A sweep run written with `infer.save.streams=[artifact]` has no "real" rows of its own
+	by design -- the real/clean stream is bit-identical for every count/severity variant
+	against the same checkpoint, so it's computed once into a shared `real_baseline/
+	predictions.csv` instead of being recomputed and rewritten per sweep run (see
+	docs/DATASETS.md's "Saving sweep results" section). `_build_stream_df` (and everything
+	downstream of it here) still expects one dataframe with both streams, so concatenate
+	them before that call rather than touching the pairing logic itself.
+	"""
+	df_raw = pd.read_csv(csv_path)
+	has_real = "stream" in df_raw.columns and (df_raw["stream"].map(_canonicalize_stream) == "real").any()
+	if has_real or real_csv_path is None:
+		return df_raw
+	real_df_raw = pd.read_csv(real_csv_path)
+	return pd.concat([real_df_raw, df_raw], ignore_index=True)
+
+
 def quantify_artifact_impact(
 	model_csv_map: dict[str, str | Path],
 	output_dir: str | Path,
 	confidence_score_mode: ConfidenceScoreMode = "raw_confidence",
+	real_csv_map: dict[str, str | Path] | None = None,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
+	"""`real_csv_map` (optional): `{model_name: real_baseline_csv_path}` for models whose
+	`model_csv_map` entry holds only the artifact stream (a count/severity sweep run) --
+	its rows are joined in before pairing. A model already holding both streams in one CSV
+	(the pre-sweep, self-contained format) needs no entry here.
+	"""
 	out_dir = Path(output_dir)
 	out_dir.mkdir(parents=True, exist_ok=True)
 	(out_dir / "plots").mkdir(parents=True, exist_ok=True)
@@ -404,7 +429,7 @@ def quantify_artifact_impact(
 	entropy_by_model: dict[str, dict[str, np.ndarray]] = {}
 
 	for model_name, csv_path in model_csv_map.items():
-		df_raw = pd.read_csv(csv_path)
+		df_raw = _load_paired_csv(csv_path, (real_csv_map or {}).get(model_name))
 		df = _build_stream_df(df_raw)
 
 		real_label, artifact_label = _resolve_stream_labels(df["stream_canonical"].tolist())

@@ -185,6 +185,28 @@ place the checkpoint-to-run binding is recorded on disk -- see [§8](#8-known-qu
 nothing else records it -- and is written last, from `_finalize`, so a run that crashed partway
 leaves no `run.json` behind either.
 
+### Artifact-mode axis sweeps
+
+A count/severity sweep (`data.datamodule.artifact_count`/`artifact_severity`, see
+[docs/DATASETS.md](DATASETS.md#artifact-robustness-evaluation)) sets `infer.save.run_name`
+explicitly rather than relying on the auto-derived path above, since every variant shares one
+`<netname_dataset>/<ckpt_run_id>` and would otherwise collide in the same
+`acevedo_artifact/` folder. Convention:
+
+```
+<netname_dataset>/<ckpt_run_id>/acevedo_artifact/
+  real_baseline/predictions.csv          # infer.save.streams=[real] -- once per checkpoint
+  config/count_<N>/predictions.csv       # infer.save.streams=[artifact], artifact axis only
+  procedural/severity_<N>/predictions.csv  # infer.save.streams=[artifact], procedural axis only
+```
+
+`real_baseline/` holds the real/clean stream, run once (it's bit-identical for every
+count/severity variant against the same checkpoint, so re-running and resaving it per sweep
+value would be pure duplication -- see DATASETS.md's "Saving sweep results"). Every other
+subfolder holds only the artifact stream for its one config; `quantify_artifact_impact`'s
+`real_csv_map` param joins a sweep CSV against `real_baseline/predictions.csv` when both
+streams are needed together.
+
 ## 6. Ensemble-member parallel training outputs
 
 [`scripts/ensemble/train_members_parallel.sh`](../scripts/ensemble/train_members_parallel.sh)

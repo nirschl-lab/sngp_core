@@ -57,6 +57,7 @@ DEFAULT_INFER_METRICS_CFG: Dict[str, Any] = {
 
 DEFAULT_INFER_SAVE_CFG: Dict[str, Any] = {
     "run_name": "",
+    "streams": ["real", "artifact"],
     "save_csv": True,
     "save_metrics_json": True,
     "save_run_json": True,
