@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
@@ -7,6 +8,7 @@ from typing import Any, Literal
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import torch
 from scipy.stats import gaussian_kde
 from sklearn.metrics import (
 	auc,
@@ -15,9 +17,13 @@ from sklearn.metrics import (
 	roc_auc_score,
 	roc_curve,
 )
+from torch_uncertainty.metrics.classification import CategoricalNLL
 
+from src.metrics.brier import brier_score
+from src.metrics.calibration_variants import adaptive_ece, ece_minus, ece_plus, mce, smooth_ece
 from src.metrics.io import normalized_entropy as _normalized_entropy_from_probs
 from src.metrics.io import parse_float_list as _parse_class_probs
+from src.metrics.selective_classification import augrc, aurc, coverage_at_5risk, risk_at_80cov
 
 
 REAL_STREAM_CANDIDATES = {"real", "clean", "original", "id", "in", "in_distribution"}
@@ -189,6 +195,55 @@ def _compute_paired_metrics(df: pd.DataFrame, real_label: str, artifact_label: s
 		"entropy_rise": float(np.mean(merged["entropy_artifact"]) - np.mean(merged["entropy_real"])),
 		"prediction_flip_rate": float(np.mean(merged["flip_pred"])),
 	}
+
+
+def _compute_single_stream_metrics(
+	df: pd.DataFrame, stream_label: str, n_bins: int = 10
+) -> dict[str, float]:
+	"""Calibration-variant + selective-classification metrics on ONE stream only --
+	unlike `_compute_paired_metrics`, this never merges real+artifact rows. `df` is the
+	full `_build_stream_df` output; only rows matching `stream_label` are used.
+	"""
+	stream_df = df[df["stream_canonical"] == stream_label]
+	probs = torch.tensor(np.stack(stream_df["class_probs_parsed"].to_numpy()), dtype=torch.float32)
+	targets = torch.tensor(stream_df["target"].astype(int).to_numpy(), dtype=torch.long)
+	num_classes = probs.shape[1]
+
+	prefix = stream_label
+	return {
+		f"{prefix}_ece_plus": ece_plus(probs, targets, n_bins=n_bins),
+		f"{prefix}_ece_minus": ece_minus(probs, targets, n_bins=n_bins),
+		f"{prefix}_mce": mce(probs, targets, num_classes=num_classes, n_bins=n_bins),
+		f"{prefix}_aece": adaptive_ece(probs, targets, num_classes=num_classes, n_bins=n_bins),
+		f"{prefix}_smece": smooth_ece(probs, targets),
+		f"{prefix}_aurc": aurc(probs, targets),
+		f"{prefix}_augrc": augrc(probs, targets),
+		f"{prefix}_cov_5risk": coverage_at_5risk(probs, targets),
+		f"{prefix}_risk_80cov": risk_at_80cov(probs, targets),
+	}
+
+
+def _load_nll_brier(metrics_json_path: str | Path | None, df: pd.DataFrame) -> tuple[float, float]:
+	"""Prefer `metrics.json["artifact.nll"/"artifact.brier"]` -- already computed at
+	inference time, see `src/inference/infer_artifact.py::_finalize`. Falls back to
+	recomputing from the artifact-stream rows directly for older runs / missing files.
+	"""
+	if metrics_json_path is not None:
+		path = Path(metrics_json_path)
+		if path.exists():
+			data = json.loads(path.read_text())
+			if "artifact.nll" in data and "artifact.brier" in data:
+				return float(data["artifact.nll"]), float(data["artifact.brier"])
+
+	artifact_df = df[df["stream_canonical"] == "artifact"]
+	probs = torch.tensor(np.stack(artifact_df["class_probs_parsed"].to_numpy()), dtype=torch.float32)
+	targets = torch.tensor(artifact_df["target"].astype(int).to_numpy(), dtype=torch.long)
+
+	nll_metric = CategoricalNLL()
+	nll_metric.update(probs, targets)
+	nll_val = float(nll_metric.compute())
+	brier_val = brier_score(probs, targets, num_classes=probs.shape[1])
+	return nll_val, brier_val
 
 
 def _plot_roc_curves(
@@ -414,11 +469,19 @@ def quantify_artifact_impact(
 	output_dir: str | Path,
 	confidence_score_mode: ConfidenceScoreMode = "raw_confidence",
 	real_csv_map: dict[str, str | Path] | None = None,
+	metrics_json_map: dict[str, str | Path] | None = None,
+	n_calibration_bins: int = 10,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
 	"""`real_csv_map` (optional): `{model_name: real_baseline_csv_path}` for models whose
 	`model_csv_map` entry holds only the artifact stream (a count/severity sweep run) --
 	its rows are joined in before pairing. A model already holding both streams in one CSV
 	(the pre-sweep, self-contained format) needs no entry here.
+
+	`metrics_json_map` (optional): `{model_name: metrics_json_path}` pointing at the run's
+	`metrics.json` (written by `src/inference/infer_artifact.py`) -- when given, NLL/Brier
+	are read from its already-computed `artifact.nll`/`artifact.brier` keys instead of being
+	recomputed here. `n_calibration_bins` controls the bin count for the artifact-stream-only
+	ECE+/ECE-/MCE/aECE columns (see `_compute_single_stream_metrics`).
 	"""
 	out_dir = Path(output_dir)
 	out_dir.mkdir(parents=True, exist_ok=True)
@@ -448,6 +511,8 @@ def quantify_artifact_impact(
 			confidence_score_mode=confidence_score_mode,
 		)
 		paired = _compute_paired_metrics(df, "real", "artifact")
+		single_stream = _compute_single_stream_metrics(df, "artifact", n_bins=n_calibration_bins)
+		nll_val, brier_val = _load_nll_brier((metrics_json_map or {}).get(model_name), df)
 
 		row = {
 			"model": model_name,
@@ -460,6 +525,9 @@ def quantify_artifact_impact(
 			"aupr_confidence_score": det.aupr_confidence_score,
 			"fpr95_entropy": det.fpr95_entropy,
 			"fpr95_confidence_score": det.fpr95_confidence_score,
+			**single_stream,
+			"artifact_nll": nll_val,
+			"artifact_brier": brier_val,
 		}
 		summary_rows.append(row)
 
