@@ -85,36 +85,43 @@ compression, geometry) — see [DATASETS.md](DATASETS.md#artifact-robustness-eva
 Each is tested here with the other axis switched off, so a drop can be attributed to one
 axis rather than to "simulation" generically. `AUROC (Entropy)` is how well the model's
 own predictive entropy separates real from artifact-affected inputs (0.5 = no better than
-chance); the rest is accuracy on the real vs. artifact-simulated stream of the same
-images. Full metrics (confidence/entropy shift, prediction-flip rate, AUPR, FPR@95) are in
-each run's `metrics.json` — paths in
-[MASTER_INFER_RESULTS_PATH.md](MASTER_INFER_RESULTS_PATH.md).
+chance); `ECE` is expected calibration error (same ×10⁻² convention as the in-distribution
+table above) computed separately on each stream, so it isolates whether confidence stays
+trustworthy under artifacts rather than just whether accuracy holds. The rest is accuracy
+on the real vs. artifact-simulated stream of the same images. Full metrics
+(confidence/entropy shift, prediction-flip rate, AUPR, FPR@95) are in each run's
+`metrics.json` — paths in [MASTER_INFER_RESULTS_PATH.md](MASTER_INFER_RESULTS_PATH.md).
 
 ### Model Trained on Acevedo and tested with different artifact secnarios
 
 **Config axis — one pasted artifact overlay (`count=1`, `artifact_balanced`, procedural off)**
-| Model | Accuracy (Real) ↑ | Accuracy (Artifact) ↑ | Accuracy Drop ↓ | AUROC (Entropy) ↑ |
-|---|---:|---:|---:|---:|
-| Baseline Classifier | 0.9813 | 0.7672 | 0.2141 | 0.6124 |
-| Deep Ensemble | **0.9889** | 0.7727 | 0.2161 | 0.6168 |
-| Monte Carlo Dropout | 0.9807 | 0.7663 | 0.2144 | 0.6137 |
-| SNGP | 0.9819 | 0.7839 | **0.1980** | 0.6428 |
-| SNGP Ensemble | 0.9880 | **0.7856** | 0.2024 | **0.6755** |
+| Model | Accuracy (Real) ↑ | Accuracy (Artifact) ↑ | Accuracy Drop ↓ | ECE (Real) (×10⁻²) ↓ | ECE (Artifact) (×10⁻²) ↓ | AUROC (Entropy) ↑ |
+|---|---:|---:|---:|---:|---:|---:|
+| Baseline Classifier | 0.9813 | 0.7672 | 0.2141 | 4.60 | 10.53 | 0.6124 |
+| Deep Ensemble | **0.9889** | 0.7727 | 0.2161 | **4.00** | 10.11 | 0.6168 |
+| Monte Carlo Dropout | 0.9807 | 0.7663 | 0.2144 | 4.72 | 10.35 | 0.6137 |
+| SNGP | 0.9819 | 0.7839 | **0.1980** | 7.68 | **3.06** | 0.6428 |
+| SNGP Ensemble | 0.9880 | **0.7856** | 0.2024 | 7.30 | 3.48 | **0.6755** |
 
 **Procedural axis — one graded acquisition degradation (`severity=1`, `procedural_ood`, config off)**
-| Model | Accuracy (Real) ↑ | Accuracy (Artifact) ↑ | Accuracy Drop ↓ | AUROC (Entropy) ↑ |
-|---|---:|---:|---:|---:|
-| Baseline Classifier | 0.9813 | 0.9786 | 0.0026 | 0.5136 |
-| Deep Ensemble | **0.9889** | **0.9883** | **0.0006** | **0.5205** |
-| Monte Carlo Dropout | 0.9807 | 0.9786 | 0.0020 | 0.5136 |
-| SNGP | 0.9819 | 0.9801 | 0.0018 | 0.5125 |
-| SNGP Ensemble | 0.9880 | 0.9874 | **0.0006** | 0.5147 |
+| Model | Accuracy (Real) ↑ | Accuracy (Artifact) ↑ | Accuracy Drop ↓ | ECE (Real) (×10⁻²) ↓ | ECE (Artifact) (×10⁻²) ↓ | AUROC (Entropy) ↑ |
+|---|---:|---:|---:|---:|---:|---:|
+| Baseline Classifier | 0.9813 | 0.9786 | 0.0026 | 4.60 | 4.75 | 0.5136 |
+| Deep Ensemble | **0.9889** | **0.9883** | **0.0006** | **4.00** | **4.39** | **0.5205** |
+| Monte Carlo Dropout | 0.9807 | 0.9786 | 0.0020 | 4.72 | 4.91 | 0.5136 |
+| SNGP | 0.9819 | 0.9801 | 0.0018 | 7.68 | 7.96 | 0.5125 |
+| SNGP Ensemble | 0.9880 | 0.9874 | **0.0006** | 7.30 | 7.57 | 0.5147 |
 
 At these settings, a single pasted artifact overlay drops accuracy roughly 80-100x more
 than one mild graded acquisition degradation — SNGP and its ensemble are the most robust
 to pasted artifacts and the best at flagging them via entropy, but that separation mostly
 disappears on the procedural axis, where every model stays close to its real-stream
-accuracy.
+accuracy. Calibration tells a different story from accuracy: on the config axis, SNGP's
+and SNGP Ensemble's ECE actually *improves* under artifacts (7.68→3.06, 7.30→3.48) even as
+their accuracy drops ~20pp — they get more uncertain in roughly the right proportion to
+how much worse they're doing — while the baseline-family models' ECE more than doubles
+(4.0-4.7→10.1-10.5), i.e. they stay overconfident on inputs they're now getting wrong. On
+the procedural axis, ECE barely moves for any model, consistent with the accuracy numbers.
 
 ### Model Trained on Wong and tested with different artifact secnarios
 

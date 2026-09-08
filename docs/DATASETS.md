@@ -102,6 +102,16 @@ one procedural effect registered with local rather than global/warp scope, which
 the mask same as a pasted overlay would). See "Saving sweep results" below and
 `.claude/skills/metrics/references/csv_schema.md` for the full column reference.
 
+`percent_pixels_affected` can also be 0 on the *artifact* axis, even with `artifact_count`
+pinned — pinning guarantees an overlay is **attempted** (`count=N` skips the clean-probability
+roll entirely, see `count` above), not that it renders visibly. A pull from a thin bank category
+(the README's own `focus`/`scratch_glass`/`bubble`/`tissue_component`/`processing_material`
+caveat) can composite to zero visible alpha despite a nonzero target coverage — check the
+sample's `operations` metadata (`kind="overlay"`, `clipped=True`) to distinguish "no overlay
+fired" from "an overlay fired but rendered invisibly." At `artifact_balanced`/`count=1` this
+happens on roughly 6% of Acevedo test samples, dominated by `focus/out_of_focus` and
+`stain_artifact/gms_background`.
+
 ### Saving sweep results
 
 The real (clean) stream's predictions are bit-identical for every artifact/procedural
