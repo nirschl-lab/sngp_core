@@ -197,6 +197,8 @@ def build_records(
     count: Optional[int] = None,
     severity: Optional[int] = None,
     percent_pixels_affected: Optional[Sequence[float]] = None,
+    global_degradations: Optional[Sequence[str]] = None,
+    geometric_degradations: Optional[Sequence[str]] = None,
 ) -> List[Dict[str, Any]]:
     """One `predictions.csv` row per sample in the batch.
 
@@ -213,6 +215,17 @@ def build_records(
     single scalar; `percent_pixels_affected` varies per sample (artifact placement differs
     per image), so it's one value per row like `uncertainty`. None of the three apply to
     the real/clean stream -- pass them only when building artifact-stream records.
+
+    `global_degradations`/`geometric_degradations` are the counterpart to
+    `percent_pixels_affected`: a whole-frame effect (stain shift, noise, compression, ...)
+    changes every pixel's value but never touches `artifact_mask`, so
+    `percent_pixels_affected` alone cannot tell "nothing happened" apart from "a global
+    effect touched every pixel" -- both read 0. Each is one pre-JSON-encoded string per
+    sample (already `json.dumps`-ed by `ArtifactHFDataset`, since the underlying list length
+    varies per sample and default_collate cannot batch that), so they're written through
+    unchanged rather than re-encoded here. Kept as two columns, not merged, because the
+    simulator itself keeps geometric warps apart from photometric global effects -- they are
+    different failure modes.
 
     `member_logits` (`[M, C]` per row -- ensemble members or MC-Dropout passes, the
     same shape either way) is written only when `save_member_logits=True` *and*
@@ -264,6 +277,12 @@ def build_records(
             )
         pixels_cpu = pixels_cpu.tolist()
 
+    for name, value in (("global_degradations", global_degradations), ("geometric_degradations", geometric_degradations)):
+        if value is not None and len(value) != len(image_ids):
+            raise ValueError(
+                f"{name} has {len(value)} values for {len(image_ids)} samples; expected one per sample."
+            )
+
     records: List[Dict[str, Any]] = []
     for idx in range(len(image_ids)):
         record = {
@@ -288,6 +307,10 @@ def build_records(
             record["severity"] = int(severity)
         if pixels_cpu is not None:
             record["percent_pixels_affected"] = float(pixels_cpu[idx])
+        if global_degradations is not None:
+            record["global_degradations"] = global_degradations[idx]
+        if geometric_degradations is not None:
+            record["geometric_degradations"] = geometric_degradations[idx]
         records.append(record)
     return records
 

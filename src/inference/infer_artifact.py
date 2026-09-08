@@ -218,8 +218,9 @@ class ArtifactInferenceRunner:
 						stream_name=stream_name, probs=outputs.probs, preds=preds, targets=targets
 					)
 
-				# count/severity/percent_pixels_affected describe the simulated artifact --
-				# meaningless for the real/clean stream, so left unset there.
+				# count/severity/percent_pixels_affected/global_degradations/
+				# geometric_degradations describe the simulated artifact -- meaningless for
+				# the real/clean stream, so left unset there.
 				is_artifact = stream_name == "artifact"
 				self._records.extend(
 					build_records(
@@ -233,6 +234,8 @@ class ArtifactInferenceRunner:
 						count=self._artifact_count if is_artifact else None,
 						severity=self._artifact_severity if is_artifact else None,
 						percent_pixels_affected=batch["percent_pixels_affected"] if is_artifact else None,
+						global_degradations=batch["global_degradations"] if is_artifact else None,
+						geometric_degradations=batch["geometric_degradations"] if is_artifact else None,
 					)
 				)
 

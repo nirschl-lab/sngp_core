@@ -1,5 +1,6 @@
 """test_datamodules.py in tests."""
 
+import json
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -370,7 +371,7 @@ def _install_fake_simulator(monkeypatch: pytest.MonkeyPatch, seen_seeds: list | 
             "artifact_mask": np.zeros((height, width), dtype=np.uint8),
             "instance_mask": np.zeros((height, width), dtype=np.uint16),
             "artifact_labels": np.zeros(len(_FAKE_LABEL_NAMES), dtype=np.float32),
-            "metadata": {},
+            "metadata": {"global_degradations": [], "geometric_degradations": []},
         }
 
     _fake_simulator.label_names = _FAKE_LABEL_NAMES
@@ -436,7 +437,7 @@ def test_artifact_datamodule_percent_pixels_affected_thresholds_the_alpha_mask(
             "artifact_mask": mask,
             "instance_mask": np.zeros((height, width), dtype=np.uint16),
             "artifact_labels": np.zeros(len(_FAKE_LABEL_NAMES), dtype=np.float32),
-            "metadata": {},
+            "metadata": {"global_degradations": ["hed_stain_shift"], "geometric_degradations": []},
         }
 
     _fake_simulator.label_names = _FAKE_LABEL_NAMES
@@ -462,6 +463,10 @@ def test_artifact_datamodule_percent_pixels_affected_thresholds_the_alpha_mask(
 
     batch = next(iter(dm.test_dataloader()))
     assert batch["percent_pixels_affected"][0].item() == pytest.approx(50.0, abs=1.0)
+    # global_degradations travels through as a JSON-encoded string per sample (not a raw
+    # list) because default_collate can't batch variable-length lists across samples.
+    assert json.loads(batch["global_degradations"][0]) == ["hed_stain_shift"]
+    assert json.loads(batch["geometric_degradations"][0]) == []
 
 
 def test_artifact_datamodule_seeds_each_sample_independently(

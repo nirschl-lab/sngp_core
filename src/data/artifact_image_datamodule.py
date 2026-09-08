@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 from typing import Dict, Optional
 
@@ -208,6 +209,20 @@ class ArtifactHFDataset(Dataset):
             # this "fraction of pixels touched at all" rather than "average blend strength",
             # which is the coverage question downstream analysis actually wants to ask.
             "percent_pixels_affected": float((artifact_mask > 0).float().mean()) * 100.0,
+            # Whole-frame effects that fired -- the counterpart to percent_pixels_affected:
+            # a global effect changes every pixel's value but leaves artifact_mask (and
+            # therefore percent_pixels_affected) at 0, since "0 or 100%" carries no coverage
+            # information. Without this there is no way to tell "nothing happened" apart
+            # from "a whole-frame effect touched every pixel" from percent_pixels_affected
+            # alone. Pre-encoded to JSON here (not left as a Python list) because the list
+            # length varies per sample, which default_collate cannot batch -- a JSON string
+            # collates as trivially as image_id/fold already do.
+            "global_degradations": json.dumps(list(simulated["metadata"]["global_degradations"])),
+            # Kept apart from global_degradations for the same reason the package keeps them
+            # apart: geometric warps (elastic_deformation) are a different failure mode from
+            # a photometric one, and merging the two would make either a false positive for
+            # the other in downstream filtering.
+            "geometric_degradations": json.dumps(list(simulated["metadata"]["geometric_degradations"])),
             "artifact_labels": torch.from_numpy(simulated["artifact_labels"]),
             "target": label,
             "fold": self.fold,

@@ -280,7 +280,7 @@ def test_build_records_carries_the_stream_name():
     assert rows[0]["stream"] == "artifact"
 
 
-def test_build_records_omits_count_severity_and_percent_pixels_affected_by_default():
+def test_build_records_omits_artifact_axis_fields_by_default():
     rows = records.build_records(
         image_ids=["a"],
         fold=["test"],
@@ -292,9 +292,11 @@ def test_build_records_omits_count_severity_and_percent_pixels_affected_by_defau
     assert "count" not in rows[0]
     assert "severity" not in rows[0]
     assert "percent_pixels_affected" not in rows[0]
+    assert "global_degradations" not in rows[0]
+    assert "geometric_degradations" not in rows[0]
 
 
-def test_build_records_includes_count_severity_and_percent_pixels_affected_when_passed():
+def test_build_records_includes_artifact_axis_fields_when_passed():
     rows = records.build_records(
         image_ids=["a", "b"],
         fold=["test", "test"],
@@ -305,10 +307,14 @@ def test_build_records_includes_count_severity_and_percent_pixels_affected_when_
         count=1,
         severity=3,
         percent_pixels_affected=torch.tensor([2.5, 0.0]),
+        global_degradations=['["hed_stain_shift"]', "[]"],
+        geometric_degradations=["[]", '["elastic_deformation"]'],
     )
     assert [r["count"] for r in rows] == [1, 1]
     assert [r["severity"] for r in rows] == [3, 3]
     assert [r["percent_pixels_affected"] for r in rows] == pytest.approx([2.5, 0.0])
+    assert [r["global_degradations"] for r in rows] == ['["hed_stain_shift"]', "[]"]
+    assert [r["geometric_degradations"] for r in rows] == ["[]", '["elastic_deformation"]']
 
 
 def test_write_outputs_writes_both_files(tmp_path):
@@ -673,13 +679,15 @@ def _artifact_batch() -> dict:
         "real_image": torch.zeros(2, 3, 4, 4),
         "artifact_simulated_image": torch.ones(2, 3, 4, 4),
         "percent_pixels_affected": torch.tensor([2.5, 0.0]),
+        "global_degradations": ['["hed_stain_shift"]', "[]"],
+        "geometric_degradations": ["[]", "[]"],
     }
 
 
 def test_artifact_runner_narrowed_to_artifact_stream_skips_real_forward_pass_and_rows(tmp_path):
     """`infer.save.streams=[artifact]` -- the sweep-run shape -- must never touch the real
-    stream: no forward pass, no records, and count/severity/percent_pixels_affected land
-    only on the rows it does write."""
+    stream: no forward pass, no records, and count/severity/percent_pixels_affected/
+    global_degradations land only on the rows it does write."""
     model = _FakeNet(ModelOutput(logits=torch.tensor([[1.0, 0.0], [0.0, 1.0]])))
     cfg = _artifact_cfg(tmp_path, streams=["artifact"], artifact_count=1, artifact_severity=None)
     runner = ArtifactInferenceRunner(model=model, dataloader=[_artifact_batch()], cfg=cfg)
@@ -690,6 +698,7 @@ def test_artifact_runner_narrowed_to_artifact_stream_skips_real_forward_pass_and
     assert streams_seen == {"artifact"}
     assert all(r["count"] == 1 for r in runner._records)
     assert [r["percent_pixels_affected"] for r in runner._records] == pytest.approx([2.5, 0.0])
+    assert [r["global_degradations"] for r in runner._records] == ['["hed_stain_shift"]', "[]"]
 
 
 def test_artifact_runner_default_streams_writes_both(tmp_path):
@@ -703,7 +712,10 @@ def test_artifact_runner_default_streams_writes_both(tmp_path):
     assert streams_seen == {"real", "artifact"}
     # Real-stream rows never carry the artifact-only fields.
     real_rows = [r for r in runner._records if r["stream"] == "real"]
-    assert all("count" not in r and "percent_pixels_affected" not in r for r in real_rows)
+    assert all(
+        "count" not in r and "percent_pixels_affected" not in r and "global_degradations" not in r
+        for r in real_rows
+    )
 
 
 def test_artifact_runner_rejects_invalid_stream_name(tmp_path):

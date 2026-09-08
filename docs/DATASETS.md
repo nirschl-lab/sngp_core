@@ -93,14 +93,21 @@ makes "does the accuracy drop come from artifacts or from acquisition degradatio
 rather than confounded into one "simulation" effect.
 
 `predictions.csv` in artifact mode carries `count`/`severity` (the two knobs above, constant
-for the whole run) and `percent_pixels_affected` (per-sample, the fraction of pixels with any
+for the whole run), `percent_pixels_affected` (per-sample, the fraction of pixels with any
 nonzero alpha in the *localized* `artifact_mask` — `artifact_mask` is per-pixel blend alpha
 (0-255), not a 0/1 flag, so this thresholds at `>0` rather than averaging raw alpha, which
 would report blend *strength* rather than coverage. Usually 0 on a procedural-only run, since
 most procedural effects are whole-frame and don't touch that mask — except `local_blur`, the
 one procedural effect registered with local rather than global/warp scope, which localizes into
-the mask same as a pasted overlay would). See "Saving sweep results" below and
-`.claude/skills/metrics/references/csv_schema.md` for the full column reference.
+the mask same as a pasted overlay would), and `global_degradations`/`geometric_degradations`
+(JSON-encoded lists of effect names, `[]` when none fired). **A 0 in `percent_pixels_affected`
+does not mean the image was untouched** — a whole-frame effect like `hed_stain_shift` changes
+every pixel's value but is never reflected in `artifact_mask` (a whole-frame percentage would
+always read 0% or 100%, carrying no coverage information), so it shows up only in
+`global_degradations` instead; check that column, not just `percent_pixels_affected`, to tell
+"nothing simulated happened to this sample" apart from "a global effect touched it." See
+"Saving sweep results" below and `.claude/skills/metrics/references/csv_schema.md` for the
+full column reference.
 
 `percent_pixels_affected` can also be 0 on the *artifact* axis, even with `artifact_count`
 pinned — pinning guarantees an overlay is **attempted** (`count=N` skips the clean-probability
