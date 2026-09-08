@@ -91,6 +91,10 @@ trustworthy under artifacts rather than just whether accuracy holds. The rest is
 on the real vs. artifact-simulated stream of the same images. Full metrics
 (confidence/entropy shift, prediction-flip rate, AUPR, FPR@95) are in each run's
 `metrics.json` — paths in [MASTER_INFER_RESULTS_PATH.md](MASTER_INFER_RESULTS_PATH.md).
+Every row but Monte Carlo Dropout is bit-reproducible run to run (the simulator's own seed
+is content-derived, see DATASETS.md); MC-Dropout draws a fresh random mask per forward pass
+with no pinned seed, so its numbers drift by less than ~0.1pp between identical reruns --
+noise, not a finding.
 
 ### Model Trained on Acevedo and tested with different artifact secnarios
 
@@ -99,7 +103,7 @@ on the real vs. artifact-simulated stream of the same images. Full metrics
 |---|---:|---:|---:|---:|---:|---:|
 | Baseline Classifier | 0.9813 | 0.7672 | 0.2141 | 4.60 | 10.53 | 0.6124 |
 | Deep Ensemble | **0.9889** | 0.7727 | 0.2161 | **4.00** | 10.11 | 0.6168 |
-| Monte Carlo Dropout | 0.9807 | 0.7663 | 0.2144 | 4.72 | 10.35 | 0.6137 |
+| Monte Carlo Dropout | 0.9810 | 0.7660 | 0.2150 | 4.73 | 10.38 | 0.6137 |
 | SNGP | 0.9819 | 0.7839 | **0.1980** | 7.68 | **3.06** | 0.6428 |
 | SNGP Ensemble | 0.9880 | **0.7856** | 0.2024 | 7.30 | 3.48 | **0.6755** |
 
@@ -108,7 +112,7 @@ on the real vs. artifact-simulated stream of the same images. Full metrics
 |---|---:|---:|---:|---:|---:|---:|
 | Baseline Classifier | 0.9813 | 0.9786 | 0.0026 | 4.60 | 4.75 | 0.5136 |
 | Deep Ensemble | **0.9889** | **0.9883** | **0.0006** | **4.00** | **4.39** | **0.5205** |
-| Monte Carlo Dropout | 0.9807 | 0.9786 | 0.0020 | 4.72 | 4.91 | 0.5136 |
+| Monte Carlo Dropout | 0.9810 | 0.9786 | 0.0023 | 4.73 | 4.94 | 0.5136 |
 | SNGP | 0.9819 | 0.9801 | 0.0018 | 7.68 | 7.96 | 0.5125 |
 | SNGP Ensemble | 0.9880 | 0.9874 | **0.0006** | 7.30 | 7.57 | 0.5147 |
 
