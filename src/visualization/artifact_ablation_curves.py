@@ -135,7 +135,7 @@ def plot_config_axis(nll_df: pd.DataFrame, coverage_df: pd.DataFrame, save_dir: 
 
 def plot_procedural_axis(nll_df: pd.DataFrame, save_dir: Path) -> None:
     set_default_style()
-    fig, ax = plt.subplots(figsize=(8, 6))
+    fig, ax = plt.subplots(figsize=(8, 6.5))
     for model in MODEL_ROW_ORDER:
         sub = nll_df[nll_df["model"] == model].sort_values("n")
         ax.plot(sub["n"], sub["artifact_nll"], marker="o", label=model, color=MODEL_COLORS[model])
