@@ -80,14 +80,28 @@ csv/artifact_quantification/acevedo/config_axis[_count_{2..5}]/artifact_quantifi
 csv/artifact_quantification/acevedo/procedural_axis[_severity_{2..5}]/artifact_quantification_summary.csv
 ```
 
-Ablation (count/severity vs. NLL, plus mean `percent_pixels_affected` vs. count) computed
-from the summary CSVs above by
-`src/visualization/artifact_ablation_curves.py`:
+Reproduce:
+```bash
+uv run src/paper_helpers/ood_metrics/render_artifact_results_tables.py \
+    --config configs/paper_helpers/acevedo_artifact_axis_paths.yaml \
+    --output-dir csv/artifact_quantification/acevedo
+```
+
+Ablation (count/severity vs. NLL, 0 = real image, plus mean +/- std
+`percent_pixels_affected` vs. count) computed from the summary CSVs above and each
+checkpoint's `real_baseline/metrics.json` by `src/visualization/artifact_ablation_curves.py`:
 
 acevedo_artifact_ablation_figures:
 ```bash
 figures/artifact_ablation/config_axis_nll_vs_count.{png,pdf}
 figures/artifact_ablation/procedural_axis_nll_vs_severity.{png,pdf}
+```
+
+Reproduce:
+```bash
+uv run src/visualization/artifact_ablation_curves.py \
+    --config configs/paper_helpers/acevedo_artifact_axis_paths.yaml \
+    --output-dir csv/artifact_quantification/acevedo
 ```
 
 ---

@@ -1,18 +1,23 @@
 """artifact_ablation_curves.py in src/visualization.
 
-Ablation across the Acevedo artifact-simulation axes: config axis (`count`=1..5 pasted
-artifact overlays) and procedural axis (`severity`=1..5 graded acquisition degradation).
-Plots NLL vs. count/severity, one line per model, read from each axis-value's
+Ablation across the Acevedo artifact-simulation axes: config axis (`count`=0..5, 0 = real
+image, 1..5 = pasted artifact overlays) and procedural axis (`severity`=0..5, 0 = real
+image, 1..5 = graded acquisition degradation). Plots NLL vs. count/severity, one line per
+model. The `n=1..5` points read `artifact_nll` from each axis-value's
 `artifact_quantification_summary.csv` (written by
 `src/paper_helpers/ood_metrics/render_artifact_results_tables.py` /
 `src/metrics/artifact_quantification.py::quantify_artifact_impact`; run paths in
-`configs/paper_helpers/acevedo_artifact_axis_paths.yaml`). The config-axis figure adds a
-slim panel above the NLL panel showing mean `percent_pixels_affected` per count -- already
-computed per-sample by `ArtifactHFDataset` and present in each run's `predictions.csv` --
-since that's a property of the simulator's overlay draw, not of the model (near-identical
-across all 5 checkpoints' predictions.csv for the same count, since the simulator's seed is
-content-derived per image, see docs/DATASETS.md). Procedural effects are whole-frame, not
-masked, so there's no comparable coverage number for that axis.
+`configs/paper_helpers/acevedo_artifact_axis_paths.yaml`); the `n=0` anchor reads
+`real.nll` straight from each checkpoint's existing `real_baseline/metrics.json` (shared
+by both axes, no new inference/aggregation needed). The config-axis figure overlays mean
+`percent_pixels_affected` (+/- 1 std across the ~3420 test images) per count on a second
+y-axis -- already computed per-sample by `ArtifactHFDataset` and present in each run's
+predictions.csv -- since that's a property of the simulator's overlay draw, not of the
+model (bit-identical across all 5 checkpoints' predictions.csv for the same count, since
+the simulator's seed is content-derived per image, see docs/DATASETS.md; 0 at n=0 by
+definition -- the real stream never runs the simulator, so it has no such column at all).
+Procedural effects are whole-frame, not masked, so there's no comparable coverage number
+for that axis.
 
 Usage:
     uv run src/visualization/artifact_ablation_curves.py \\
@@ -23,6 +28,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -46,9 +52,21 @@ def _axis_key(axis: str, n: int) -> str:
     return "procedural_axis" if n == 1 else f"procedural_axis_severity_{n}"
 
 
-def load_nll_curve(output_dir: Path, axis: str) -> pd.DataFrame:
-    """One row per (model, n) with the axis-value's `artifact_nll`."""
+def load_real_nll(axis_paths: dict) -> pd.DataFrame:
+    """The `n=0` anchor (real, unperturbed images): `real.nll` from each checkpoint's
+    `real_baseline/metrics.json`, one row per model. That file is identical for both axes
+    (same checkpoint, same clean test set), so this is computed once and shared."""
     rows = []
+    for model, paths in axis_paths["config_axis"]["models"].items():
+        metrics_json = Path(paths["real_baseline"]).with_name("metrics.json")
+        data = json.loads(metrics_json.read_text())
+        rows.append({"model": model, "artifact_nll": data["real.nll"], "n": 0})
+    return pd.DataFrame(rows)
+
+
+def load_nll_curve(output_dir: Path, axis: str, axis_paths: dict) -> pd.DataFrame:
+    """One row per (model, n) with the axis-value's NLL, `n=0` (real) through `n=5`."""
+    rows = [load_real_nll(axis_paths)]
     for n in N_VALUES:
         summary_csv = output_dir / _axis_key(axis, n) / "artifact_quantification_summary.csv"
         if not summary_csv.exists():
@@ -60,37 +78,55 @@ def load_nll_curve(output_dir: Path, axis: str) -> pd.DataFrame:
 
 
 def load_pixel_coverage(axis_paths: dict) -> pd.DataFrame:
-    """Config axis only: mean/min/max `percent_pixels_affected` per count, across models."""
-    rows = []
+    """Config axis only: mean +/- std `percent_pixels_affected` per count, across the test
+    images (from one representative model -- the column is bit-identical across all 5 for
+    a given count). `n=0` (real images) is 0 by definition -- the real stream never runs
+    the simulator, so `real_baseline/predictions.csv` has no `percent_pixels_affected`
+    column at all."""
+    reference_model = MODEL_ROW_ORDER[0]
+    rows = [{"n": 0, "mean_pct": 0.0, "std_pct": 0.0}]
     for n in N_VALUES:
-        model_paths = axis_paths[_axis_key("config", n)]["models"]
-        means = [
-            pd.read_csv(paths["artifact"], usecols=["percent_pixels_affected"])["percent_pixels_affected"].mean()
-            for paths in model_paths.values()
-        ]
-        rows.append({"n": n, "mean_pct": sum(means) / len(means), "min_pct": min(means), "max_pct": max(means)})
+        artifact_csv = axis_paths[_axis_key("config", n)]["models"][reference_model]["artifact"]
+        pct = pd.read_csv(artifact_csv, usecols=["percent_pixels_affected"])["percent_pixels_affected"]
+        rows.append({"n": n, "mean_pct": pct.mean(), "std_pct": pct.std()})
     return pd.DataFrame(rows)
+
+
+ALL_N = [0, *N_VALUES]
 
 
 def plot_config_axis(nll_df: pd.DataFrame, coverage_df: pd.DataFrame, save_dir: Path) -> None:
     set_default_style()
-    fig, (ax_top, ax_main) = plt.subplots(
-        2, 1, figsize=(8, 7.5), sharex=True, gridspec_kw={"height_ratios": [1, 3], "hspace": 0.08}, layout="constrained"
-    )
-
-    ax_top.plot(coverage_df["n"], coverage_df["mean_pct"], color="0.3", marker="o", lw=2)
-    ax_top.fill_between(coverage_df["n"], coverage_df["min_pct"], coverage_df["max_pct"], color="0.3", alpha=0.15)
-    ax_top.set_ylabel("Pixels affected (%)")
-    ax_top.set_title("Config axis: NLL vs. overlay count")
+    fig, ax = plt.subplots(figsize=(8, 6.5))
+    ax2 = ax.twinx()
 
     for model in MODEL_ROW_ORDER:
         sub = nll_df[nll_df["model"] == model].sort_values("n")
-        ax_main.plot(sub["n"], sub["artifact_nll"], marker="o", label=model, color=MODEL_COLORS[model])
-    ax_main.set_xlabel("count (pasted artifact overlays)")
-    ax_main.set_ylabel("NLL (artifact stream)")
-    ax_main.set_xticks(N_VALUES)
-    ax_main.legend(frameon=False, loc="upper left")
+        ax.plot(sub["n"], sub["artifact_nll"], marker="o", label=model, color=MODEL_COLORS[model])
+    ax.set_xlabel("count (0 = real image, 1-5 = pasted artifact overlays)")
+    ax.set_ylabel("NLL (artifact stream)")
+    ax.set_xticks(ALL_N)
 
+    cov = coverage_df.sort_values("n")
+    ax2.errorbar(
+        cov["n"],
+        cov["mean_pct"],
+        yerr=cov["std_pct"],
+        color="0.3",
+        linestyle="--",
+        marker="s",
+        capsize=3,
+        label="Pixels affected (%, +/-1 std)",
+    )
+    ax2.set_ylabel("Pixels affected (%)")
+    ax2.set_ylim(bottom=0)
+
+    ax.set_title("Config axis: NLL and pixel coverage vs. overlay count")
+    h1, l1 = ax.get_legend_handles_labels()
+    h2, l2 = ax2.get_legend_handles_labels()
+    ax.legend(h1 + h2, l1 + l2, frameon=False, loc="upper left")
+
+    fig.tight_layout()
     save_dir.mkdir(parents=True, exist_ok=True)
     fig.savefig(save_dir / "config_axis_nll_vs_count.png", dpi=300, bbox_inches="tight")
     fig.savefig(save_dir / "config_axis_nll_vs_count.pdf", bbox_inches="tight")
@@ -103,9 +139,9 @@ def plot_procedural_axis(nll_df: pd.DataFrame, save_dir: Path) -> None:
     for model in MODEL_ROW_ORDER:
         sub = nll_df[nll_df["model"] == model].sort_values("n")
         ax.plot(sub["n"], sub["artifact_nll"], marker="o", label=model, color=MODEL_COLORS[model])
-    ax.set_xlabel("severity (graded acquisition degradation)")
+    ax.set_xlabel("severity (0 = real image, 1-5 = graded acquisition degradation)")
     ax.set_ylabel("NLL (artifact stream)")
-    ax.set_xticks(N_VALUES)
+    ax.set_xticks(ALL_N)
     ax.set_title("Procedural axis: NLL vs. severity")
     ax.legend(frameon=False, loc="upper left")
 
@@ -130,8 +166,8 @@ def main() -> None:
     figures_dir = Path(args.figures_dir)
     figures_dir.mkdir(parents=True, exist_ok=True)
 
-    config_nll = load_nll_curve(output_dir, "config")
-    procedural_nll = load_nll_curve(output_dir, "procedural")
+    config_nll = load_nll_curve(output_dir, "config", axis_paths)
+    procedural_nll = load_nll_curve(output_dir, "procedural", axis_paths)
     coverage = load_pixel_coverage(axis_paths)
 
     config_nll.to_csv(figures_dir / "config_axis_nll_vs_count.csv", index=False)

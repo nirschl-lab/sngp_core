@@ -240,53 +240,6 @@ See the Classification/Selective-Classification/OOD-Detection/Calibration grid a
 additional diagnostics (Accuracy/Precision/Recall/F1, AURC/AUGRC/Cov@5%Risk/Risk@80%Cov,
 AUPR/FPR95, ECE+/ECE−/MCE/SmECE/aECE) computed on the artifact stream alone.
 
-### Ablation: count / severity vs. NLL
-
-The `count=1`/`severity=1` snapshot above is one point on a 1-5 range each axis actually
-supports (`config/count_{1..5}`, `procedural/severity_{1..5}`, same checkpoints, same
-`artifact_balanced`/`procedural_ood` policies, real-stream baseline shared and unchanged).
-Sweeping the full range turns that snapshot into a degradation curve per model:
-
-<table>
-<tr>
-<td valign="top" width="50%">
-
-![Config axis: NLL vs. overlay count](../figures/artifact_ablation/config_axis_nll_vs_count.png)
-
-</td>
-<td valign="top" width="50%">
-
-![Procedural axis: NLL vs. severity](../figures/artifact_ablation/procedural_axis_nll_vs_severity.png)
-
-</td>
-</tr>
-</table>
-
-**Config axis** — NLL rises steadily from `count=1` to `count=5` for every model (SNGP:
-0.78→2.14, SNGP Ensemble: 0.71→1.95, Baseline: 1.24→4.26, MC-Dropout: 1.22→4.20, Deep
-Ensemble: 1.16→4.15), but the SNGP family's advantage over the baseline family *widens*
-with count rather than staying fixed — a roughly 1.6x gap at `count=1` becomes a roughly
-2x gap at `count=5`. The top panel shows mean `percent_pixels_affected` (from each run's
-`predictions.csv`) rising almost linearly with count (19%→34%→46%→55%→63%) — identical
-across all 5 models at every count, since it's a property of the simulator's overlay draw
-(content-derived seed, same test images), not of the checkpoint being evaluated. It's the
-right x-axis-parallel context for "how much of the image is actually corrupted" at each
-step, and it's specific to this axis: procedural effects are whole-frame, not masked, so
-there's no comparable coverage number for them (hence no top panel on that plot).
-
-**Procedural axis** — NLL also rises with severity for every model, but roughly 5-8x
-smaller in magnitude than the config axis (severity=5 tops out at 0.52-0.64 vs. count=5's
-1.95-4.26), consistent with the accuracy gap already noted above. More notably, the
-*ranking flips*: Deep Ensemble is the best (or tied-best) model at every severity level
-(0.075→0.52), and SNGP is the worst at every severity level (0.14→0.64) — the opposite of
-its config-axis lead. SNGP's spectral-normalized feature space and Laplace-approximated
-output layer are built around distance-to-training-data reasoning, which pasted
-out-of-distribution cutouts trigger directly; graded blur/noise/illumination shifts
-perturb the input without moving it as clearly out of that learned manifold, and give an
-ensemble's between-member disagreement more to key off than a single SNGP head has.
-Reproduce from `csv/artifact_quantification/acevedo/{config_axis,config_axis_count_{2..5},procedural_axis,procedural_axis_severity_{2..5}}/artifact_quantification_summary.csv`
-via `uv run src/visualization/artifact_ablation_curves.py --config configs/paper_helpers/acevedo_artifact_axis_paths.yaml --output-dir csv/artifact_quantification/acevedo`.
-
 ### Model Trained on Wong and tested with different artifact secnarios
 
 ---
@@ -357,3 +310,18 @@ predicted class-probability vector. The resulting per-dataset entropy
 distributions are visualized as kernel density estimates (Scott's rule bandwidth)
 over a shared x-range, with the in-distribution dataset drawn as a solid line and
 OOD datasets as dashed lines.
+
+### artifact ablation
+
+NLL vs. artifact count/severity (0 = real image), Acevedo, all 5 models.
+
+<table>
+<tr>
+<td align="center" width="50%">
+<img src="../figures/artifact_ablation/config_axis_nll_vs_count.png" width="100%">
+</td>
+<td align="center" width="50%">
+<img src="../figures/artifact_ablation/procedural_axis_nll_vs_severity.png" width="100%">
+</td>
+</tr>
+</table>
