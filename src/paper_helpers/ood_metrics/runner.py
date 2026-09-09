@@ -3,7 +3,7 @@
 Replaces the copy-pasted per-ID-dataset scripts that used to live here (acevedo.py,
 kather2018.py, wong.py -- ~55-75 lines each, differing only in dataset name, CSV
 paths, and score mode) with one parametrized function, modeled on the
-already-well-designed `artifact_quantification.py` in this same package. Adding a new
+already-well-designed `src/metrics/artifact_quantification.py`. Adding a new
 in-distribution dataset is now a config-only call site (see acevedo.py/kather2018.py/
 wong.py for examples), never a new copy of this loop.
 """

@@ -46,7 +46,7 @@ set itself needs to change).
 - `src/visualization/density.py` — kernel-density helpers (reflected KDE,
   Nadaraya-Watson) used by the smoothed reliability diagrams; reusable for any other
   density-based plot.
-- `src/paper_helpers/ood_metrics/artifact_quantification.py` — the most
+- `src/metrics/artifact_quantification.py` — the most
   "productionized" example: takes `output_dir` as an argument, saves to
   `output_dir/plots/`, generates ROC curves, uncertainty-shift KDEs, and comparison
   bar charts. Use this as the template for a new multi-method comparison figure.

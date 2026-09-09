@@ -11,7 +11,7 @@ axis -- Classification (top-left), Selective Classification (top-right), OOD Det
 (bottom-left), Calibration (bottom-right) -- the two widest tables (Classification,
 Calibration) are placed on opposite rows so each row pairs a wide table with a narrower
 one. See `.claude/skills/metrics/SKILL.md` and
-`src/paper_helpers/ood_metrics/artifact_quantification.py::quantify_artifact_impact`
+`src/metrics/artifact_quantification.py::quantify_artifact_impact`
 (which this wraps) for the underlying metric definitions.
 
 Usage:
@@ -31,7 +31,7 @@ import yaml
 
 ROOT = rootutils.setup_root(__file__, indicator=".project-root", pythonpath=True)
 
-from src.paper_helpers.ood_metrics.artifact_quantification import quantify_artifact_impact
+from src.metrics.artifact_quantification import quantify_artifact_impact
 
 MODEL_ROW_ORDER = ["Baseline Classifier", "Deep Ensemble", "Monte Carlo Dropout", "SNGP", "SNGP Ensemble"]
 

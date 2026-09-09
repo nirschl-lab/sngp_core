@@ -76,7 +76,7 @@ re-run, not a converter.
 the mean of per-pass softmax, so `softmax(class_logits) != class_probs` there. That is
 inherent to the estimator, not a bug.
 
-**Consumed by**: `src/paper_helpers/ood_metrics/artifact_quantification.py::quantify_artifact_impact`
+**Consumed by**: `src/metrics/artifact_quantification.py::quantify_artifact_impact`
 (requires `image_id, target, prediction, confidence, class_probs, stream`; canonicalizes
 `stream` synonyms via `_canonicalize_stream`). Its optional `real_csv_map` param joins an
 artifact-only sweep CSV against its checkpoint's `real_baseline` CSV before pairing --

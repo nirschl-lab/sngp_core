@@ -136,7 +136,7 @@ duplication. The convention:
    `.../acevedo_artifact/procedural/severity_1/predictions.csv` — set via
    `infer.save.run_name=...` (see [docs/OUTPUT_LAYOUT.md](OUTPUT_LAYOUT.md) §5).
 
-`src.paper_helpers.ood_metrics.artifact_quantification.quantify_artifact_impact`'s optional
+`src.metrics.artifact_quantification.quantify_artifact_impact`'s optional
 `real_csv_map` param joins an artifact-only sweep CSV against its checkpoint's `real_baseline`
 CSV before computing paired metrics (accuracy drop, confidence drop, prediction-flip rate, ...).
 A pre-sweep, self-contained dual-stream CSV (the `infer.save.streams` default) needs no entry

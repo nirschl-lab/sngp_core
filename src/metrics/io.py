@@ -13,9 +13,9 @@ derived columns, and reports which arrays are actually available (`capabilities`
 a caller -- in particular the metric registry in `src/metrics/registry.py` -- can
 decide whether to run or skip a metric *before* hitting a `KeyError` partway through.
 
-This module intentionally has no dependency on anything else in `src.metrics` or
-`src.paper_helpers` (`auc.py` and `artifact_quantification.py` import *from* here,
-not the other way around), so importing it can never trigger a cycle.
+This module intentionally has no dependency on anything else in `src.metrics`
+(`auc.py` and `artifact_quantification.py` import *from* here, not the other way
+around), so importing it can never trigger a cycle.
 """
 
 from __future__ import annotations
@@ -47,9 +47,9 @@ ARTIFACT_STREAM_CANDIDATES = {"artifact", "artifacts", "simulated", "ood", "out"
 def canonicalize_stream(value: Any) -> str:
     """Map a `stream` value to `"real"`/`"artifact"`, or lowercase it unchanged if it
     matches neither set. Exact copy of
-    `src.paper_helpers.ood_metrics.artifact_quantification._canonicalize_stream` --
-    that module keeps its own private copy for now (see the module docstring there),
-    so this is the second, not the only, definition."""
+    `src.metrics.artifact_quantification._canonicalize_stream` -- that module keeps its
+    own private copy for now (see the module docstring there), so this is the second,
+    not the only, definition."""
     x = str(value).strip().lower()
     if x in REAL_STREAM_CANDIDATES:
         return "real"
@@ -66,8 +66,8 @@ def parse_float_list(value: Any) -> Optional[List[float]]:
     Returns `None` for anything that isn't a list or can't be parsed as one -- except
     a malformed Python-literal string, which raises, matching this project's
     long-standing parser behavior (`src.metrics.auc._parse_class_probs` /
-    `src.paper_helpers.ood_metrics.artifact_quantification._parse_class_probs`, now
-    both thin aliases for this function) so existing callers see no behavior change.
+    `src.metrics.artifact_quantification._parse_class_probs`, now both thin aliases
+    for this function) so existing callers see no behavior change.
     """
     if isinstance(value, list):
         return [float(v) for v in value]

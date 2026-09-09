@@ -1,13 +1,12 @@
-"""Smoke test for src/paper_helpers/ood_metrics/artifact_quantification.py -- per the
-project's testing policy (CLAUDE.md tier 4), paper_helpers scripts get smoke coverage
-only: import + a couple of calls on tiny synthetic data, not full behavioral coverage.
+"""Smoke test for src/metrics/artifact_quantification.py: import + a couple of calls on
+tiny synthetic data, not full behavioral coverage.
 """
 import json
 
 import pandas as pd
 import pytest
 
-from src.paper_helpers.ood_metrics.artifact_quantification import quantify_artifact_impact
+from src.metrics.artifact_quantification import quantify_artifact_impact
 from tests.helpers.predictions import write_predictions_csv
 
 

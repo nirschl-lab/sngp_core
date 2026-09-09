@@ -15,10 +15,9 @@ seeds = [42, 1337, 12345, 8675309, 314159, 271828, 20240427, 987654321, 37359285
 sample_rate = 1000
 
 # Thin aliases: the canonical implementations now live in src/metrics/io.py, shared
-# with src.paper_helpers.ood_metrics.artifact_quantification (which had its own
-# byte-identical copies) and the new PredictionFrame loader. Kept under these names
-# so existing importers of this module (calculate_ood_metrics.py, predictive_entropy.py)
-# see no behavior change.
+# with src.metrics.artifact_quantification (which had its own byte-identical copies)
+# and the new PredictionFrame loader. Kept under these names so existing importers of
+# this module (calculate_ood_metrics.py, predictive_entropy.py) see no behavior change.
 _parse_class_probs = parse_float_list
 _normalized_entropy = normalized_entropy
 
