@@ -25,56 +25,69 @@ sngp_acevedo_ensemble:
 
 ---
 
-Acevedo artifact-axis sweep (count=1 config axis / severity=1 procedural axis, each axis
-independently, both axes `none` for the shared real-stream baseline). See
+Acevedo artifact-axis sweep (count={1..5} config axis / severity={1..5} procedural axis,
+each axis independently, both axes `none` for the shared real-stream baseline -- an
+ablation over both ranges, count=1/severity=1 was the original single-point check). See
 [docs/DATASETS.md](DATASETS.md#saving-sweep-results) for the convention: `real_baseline/`
-holds `stream=real` rows only, run once per checkpoint; `config/count_1/` and
-`procedural/severity_1/` each hold `stream=artifact` rows only for their one axis.
+holds `stream=real` rows only, run once per checkpoint (shared across every count/severity
+value); `config/count_{1..5}/` and `procedural/severity_{1..5}/` each hold `stream=artifact`
+rows only for their one axis/value.
 
 baseline_acevedo_artifact:
 ```bash
 /data1/maheswararao/experiments/uncertaity-aware-ml/infer/baseline_classifier_acevedo/2026-08-25_14-31-36/acevedo_artifact/real_baseline
-/data1/maheswararao/experiments/uncertaity-aware-ml/infer/baseline_classifier_acevedo/2026-08-25_14-31-36/acevedo_artifact/config/count_1
-/data1/maheswararao/experiments/uncertaity-aware-ml/infer/baseline_classifier_acevedo/2026-08-25_14-31-36/acevedo_artifact/procedural/severity_1
+/data1/maheswararao/experiments/uncertaity-aware-ml/infer/baseline_classifier_acevedo/2026-08-25_14-31-36/acevedo_artifact/config/count_{1..5}
+/data1/maheswararao/experiments/uncertaity-aware-ml/infer/baseline_classifier_acevedo/2026-08-25_14-31-36/acevedo_artifact/procedural/severity_{1..5}
 ```
 
 sngp_acevedo_artifact:
 ```bash
 /data1/maheswararao/experiments/uncertaity-aware-ml/infer/sngp_classifier_acevedo/2026-08-25_14-32-45/acevedo_artifact/real_baseline
-/data1/maheswararao/experiments/uncertaity-aware-ml/infer/sngp_classifier_acevedo/2026-08-25_14-32-45/acevedo_artifact/config/count_1
-/data1/maheswararao/experiments/uncertaity-aware-ml/infer/sngp_classifier_acevedo/2026-08-25_14-32-45/acevedo_artifact/procedural/severity_1
+/data1/maheswararao/experiments/uncertaity-aware-ml/infer/sngp_classifier_acevedo/2026-08-25_14-32-45/acevedo_artifact/config/count_{1..5}
+/data1/maheswararao/experiments/uncertaity-aware-ml/infer/sngp_classifier_acevedo/2026-08-25_14-32-45/acevedo_artifact/procedural/severity_{1..5}
 ```
 
 mc_baseline_acevedo_artifact:
 ```bash
 /data1/maheswararao/experiments/uncertaity-aware-ml/infer/mc_baseline_classifier_acevedo/2026-08-25_14-31-36/acevedo_artifact/real_baseline
-/data1/maheswararao/experiments/uncertaity-aware-ml/infer/mc_baseline_classifier_acevedo/2026-08-25_14-31-36/acevedo_artifact/config/count_1
-/data1/maheswararao/experiments/uncertaity-aware-ml/infer/mc_baseline_classifier_acevedo/2026-08-25_14-31-36/acevedo_artifact/procedural/severity_1
+/data1/maheswararao/experiments/uncertaity-aware-ml/infer/mc_baseline_classifier_acevedo/2026-08-25_14-31-36/acevedo_artifact/config/count_{1..5}
+/data1/maheswararao/experiments/uncertaity-aware-ml/infer/mc_baseline_classifier_acevedo/2026-08-25_14-31-36/acevedo_artifact/procedural/severity_{1..5}
 ```
 
 baseline_acevedo_ensemble_artifact:
 ```bash
 /data1/maheswararao/experiments/uncertaity-aware-ml/infer/deep_ensemble_baseline_classifier_acevedo/2026-08-25_15-31-22/acevedo_artifact/real_baseline
-/data1/maheswararao/experiments/uncertaity-aware-ml/infer/deep_ensemble_baseline_classifier_acevedo/2026-08-25_15-31-22/acevedo_artifact/config/count_1
-/data1/maheswararao/experiments/uncertaity-aware-ml/infer/deep_ensemble_baseline_classifier_acevedo/2026-08-25_15-31-22/acevedo_artifact/procedural/severity_1
+/data1/maheswararao/experiments/uncertaity-aware-ml/infer/deep_ensemble_baseline_classifier_acevedo/2026-08-25_15-31-22/acevedo_artifact/config/count_{1..5}
+/data1/maheswararao/experiments/uncertaity-aware-ml/infer/deep_ensemble_baseline_classifier_acevedo/2026-08-25_15-31-22/acevedo_artifact/procedural/severity_{1..5}
 ```
 
 sngp_acevedo_ensemble_artifact:
 ```bash
 /data1/maheswararao/experiments/uncertaity-aware-ml/infer/deep_ensemble_sngp_classifier_acevedo/2026-08-25_15-34-35/acevedo_artifact/real_baseline
-/data1/maheswararao/experiments/uncertaity-aware-ml/infer/deep_ensemble_sngp_classifier_acevedo/2026-08-25_15-34-35/acevedo_artifact/config/count_1
-/data1/maheswararao/experiments/uncertaity-aware-ml/infer/deep_ensemble_sngp_classifier_acevedo/2026-08-25_15-34-35/acevedo_artifact/procedural/severity_1
+/data1/maheswararao/experiments/uncertaity-aware-ml/infer/deep_ensemble_sngp_classifier_acevedo/2026-08-25_15-34-35/acevedo_artifact/config/count_{1..5}
+/data1/maheswararao/experiments/uncertaity-aware-ml/infer/deep_ensemble_sngp_classifier_acevedo/2026-08-25_15-34-35/acevedo_artifact/procedural/severity_{1..5}
 ```
 
 Acevedo artifact-axis extra-metrics summary (Brier/NLL/mean-entropy, ECE+/ECE-/MCE/SmECE/
 aECE, AUPR/FPR95, AURC/AUGRC/Cov@5Risk/Risk@80Cov) -- generated by
 `src/paper_helpers/ood_metrics/render_artifact_results_tables.py` from the predictions.csv/
-metrics.json paths above, via `configs/paper_helpers/acevedo_artifact_axis_paths.yaml`:
+metrics.json paths above, via `configs/paper_helpers/acevedo_artifact_axis_paths.yaml` (one
+`{config,procedural}_axis[_{count,severity}_N]` key per axis-value, N=1 unsuffixed):
 
 acevedo_artifact_extra_metrics:
 ```bash
-csv/artifact_quantification/acevedo/config_axis/artifact_quantification_summary.csv
-csv/artifact_quantification/acevedo/procedural_axis/artifact_quantification_summary.csv
+csv/artifact_quantification/acevedo/config_axis[_count_{2..5}]/artifact_quantification_summary.csv
+csv/artifact_quantification/acevedo/procedural_axis[_severity_{2..5}]/artifact_quantification_summary.csv
+```
+
+Ablation (count/severity vs. NLL, plus mean `percent_pixels_affected` vs. count) computed
+from the summary CSVs above by
+`src/visualization/artifact_ablation_curves.py`:
+
+acevedo_artifact_ablation_figures:
+```bash
+figures/artifact_ablation/config_axis_nll_vs_count.{png,pdf}
+figures/artifact_ablation/procedural_axis_nll_vs_severity.{png,pdf}
 ```
 
 ---

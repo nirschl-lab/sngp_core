@@ -52,3 +52,199 @@ procedural_axis:
       real_baseline: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/deep_ensemble_sngp_classifier_acevedo/2026-08-25_15-34-35/acevedo_artifact/real_baseline/predictions.csv
       artifact: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/deep_ensemble_sngp_classifier_acevedo/2026-08-25_15-34-35/acevedo_artifact/procedural/severity_1/predictions.csv
       metrics_json: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/deep_ensemble_sngp_classifier_acevedo/2026-08-25_15-34-35/acevedo_artifact/procedural/severity_1/metrics.json
+
+# Ablation legs (count=2..5 / severity=2..5) -- ergonomics.  count=1/severity=1 above stay
+# as-is (already published in docs/RESULTS.md); these extend the same two axes for the
+# count/severity-vs-NLL ablation in src/visualization/artifact_ablation_curves.py.
+
+config_axis_count_2:
+  label: "Config axis — 2 pasted artifact overlays (count=2, artifact_balanced, procedural off)"
+  models:
+    Baseline Classifier:
+      real_baseline: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/baseline_classifier_acevedo/2026-08-25_14-31-36/acevedo_artifact/real_baseline/predictions.csv
+      artifact: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/baseline_classifier_acevedo/2026-08-25_14-31-36/acevedo_artifact/config/count_2/predictions.csv
+      metrics_json: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/baseline_classifier_acevedo/2026-08-25_14-31-36/acevedo_artifact/config/count_2/metrics.json
+    Deep Ensemble:
+      real_baseline: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/deep_ensemble_baseline_classifier_acevedo/2026-08-25_15-31-22/acevedo_artifact/real_baseline/predictions.csv
+      artifact: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/deep_ensemble_baseline_classifier_acevedo/2026-08-25_15-31-22/acevedo_artifact/config/count_2/predictions.csv
+      metrics_json: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/deep_ensemble_baseline_classifier_acevedo/2026-08-25_15-31-22/acevedo_artifact/config/count_2/metrics.json
+    Monte Carlo Dropout:
+      real_baseline: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/mc_baseline_classifier_acevedo/2026-08-25_14-31-36/acevedo_artifact/real_baseline/predictions.csv
+      artifact: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/mc_baseline_classifier_acevedo/2026-08-25_14-31-36/acevedo_artifact/config/count_2/predictions.csv
+      metrics_json: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/mc_baseline_classifier_acevedo/2026-08-25_14-31-36/acevedo_artifact/config/count_2/metrics.json
+    SNGP:
+      real_baseline: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/sngp_classifier_acevedo/2026-08-25_14-32-45/acevedo_artifact/real_baseline/predictions.csv
+      artifact: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/sngp_classifier_acevedo/2026-08-25_14-32-45/acevedo_artifact/config/count_2/predictions.csv
+      metrics_json: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/sngp_classifier_acevedo/2026-08-25_14-32-45/acevedo_artifact/config/count_2/metrics.json
+    SNGP Ensemble:
+      real_baseline: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/deep_ensemble_sngp_classifier_acevedo/2026-08-25_15-34-35/acevedo_artifact/real_baseline/predictions.csv
+      artifact: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/deep_ensemble_sngp_classifier_acevedo/2026-08-25_15-34-35/acevedo_artifact/config/count_2/predictions.csv
+      metrics_json: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/deep_ensemble_sngp_classifier_acevedo/2026-08-25_15-34-35/acevedo_artifact/config/count_2/metrics.json
+
+config_axis_count_3:
+  label: "Config axis — 3 pasted artifact overlays (count=3, artifact_balanced, procedural off)"
+  models:
+    Baseline Classifier:
+      real_baseline: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/baseline_classifier_acevedo/2026-08-25_14-31-36/acevedo_artifact/real_baseline/predictions.csv
+      artifact: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/baseline_classifier_acevedo/2026-08-25_14-31-36/acevedo_artifact/config/count_3/predictions.csv
+      metrics_json: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/baseline_classifier_acevedo/2026-08-25_14-31-36/acevedo_artifact/config/count_3/metrics.json
+    Deep Ensemble:
+      real_baseline: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/deep_ensemble_baseline_classifier_acevedo/2026-08-25_15-31-22/acevedo_artifact/real_baseline/predictions.csv
+      artifact: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/deep_ensemble_baseline_classifier_acevedo/2026-08-25_15-31-22/acevedo_artifact/config/count_3/predictions.csv
+      metrics_json: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/deep_ensemble_baseline_classifier_acevedo/2026-08-25_15-31-22/acevedo_artifact/config/count_3/metrics.json
+    Monte Carlo Dropout:
+      real_baseline: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/mc_baseline_classifier_acevedo/2026-08-25_14-31-36/acevedo_artifact/real_baseline/predictions.csv
+      artifact: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/mc_baseline_classifier_acevedo/2026-08-25_14-31-36/acevedo_artifact/config/count_3/predictions.csv
+      metrics_json: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/mc_baseline_classifier_acevedo/2026-08-25_14-31-36/acevedo_artifact/config/count_3/metrics.json
+    SNGP:
+      real_baseline: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/sngp_classifier_acevedo/2026-08-25_14-32-45/acevedo_artifact/real_baseline/predictions.csv
+      artifact: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/sngp_classifier_acevedo/2026-08-25_14-32-45/acevedo_artifact/config/count_3/predictions.csv
+      metrics_json: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/sngp_classifier_acevedo/2026-08-25_14-32-45/acevedo_artifact/config/count_3/metrics.json
+    SNGP Ensemble:
+      real_baseline: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/deep_ensemble_sngp_classifier_acevedo/2026-08-25_15-34-35/acevedo_artifact/real_baseline/predictions.csv
+      artifact: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/deep_ensemble_sngp_classifier_acevedo/2026-08-25_15-34-35/acevedo_artifact/config/count_3/predictions.csv
+      metrics_json: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/deep_ensemble_sngp_classifier_acevedo/2026-08-25_15-34-35/acevedo_artifact/config/count_3/metrics.json
+
+config_axis_count_4:
+  label: "Config axis — 4 pasted artifact overlays (count=4, artifact_balanced, procedural off)"
+  models:
+    Baseline Classifier:
+      real_baseline: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/baseline_classifier_acevedo/2026-08-25_14-31-36/acevedo_artifact/real_baseline/predictions.csv
+      artifact: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/baseline_classifier_acevedo/2026-08-25_14-31-36/acevedo_artifact/config/count_4/predictions.csv
+      metrics_json: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/baseline_classifier_acevedo/2026-08-25_14-31-36/acevedo_artifact/config/count_4/metrics.json
+    Deep Ensemble:
+      real_baseline: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/deep_ensemble_baseline_classifier_acevedo/2026-08-25_15-31-22/acevedo_artifact/real_baseline/predictions.csv
+      artifact: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/deep_ensemble_baseline_classifier_acevedo/2026-08-25_15-31-22/acevedo_artifact/config/count_4/predictions.csv
+      metrics_json: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/deep_ensemble_baseline_classifier_acevedo/2026-08-25_15-31-22/acevedo_artifact/config/count_4/metrics.json
+    Monte Carlo Dropout:
+      real_baseline: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/mc_baseline_classifier_acevedo/2026-08-25_14-31-36/acevedo_artifact/real_baseline/predictions.csv
+      artifact: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/mc_baseline_classifier_acevedo/2026-08-25_14-31-36/acevedo_artifact/config/count_4/predictions.csv
+      metrics_json: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/mc_baseline_classifier_acevedo/2026-08-25_14-31-36/acevedo_artifact/config/count_4/metrics.json
+    SNGP:
+      real_baseline: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/sngp_classifier_acevedo/2026-08-25_14-32-45/acevedo_artifact/real_baseline/predictions.csv
+      artifact: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/sngp_classifier_acevedo/2026-08-25_14-32-45/acevedo_artifact/config/count_4/predictions.csv
+      metrics_json: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/sngp_classifier_acevedo/2026-08-25_14-32-45/acevedo_artifact/config/count_4/metrics.json
+    SNGP Ensemble:
+      real_baseline: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/deep_ensemble_sngp_classifier_acevedo/2026-08-25_15-34-35/acevedo_artifact/real_baseline/predictions.csv
+      artifact: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/deep_ensemble_sngp_classifier_acevedo/2026-08-25_15-34-35/acevedo_artifact/config/count_4/predictions.csv
+      metrics_json: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/deep_ensemble_sngp_classifier_acevedo/2026-08-25_15-34-35/acevedo_artifact/config/count_4/metrics.json
+
+config_axis_count_5:
+  label: "Config axis — 5 pasted artifact overlays (count=5, artifact_balanced, procedural off)"
+  models:
+    Baseline Classifier:
+      real_baseline: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/baseline_classifier_acevedo/2026-08-25_14-31-36/acevedo_artifact/real_baseline/predictions.csv
+      artifact: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/baseline_classifier_acevedo/2026-08-25_14-31-36/acevedo_artifact/config/count_5/predictions.csv
+      metrics_json: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/baseline_classifier_acevedo/2026-08-25_14-31-36/acevedo_artifact/config/count_5/metrics.json
+    Deep Ensemble:
+      real_baseline: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/deep_ensemble_baseline_classifier_acevedo/2026-08-25_15-31-22/acevedo_artifact/real_baseline/predictions.csv
+      artifact: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/deep_ensemble_baseline_classifier_acevedo/2026-08-25_15-31-22/acevedo_artifact/config/count_5/predictions.csv
+      metrics_json: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/deep_ensemble_baseline_classifier_acevedo/2026-08-25_15-31-22/acevedo_artifact/config/count_5/metrics.json
+    Monte Carlo Dropout:
+      real_baseline: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/mc_baseline_classifier_acevedo/2026-08-25_14-31-36/acevedo_artifact/real_baseline/predictions.csv
+      artifact: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/mc_baseline_classifier_acevedo/2026-08-25_14-31-36/acevedo_artifact/config/count_5/predictions.csv
+      metrics_json: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/mc_baseline_classifier_acevedo/2026-08-25_14-31-36/acevedo_artifact/config/count_5/metrics.json
+    SNGP:
+      real_baseline: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/sngp_classifier_acevedo/2026-08-25_14-32-45/acevedo_artifact/real_baseline/predictions.csv
+      artifact: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/sngp_classifier_acevedo/2026-08-25_14-32-45/acevedo_artifact/config/count_5/predictions.csv
+      metrics_json: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/sngp_classifier_acevedo/2026-08-25_14-32-45/acevedo_artifact/config/count_5/metrics.json
+    SNGP Ensemble:
+      real_baseline: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/deep_ensemble_sngp_classifier_acevedo/2026-08-25_15-34-35/acevedo_artifact/real_baseline/predictions.csv
+      artifact: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/deep_ensemble_sngp_classifier_acevedo/2026-08-25_15-34-35/acevedo_artifact/config/count_5/predictions.csv
+      metrics_json: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/deep_ensemble_sngp_classifier_acevedo/2026-08-25_15-34-35/acevedo_artifact/config/count_5/metrics.json
+
+procedural_axis_severity_2:
+  label: "Procedural axis — one graded acquisition degradation (severity=2, procedural_ood, config off)"
+  models:
+    Baseline Classifier:
+      real_baseline: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/baseline_classifier_acevedo/2026-08-25_14-31-36/acevedo_artifact/real_baseline/predictions.csv
+      artifact: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/baseline_classifier_acevedo/2026-08-25_14-31-36/acevedo_artifact/procedural/severity_2/predictions.csv
+      metrics_json: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/baseline_classifier_acevedo/2026-08-25_14-31-36/acevedo_artifact/procedural/severity_2/metrics.json
+    Deep Ensemble:
+      real_baseline: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/deep_ensemble_baseline_classifier_acevedo/2026-08-25_15-31-22/acevedo_artifact/real_baseline/predictions.csv
+      artifact: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/deep_ensemble_baseline_classifier_acevedo/2026-08-25_15-31-22/acevedo_artifact/procedural/severity_2/predictions.csv
+      metrics_json: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/deep_ensemble_baseline_classifier_acevedo/2026-08-25_15-31-22/acevedo_artifact/procedural/severity_2/metrics.json
+    Monte Carlo Dropout:
+      real_baseline: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/mc_baseline_classifier_acevedo/2026-08-25_14-31-36/acevedo_artifact/real_baseline/predictions.csv
+      artifact: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/mc_baseline_classifier_acevedo/2026-08-25_14-31-36/acevedo_artifact/procedural/severity_2/predictions.csv
+      metrics_json: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/mc_baseline_classifier_acevedo/2026-08-25_14-31-36/acevedo_artifact/procedural/severity_2/metrics.json
+    SNGP:
+      real_baseline: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/sngp_classifier_acevedo/2026-08-25_14-32-45/acevedo_artifact/real_baseline/predictions.csv
+      artifact: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/sngp_classifier_acevedo/2026-08-25_14-32-45/acevedo_artifact/procedural/severity_2/predictions.csv
+      metrics_json: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/sngp_classifier_acevedo/2026-08-25_14-32-45/acevedo_artifact/procedural/severity_2/metrics.json
+    SNGP Ensemble:
+      real_baseline: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/deep_ensemble_sngp_classifier_acevedo/2026-08-25_15-34-35/acevedo_artifact/real_baseline/predictions.csv
+      artifact: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/deep_ensemble_sngp_classifier_acevedo/2026-08-25_15-34-35/acevedo_artifact/procedural/severity_2/predictions.csv
+      metrics_json: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/deep_ensemble_sngp_classifier_acevedo/2026-08-25_15-34-35/acevedo_artifact/procedural/severity_2/metrics.json
+
+procedural_axis_severity_3:
+  label: "Procedural axis — one graded acquisition degradation (severity=3, procedural_ood, config off)"
+  models:
+    Baseline Classifier:
+      real_baseline: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/baseline_classifier_acevedo/2026-08-25_14-31-36/acevedo_artifact/real_baseline/predictions.csv
+      artifact: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/baseline_classifier_acevedo/2026-08-25_14-31-36/acevedo_artifact/procedural/severity_3/predictions.csv
+      metrics_json: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/baseline_classifier_acevedo/2026-08-25_14-31-36/acevedo_artifact/procedural/severity_3/metrics.json
+    Deep Ensemble:
+      real_baseline: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/deep_ensemble_baseline_classifier_acevedo/2026-08-25_15-31-22/acevedo_artifact/real_baseline/predictions.csv
+      artifact: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/deep_ensemble_baseline_classifier_acevedo/2026-08-25_15-31-22/acevedo_artifact/procedural/severity_3/predictions.csv
+      metrics_json: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/deep_ensemble_baseline_classifier_acevedo/2026-08-25_15-31-22/acevedo_artifact/procedural/severity_3/metrics.json
+    Monte Carlo Dropout:
+      real_baseline: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/mc_baseline_classifier_acevedo/2026-08-25_14-31-36/acevedo_artifact/real_baseline/predictions.csv
+      artifact: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/mc_baseline_classifier_acevedo/2026-08-25_14-31-36/acevedo_artifact/procedural/severity_3/predictions.csv
+      metrics_json: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/mc_baseline_classifier_acevedo/2026-08-25_14-31-36/acevedo_artifact/procedural/severity_3/metrics.json
+    SNGP:
+      real_baseline: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/sngp_classifier_acevedo/2026-08-25_14-32-45/acevedo_artifact/real_baseline/predictions.csv
+      artifact: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/sngp_classifier_acevedo/2026-08-25_14-32-45/acevedo_artifact/procedural/severity_3/predictions.csv
+      metrics_json: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/sngp_classifier_acevedo/2026-08-25_14-32-45/acevedo_artifact/procedural/severity_3/metrics.json
+    SNGP Ensemble:
+      real_baseline: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/deep_ensemble_sngp_classifier_acevedo/2026-08-25_15-34-35/acevedo_artifact/real_baseline/predictions.csv
+      artifact: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/deep_ensemble_sngp_classifier_acevedo/2026-08-25_15-34-35/acevedo_artifact/procedural/severity_3/predictions.csv
+      metrics_json: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/deep_ensemble_sngp_classifier_acevedo/2026-08-25_15-34-35/acevedo_artifact/procedural/severity_3/metrics.json
+
+procedural_axis_severity_4:
+  label: "Procedural axis — one graded acquisition degradation (severity=4, procedural_ood, config off)"
+  models:
+    Baseline Classifier:
+      real_baseline: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/baseline_classifier_acevedo/2026-08-25_14-31-36/acevedo_artifact/real_baseline/predictions.csv
+      artifact: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/baseline_classifier_acevedo/2026-08-25_14-31-36/acevedo_artifact/procedural/severity_4/predictions.csv
+      metrics_json: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/baseline_classifier_acevedo/2026-08-25_14-31-36/acevedo_artifact/procedural/severity_4/metrics.json
+    Deep Ensemble:
+      real_baseline: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/deep_ensemble_baseline_classifier_acevedo/2026-08-25_15-31-22/acevedo_artifact/real_baseline/predictions.csv
+      artifact: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/deep_ensemble_baseline_classifier_acevedo/2026-08-25_15-31-22/acevedo_artifact/procedural/severity_4/predictions.csv
+      metrics_json: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/deep_ensemble_baseline_classifier_acevedo/2026-08-25_15-31-22/acevedo_artifact/procedural/severity_4/metrics.json
+    Monte Carlo Dropout:
+      real_baseline: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/mc_baseline_classifier_acevedo/2026-08-25_14-31-36/acevedo_artifact/real_baseline/predictions.csv
+      artifact: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/mc_baseline_classifier_acevedo/2026-08-25_14-31-36/acevedo_artifact/procedural/severity_4/predictions.csv
+      metrics_json: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/mc_baseline_classifier_acevedo/2026-08-25_14-31-36/acevedo_artifact/procedural/severity_4/metrics.json
+    SNGP:
+      real_baseline: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/sngp_classifier_acevedo/2026-08-25_14-32-45/acevedo_artifact/real_baseline/predictions.csv
+      artifact: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/sngp_classifier_acevedo/2026-08-25_14-32-45/acevedo_artifact/procedural/severity_4/predictions.csv
+      metrics_json: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/sngp_classifier_acevedo/2026-08-25_14-32-45/acevedo_artifact/procedural/severity_4/metrics.json
+    SNGP Ensemble:
+      real_baseline: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/deep_ensemble_sngp_classifier_acevedo/2026-08-25_15-34-35/acevedo_artifact/real_baseline/predictions.csv
+      artifact: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/deep_ensemble_sngp_classifier_acevedo/2026-08-25_15-34-35/acevedo_artifact/procedural/severity_4/predictions.csv
+      metrics_json: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/deep_ensemble_sngp_classifier_acevedo/2026-08-25_15-34-35/acevedo_artifact/procedural/severity_4/metrics.json
+
+procedural_axis_severity_5:
+  label: "Procedural axis — one graded acquisition degradation (severity=5, procedural_ood, config off)"
+  models:
+    Baseline Classifier:
+      real_baseline: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/baseline_classifier_acevedo/2026-08-25_14-31-36/acevedo_artifact/real_baseline/predictions.csv
+      artifact: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/baseline_classifier_acevedo/2026-08-25_14-31-36/acevedo_artifact/procedural/severity_5/predictions.csv
+      metrics_json: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/baseline_classifier_acevedo/2026-08-25_14-31-36/acevedo_artifact/procedural/severity_5/metrics.json
+    Deep Ensemble:
+      real_baseline: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/deep_ensemble_baseline_classifier_acevedo/2026-08-25_15-31-22/acevedo_artifact/real_baseline/predictions.csv
+      artifact: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/deep_ensemble_baseline_classifier_acevedo/2026-08-25_15-31-22/acevedo_artifact/procedural/severity_5/predictions.csv
+      metrics_json: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/deep_ensemble_baseline_classifier_acevedo/2026-08-25_15-31-22/acevedo_artifact/procedural/severity_5/metrics.json
+    Monte Carlo Dropout:
+      real_baseline: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/mc_baseline_classifier_acevedo/2026-08-25_14-31-36/acevedo_artifact/real_baseline/predictions.csv
+      artifact: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/mc_baseline_classifier_acevedo/2026-08-25_14-31-36/acevedo_artifact/procedural/severity_5/predictions.csv
+      metrics_json: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/mc_baseline_classifier_acevedo/2026-08-25_14-31-36/acevedo_artifact/procedural/severity_5/metrics.json
+    SNGP:
+      real_baseline: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/sngp_classifier_acevedo/2026-08-25_14-32-45/acevedo_artifact/real_baseline/predictions.csv
+      artifact: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/sngp_classifier_acevedo/2026-08-25_14-32-45/acevedo_artifact/procedural/severity_5/predictions.csv
+      metrics_json: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/sngp_classifier_acevedo/2026-08-25_14-32-45/acevedo_artifact/procedural/severity_5/metrics.json
+    SNGP Ensemble:
+      real_baseline: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/deep_ensemble_sngp_classifier_acevedo/2026-08-25_15-34-35/acevedo_artifact/real_baseline/predictions.csv
+      artifact: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/deep_ensemble_sngp_classifier_acevedo/2026-08-25_15-34-35/acevedo_artifact/procedural/severity_5/predictions.csv
+      metrics_json: /data1/maheswararao/experiments/uncertaity-aware-ml/infer/deep_ensemble_sngp_classifier_acevedo/2026-08-25_15-34-35/acevedo_artifact/procedural/severity_5/metrics.json
