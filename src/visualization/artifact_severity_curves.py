@@ -137,7 +137,12 @@ def plot_pr_panel(
 
 def plot_rc_panel(
     ax: plt.Axes, data_by_n: dict[int, tuple[np.ndarray, np.ndarray]], axis: Axis
-) -> None:
+) -> float:
+    """Draws the panel's 5 severity curves and returns the true max risk (%) among
+    them -- `AURC.plot()` sets its own `ylim` internally on every call, sized only to
+    that one call's curve, so the axis's ylim after the loop reflects only the last
+    severity plotted, not the panel's actual max. The caller uses the returned value
+    to set one correct, shared `ylim` across every panel in the figure."""
     ax.set_prop_cycle(color=_severity_colors())
     for n in N_VALUES:
         probs, targets = data_by_n[n]
@@ -149,6 +154,7 @@ def plot_rc_panel(
         label = f"{AXIS_LABEL[axis]}={n} (AURC={score:.3f})"
         metric.plot(ax=ax, plot_value=False, name=label)
     ax.legend(fontsize=7, loc="upper left")
+    return max(line.get_ydata().max() for line in ax.lines)
 
 
 PANEL_FN = {"auroc": plot_roc_panel, "aupr": plot_pr_panel, "aurc": plot_rc_panel}
@@ -168,10 +174,18 @@ def build_figure(axis: Axis, metric: Metric, axis_paths: dict) -> plt.Figure:
         sharey=(metric != "aurc"),
     )
     panel_fn = PANEL_FN[metric]
+    panel_maxes = []
     for ax, model in zip(axes, MODEL_ROW_ORDER):
         data_by_n = {n: load_artifact_probs_targets(axis_paths, axis, n, model) for n in N_VALUES}
-        panel_fn(ax, data_by_n, axis)
+        panel_maxes.append(panel_fn(ax, data_by_n, axis))
         ax.set_title(model, fontsize=12)
+
+    if metric == "aurc":
+        # AURC.plot() sets its own ylim per call (see plot_rc_panel's docstring), so
+        # give every panel the same, correctly-sized range only after all 5 are drawn.
+        shared_max = max(panel_maxes) * 1.05
+        for ax in axes:
+            ax.set_ylim(0, shared_max)
 
     fig.suptitle(f"{axis.capitalize()} axis: {METRIC_TITLE[metric]} vs. {AXIS_LABEL[axis]}")
     fig.tight_layout()
