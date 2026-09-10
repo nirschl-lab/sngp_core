@@ -27,6 +27,7 @@ from src.inference.records import (  # noqa: E402
 )
 from src.metrics.brier import brier_score  # noqa: E402
 from src.utils.random_seed import set_random_seed  # noqa: E402
+from src.utils.resolvers import _dataset_label as dataset_label  # noqa: E402
 
 
 DEFAULT_INFER_RUNTIME_CFG: Dict[str, Any] = {
@@ -422,10 +423,12 @@ def run_inference(cfg: DictConfig) -> Dict[str, Any]:
 
     is_deep_ensemble = ckpt_meta.net_spec.get("name") == "deep_ensemble"
 
+    effective_data_name = dataset_label(str(cfg.data.name), cfg.data.datamodule.get("institution"))
+
     default_run_name = derive_default_run_name(
         ckpt_path=cfg.ckpt_path,
         net_name=str(ckpt_meta.net_spec.get("name", "model")),
-        data_name=str(cfg.data.name),
+        data_name=effective_data_name,
         use_mc_dropout=bool(cfg.infer.runtime.use_mc_dropout),
         is_deep_ensemble=is_deep_ensemble,
     )
@@ -453,7 +456,7 @@ def run_inference(cfg: DictConfig) -> Dict[str, Any]:
         "lit_module": ckpt_meta.lit_module,
         "num_classes": ckpt_meta.num_classes,
         "idx_to_class": ckpt_meta.idx_to_class,
-        "dataset_name": str(cfg.data.name),
+        "dataset_name": effective_data_name,
         "fold": fold,
         "run_name": default_run_name,
         "member_source": member_source,

@@ -10,8 +10,10 @@ defaults:
   - infer/save: default
 
 # cosmetic/consistency only -- src/inference/infer.py never runs a real Hydra job, so
-# this isn't consumed by hydra.run.dir here; see docs/OUTPUT_LAYOUT.md
-task_name: "infer/${data.name}"
+# this isn't consumed by hydra.run.dir here; see docs/OUTPUT_LAYOUT.md. The actual
+# output-folder institution scoping happens in derive_default_run_name (infer.py),
+# using the same dataset_label rule as train/eval's task_name.
+task_name: "infer/${dataset_label:${data.name},${data.datamodule.institution}}"
 
 tags: ["infer"]
 

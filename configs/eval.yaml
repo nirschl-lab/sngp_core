@@ -15,8 +15,10 @@ defaults:
   - _self_
 
 # task name, determines output directory path -- includes model family + dataset so
-# runs are distinguishable on disk, not just by timestamp (see docs/OUTPUT_LAYOUT.md)
-task_name: "eval/${model.name}_${data.name}"
+# runs are distinguishable on disk, not just by timestamp (see docs/OUTPUT_LAYOUT.md).
+# dataset_label appends data.datamodule.institution when it's set, so a per-institution
+# run gets its own directory instead of sharing the parent dataset's folder.
+task_name: "eval/${model.name}_${dataset_label:${data.name},${data.datamodule.institution}}"
 tags: ["eval", "sngp"]
 
 # flag for torch precision: 'medium', 'high' or 'highest'

@@ -11,6 +11,10 @@ from hydra import compose, initialize
 from hydra.core.global_hydra import GlobalHydra
 from omegaconf import DictConfig, open_dict
 
+import src.utils  # noqa: F401  (import registers custom OmegaConf resolvers, e.g.
+# task_name's dataset_label, needed even when a scoped test module never imports
+# src.train/src.eval/src.utils itself)
+
 # set wandb offline
 os.environ["WANDB_MODE"] = "offline" # not strictly necessary since we disable log/ckpt in tests
 

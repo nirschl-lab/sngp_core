@@ -39,8 +39,10 @@ defaults:
   # - override /hydra/launcher: submitit_slurm
 
 # task name, determines output directory path -- includes model family + dataset so
-# runs are distinguishable on disk, not just by timestamp (see docs/OUTPUT_LAYOUT.md)
-task_name: "train/${model.name}_${data.name}"
+# runs are distinguishable on disk, not just by timestamp (see docs/OUTPUT_LAYOUT.md).
+# dataset_label appends data.datamodule.institution when it's set, so a per-institution
+# run gets its own directory instead of sharing the parent dataset's folder.
+task_name: "train/${model.name}_${dataset_label:${data.name},${data.datamodule.institution}}"
 
 # tags to help you identify your experiments
 # you can overwrite this in experiment configs

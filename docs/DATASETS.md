@@ -66,6 +66,13 @@ Requesting an institution id that doesn't match any rows, or a dataset with no
 training on an empty split. `uv run src/visualization/datasets_class_distribution.py
 --dataset <name>` reports which institution ids (if any) a given dataset actually has.
 
+Setting `institution` also renames the train/eval/infer output path for that run --
+`wong` + `institution=upitt` writes to `wong_upitt` instead of the shared `wong/` root
+every other institution (and the unfiltered, all-institution run) would otherwise also
+write to. This is automatic; no separate `data.name=` override is needed. See
+[docs/OUTPUT_LAYOUT.md](OUTPUT_LAYOUT.md#2-how-task_name-and-run-id-are-generated) for
+the `dataset_label` resolver that does this.
+
 ## Artifact-robustness evaluation
 
 A separate axis, orthogonal to which dataset is used: the external `histo-artifact-sim`

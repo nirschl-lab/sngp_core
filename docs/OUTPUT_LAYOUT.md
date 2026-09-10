@@ -76,16 +76,32 @@ so `<run_id>` is `%Y-%m-%d_%H-%M-%S` at process start, and `<task_name>` determi
 above `runs/`:
 
 - **Training** -- [`configs/train.yaml`](../configs/train.yaml):
-  `task_name: "train/${model.name}_${data.name}"`.
+  `task_name: "train/${model.name}_${dataset_label:${data.name},${data.datamodule.institution}}"`.
 - **Eval** -- [`configs/eval.yaml`](../configs/eval.yaml):
-  `task_name: "eval/${model.name}_${data.name}"`.
+  `task_name: "eval/${model.name}_${dataset_label:${data.name},${data.datamodule.institution}}"`.
 - **Inference** -- [`configs/infer.yaml`](../configs/infer.yaml):
-  `task_name: "infer/${data.name}"`. This field is set for a clean printed/logged config only --
-  `src/inference/infer.py` never runs a real `@hydra.main` job (see
-  [§8](#8-known-quirks)), so it does **not** drive `hydra.run.dir` the way it does for train/eval,
-  and its `${data.name}`-first shape doesn't match the actual on-disk inference layout described in
-  [§5](#5-inference-outputs) (`[deep_ensemble_|mc_]<netname_dataset>/<ckpt_run_id>/<data.name>`,
-  model/run first).
+  `task_name: "infer/${dataset_label:${data.name},${data.datamodule.institution}}"`. This field is
+  set for a clean printed/logged config only -- `src/inference/infer.py` never runs a real
+  `@hydra.main` job (see [§8](#8-known-quirks)), so it does **not** drive `hydra.run.dir` the way it
+  does for train/eval, and its dataset-first shape doesn't match the actual on-disk inference layout
+  described in [§5](#5-inference-outputs)
+  (`[deep_ensemble_|mc_]<netname_dataset>/<ckpt_run_id>/<data.name>[_<institution>]`, model/run
+  first).
+
+`dataset_label` (`src/utils/resolvers.py`, a custom OmegaConf resolver registered as an import-time
+side effect of `src.utils`) appends `data.datamodule.institution` onto `data.name` whenever an
+institution filter is set -- `wong` + `institution=upitt` becomes `wong_upitt` -- so a
+per-institution train/eval run gets its own directory automatically instead of collapsing into the
+shared `<model.name>_<data.name>/` root every other institution (and the unfiltered, all-institution
+run) also writes to; leaving `institution: null` (the default) leaves the path unchanged. Inference's
+own output-folder scoping ([§5](#5-inference-outputs)) applies the identical rule directly in Python
+(`derive_default_run_name`'s `data_name` argument), not through this cosmetic `task_name` field, since
+`src/inference/infer.py` resolves its output directory itself rather than via `hydra.run.dir`. This
+replaces the earlier convention of manually passing `data.name=<dataset>_<institution>` on the CLI to
+avoid the collision (see the Wong-UCDavis entries in
+[docs/MASTER_CHECKPONT_PATHS.md](MASTER_CHECKPONT_PATHS.md) /
+[docs/MASTER_INFER_RESULTS_PATH.md](MASTER_INFER_RESULTS_PATH.md), which predate this fix and used
+that manual override).
 
 `${model.name}` and `${data.name}` are plain config fields resolved at Hydra composition time --
 see [§7](#7-three-name-fields----dont-conflate) for exactly which fields these are and which ones
@@ -169,7 +185,13 @@ run-folder path from the checkpoint and the dataset used for inference
 - `<data.name>` is the dataset inference was run against -- the same value that scoped `save_path`
   before this layout changed. Not to be confused with the *training* dataset baked into
   `<netname_dataset>` above: this is the eval-time dataset, which may differ (e.g. a cross-dataset
-  OOD sweep).
+  OOD sweep). When `data.datamodule.institution` is set for this inference run, it's appended here
+  too (`dataset_label(cfg.data.name, cfg.data.datamodule.institution)`, the same rule §2 describes
+  for `task_name`, applied directly in Python since `run_inference()` never goes through
+  `hydra.run.dir`) -- e.g. testing a Wong-trained checkpoint against just the UPitt institution
+  subset lands at `.../wong_upitt/` rather than colliding with a full-`wong` or other-institution
+  run in a shared `.../wong/` folder. `provenance["dataset_name"]` in `run.json` records this same
+  institution-scoped value, not the bare `data.name`.
 
 Note: the folder is keyed on checkpoint + dataset only, not `fold` -- rerunning the same checkpoint
 against the same dataset with a different `fold` (or a second time with the same fold) overwrites
