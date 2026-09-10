@@ -325,3 +325,44 @@ NLL vs. artifact count/severity (0 = real image), Acevedo, all 5 models.
 </td>
 </tr>
 </table>
+
+### artifact severity curves
+
+ROC/AUROC per model, artifact count/severity 1-5 overlaid, Acevedo.
+
+<table>
+<tr>
+<td align="center" width="50%">
+<img src="../figures/artifact_severity_curves/config_axis_auroc_curves.png" width="100%">
+</td>
+<td align="center" width="50%">
+<img src="../figures/artifact_severity_curves/procedural_axis_auroc_curves.png" width="100%">
+</td>
+</tr>
+</table>
+
+Precision-recall/AUPR per model, artifact count/severity 1-5 overlaid, Acevedo.
+
+<table>
+<tr>
+<td align="center" width="50%">
+<img src="../figures/artifact_severity_curves/config_axis_aupr_curves.png" width="100%">
+</td>
+<td align="center" width="50%">
+<img src="../figures/artifact_severity_curves/procedural_axis_aupr_curves.png" width="100%">
+</td>
+</tr>
+</table>
+
+Risk-coverage/AURC per model, artifact count/severity 1-5 overlaid, Acevedo.
+
+<table>
+<tr>
+<td align="center" width="50%">
+<img src="../figures/artifact_severity_curves/config_axis_aurc_curves.png" width="100%">
+</td>
+<td align="center" width="50%">
+<img src="../figures/artifact_severity_curves/procedural_axis_aurc_curves.png" width="100%">
+</td>
+</tr>
+</table>

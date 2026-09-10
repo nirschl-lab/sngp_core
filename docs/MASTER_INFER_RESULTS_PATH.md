@@ -104,6 +104,23 @@ uv run src/visualization/artifact_ablation_curves.py \
     --output-dir csv/artifact_quantification/acevedo
 ```
 
+Severity curves (standard one-vs-rest ROC/PR/risk-coverage curves -- AUROC/AUPR/AURC --
+computed directly on each axis-value's artifact-stream predictions.csv, count/severity
+1-5 overlaid per model panel) by `src/visualization/artifact_severity_curves.py`:
+
+acevedo_artifact_severity_curve_figures:
+```bash
+figures/artifact_severity_curves/config_axis_{auroc,aupr,aurc}_curves.{png,pdf}
+figures/artifact_severity_curves/procedural_axis_{auroc,aupr,aurc}_curves.{png,pdf}
+```
+
+Reproduce:
+```bash
+uv run src/visualization/artifact_severity_curves.py \
+    --config configs/paper_helpers/acevedo_artifact_axis_paths.yaml \
+    --figures-dir figures/artifact_severity_curves
+```
+
 ---
 
 baseline_wong:

@@ -39,9 +39,8 @@ import yaml
 
 ROOT = rootutils.setup_root(__file__, indicator=".project-root", pythonpath=True)
 
-from src.visualization.style import set_default_style  # noqa: E402
+from src.visualization.style import MODEL_ROW_ORDER, set_default_style  # noqa: E402
 
-MODEL_ROW_ORDER = ["Baseline Classifier", "Deep Ensemble", "Monte Carlo Dropout", "SNGP", "SNGP Ensemble"]
 MODEL_COLORS = dict(zip(MODEL_ROW_ORDER, sns.color_palette("colorblind", len(MODEL_ROW_ORDER))))
 N_VALUES = [1, 2, 3, 4, 5]
 

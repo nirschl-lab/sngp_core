@@ -17,6 +17,17 @@ DATASET_COLORS: dict[str, str] = {
     "nirschl2018": "#949494",
 }
 
+# Canonical display order for this project's 5 model variants, shared by every figure
+# that compares them (artifact_ablation_curves.py, artifact_severity_curves.py) so
+# panel/row order stays identical across figures.
+MODEL_ROW_ORDER: list[str] = [
+    "Baseline Classifier",
+    "Deep Ensemble",
+    "Monte Carlo Dropout",
+    "SNGP",
+    "SNGP Ensemble",
+]
+
 
 def set_default_style(use_tex: bool = False) -> None:
     """Set global matplotlib/seaborn style for calibration plots."""
