@@ -365,10 +365,12 @@ ROC/AUROC per model, artifact count/severity 1-5 overlaid, Acevedo.
 
 <table>
 <tr>
-<td align="center" width="50%">
+<td align="center" width="100%">
 <img src="../figures/artifact_severity_curves/config_axis_auroc_curves.png" width="100%">
 </td>
-<td align="center" width="50%">
+</tr>
+<tr>
+<td align="center" width="100%">
 <img src="../figures/artifact_severity_curves/procedural_axis_auroc_curves.png" width="100%">
 </td>
 </tr>
@@ -378,10 +380,12 @@ Precision-recall/AUPR per model, artifact count/severity 1-5 overlaid, Acevedo.
 
 <table>
 <tr>
-<td align="center" width="50%">
+<td align="center" width="100%">
 <img src="../figures/artifact_severity_curves/config_axis_aupr_curves.png" width="100%">
 </td>
-<td align="center" width="50%">
+</tr>
+<tr>
+<td align="center" width="100%">
 <img src="../figures/artifact_severity_curves/procedural_axis_aupr_curves.png" width="100%">
 </td>
 </tr>
@@ -391,10 +395,12 @@ Risk-coverage/AURC per model, artifact count/severity 1-5 overlaid, Acevedo.
 
 <table>
 <tr>
-<td align="center" width="50%">
+<td align="center" width="100%">
 <img src="../figures/artifact_severity_curves/config_axis_aurc_curves.png" width="100%">
 </td>
-<td align="center" width="50%">
+</tr>
+<tr>
+<td align="center" width="100%">
 <img src="../figures/artifact_severity_curves/procedural_axis_aurc_curves.png" width="100%">
 </td>
 </tr>
