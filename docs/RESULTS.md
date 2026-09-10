@@ -75,6 +75,39 @@ in-distribution/OOD pair.
 # Different Scanner: Distribution shift due to different Institution
 ### Model Trained on Wong (ucdavis) and Tested Wong - upitt, utsouthwestern, Tang-ucdavis
 
+Checkpoint paths and reproduce commands in
+[MASTER_INFER_RESULTS_PATH.md](MASTER_INFER_RESULTS_PATH.md).
+
+**Tested on Wong — UPitt**
+
+| Model | Accuracy ↑ | F1 ↑ | NLL (×10⁻²) ↓ | ECE (×10⁻²) ↓ |
+|---|---:|---:|---:|---:|
+| Baseline Classifier | 0.7021 | 0.6777 | 95.88 | 13.93 |
+| Deep Ensemble | 0.7052 | 0.6900 | 91.98 | 13.50 |
+| Monte Carlo Dropout | 0.7007 | 0.6763 | 95.00 | 13.89 |
+| SNGP | **0.7238** | **0.7140** | **84.31** | **9.26** |
+| SNGP Ensemble | 0.6840 | 0.6722 | 96.44 | 11.83 |
+
+**Tested on Wong — UTSouthwestern**
+
+| Model | Accuracy ↑ | F1 ↑ | NLL (×10⁻²) ↓ | ECE (×10⁻²) ↓ |
+|---|---:|---:|---:|---:|
+| Baseline Classifier | 0.7463 | 0.6935 | 78.04 | 11.03 |
+| Deep Ensemble | **0.7869** | **0.7564** | **61.23** | **7.83** |
+| Monte Carlo Dropout | 0.7469 | 0.6948 | 77.58 | 10.63 |
+| SNGP | 0.7017 | 0.6750 | 90.38 | 10.98 |
+| SNGP Ensemble | 0.7187 | 0.6928 | 85.68 | 12.63 |
+
+**Tested on Tang — UCDavis**
+
+| Model | Accuracy ↑ | F1 ↑ | NLL (×10⁻²) ↓ | ECE (×10⁻²) ↓ |
+|---|---:|---:|---:|---:|
+| Baseline Classifier | **0.9467** | **0.5470** | 20.30 | 1.72 |
+| Deep Ensemble | 0.9399 | 0.5146 | 19.99 | 1.08 |
+| Monte Carlo Dropout | 0.9466 | 0.5468 | 20.25 | 1.60 |
+| SNGP | 0.9338 | 0.4793 | 21.92 | **0.97** |
+| SNGP Ensemble | 0.9433 | 0.5440 | **19.30** | 1.38 |
+
 ---
 
 # Artifact Simulation: Testing under the influence of artifacts

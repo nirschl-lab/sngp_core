@@ -179,3 +179,93 @@ sngp_wong_ucdavis_ensemble:
 ```bash
 /data1/maheswararao/experiments/uncertaity-aware-ml/infer/deep_ensemble_sngp_classifier_wong/2026-09-01_17-00-17/wong_ucdavis
 ```
+
+---
+
+Wong-UCDavis-trained models tested on out-of-institution/cross-dataset test sets
+(distribution shift from a different scanner/institution): `data=wong
+data.datamodule.institution={upitt,utsouthwestern} fold=test` and `data=tang
+data.datamodule.institution=ucdavis fold=test` (Tang has only one institution, so this
+is its full test split). Same 5 checkpoints as the Wong-UCDavis in-distribution runs
+above; MC-Dropout uses `infer.runtime.use_mc_dropout=true` (`mc_passes` left at its
+default of 10). The `wong_upitt`/`wong_utsouthwestern`/`tang_ucdavis` leaf is appended
+automatically now (see
+[docs/OUTPUT_LAYOUT.md](OUTPUT_LAYOUT.md#2-how-task_name-and-run-id-are-generated)) --
+no `data.name=` override needed, unlike the in-distribution runs above which predate
+that fix. Metrics (accuracy/F1/NLL/ECE) are tabulated in
+[RESULTS.md](RESULTS.md#different-scanner-distribution-shift-due-to-different-institution).
+
+baseline_wong_ucdavis_upitt:
+```bash
+/data1/maheswararao/experiments/uncertaity-aware-ml/infer/baseline_classifier_wong/2026-09-01_16-56-30/wong_upitt
+```
+
+baseline_wong_ucdavis_utsouthwestern:
+```bash
+/data1/maheswararao/experiments/uncertaity-aware-ml/infer/baseline_classifier_wong/2026-09-01_16-56-30/wong_utsouthwestern
+```
+
+baseline_wong_ucdavis_tang_ucdavis:
+```bash
+/data1/maheswararao/experiments/uncertaity-aware-ml/infer/baseline_classifier_wong/2026-09-01_16-56-30/tang_ucdavis
+```
+
+sngp_wong_ucdavis_upitt:
+```bash
+/data1/maheswararao/experiments/uncertaity-aware-ml/infer/sngp_classifier_wong/2026-09-01_16-58-05/wong_upitt
+```
+
+sngp_wong_ucdavis_utsouthwestern:
+```bash
+/data1/maheswararao/experiments/uncertaity-aware-ml/infer/sngp_classifier_wong/2026-09-01_16-58-05/wong_utsouthwestern
+```
+
+sngp_wong_ucdavis_tang_ucdavis:
+```bash
+/data1/maheswararao/experiments/uncertaity-aware-ml/infer/sngp_classifier_wong/2026-09-01_16-58-05/tang_ucdavis
+```
+
+baseline_wong_ucdavis_ensemble_upitt:
+```bash
+/data1/maheswararao/experiments/uncertaity-aware-ml/infer/deep_ensemble_baseline_classifier_wong/2026-09-01_17-00-38/wong_upitt
+```
+
+baseline_wong_ucdavis_ensemble_utsouthwestern:
+```bash
+/data1/maheswararao/experiments/uncertaity-aware-ml/infer/deep_ensemble_baseline_classifier_wong/2026-09-01_17-00-38/wong_utsouthwestern
+```
+
+baseline_wong_ucdavis_ensemble_tang_ucdavis:
+```bash
+/data1/maheswararao/experiments/uncertaity-aware-ml/infer/deep_ensemble_baseline_classifier_wong/2026-09-01_17-00-38/tang_ucdavis
+```
+
+sngp_wong_ucdavis_ensemble_upitt:
+```bash
+/data1/maheswararao/experiments/uncertaity-aware-ml/infer/deep_ensemble_sngp_classifier_wong/2026-09-01_17-00-17/wong_upitt
+```
+
+sngp_wong_ucdavis_ensemble_utsouthwestern:
+```bash
+/data1/maheswararao/experiments/uncertaity-aware-ml/infer/deep_ensemble_sngp_classifier_wong/2026-09-01_17-00-17/wong_utsouthwestern
+```
+
+sngp_wong_ucdavis_ensemble_tang_ucdavis:
+```bash
+/data1/maheswararao/experiments/uncertaity-aware-ml/infer/deep_ensemble_sngp_classifier_wong/2026-09-01_17-00-17/tang_ucdavis
+```
+
+mc_baseline_wong_ucdavis_upitt:
+```bash
+/data1/maheswararao/experiments/uncertaity-aware-ml/infer/mc_baseline_classifier_wong/2026-09-01_16-56-30/wong_upitt
+```
+
+mc_baseline_wong_ucdavis_utsouthwestern:
+```bash
+/data1/maheswararao/experiments/uncertaity-aware-ml/infer/mc_baseline_classifier_wong/2026-09-01_16-56-30/wong_utsouthwestern
+```
+
+mc_baseline_wong_ucdavis_tang_ucdavis:
+```bash
+/data1/maheswararao/experiments/uncertaity-aware-ml/infer/mc_baseline_classifier_wong/2026-09-01_16-56-30/tang_ucdavis
+```
