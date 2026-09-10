@@ -37,7 +37,7 @@ def _assert_no_src_imports(module_path):
     ],
 )
 def test_export_bundle_is_self_contained_and_matches_original(tmp_path, model_name, overrides, modeling_file):
-    _, ckpt_path = _build_and_train_one_step(tmp_path / "train", model_name, overrides)
+    _, ckpt_path, _ = _build_and_train_one_step(tmp_path / "train", model_name, overrides)
 
     out_dir = tmp_path / "export"
     export(str(ckpt_path), out_dir)

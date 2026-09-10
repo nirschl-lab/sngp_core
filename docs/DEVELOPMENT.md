@@ -107,7 +107,9 @@ the *training strategy* around it:
   Gaussian Process head, trading a more involved forward pass for a principled
   predictive variance. Backbone choice is restricted at construction time (resnet
   only) — see [docs/SUPPORTED_MODELS.md](SUPPORTED_MODELS.md#sngp--vit-compatibility)
-  for why.
+  for why. Follows Liu et al. 2020 and the `edward2` reference implementation; the
+  details that are easy to get wrong are spelled out in
+  [#sngp-precision-matrix-and-mean-field](#sngp-precision-matrix-and-mean-field).
 - **Deep Ensemble** (net in `src/models/ensemble/`, training strategy in
   `src/models/deep_ensemble_lit_module.py`) — trains `N` independently-initialized
   baseline-family members and derives uncertainty from their disagreement, trading
@@ -126,6 +128,41 @@ LightningModule.
 
 See [docs/SUPPORTED_MODELS.md](SUPPORTED_MODELS.md) for the concrete backbone list and
 compatibility matrix, including how to add a new backbone, net, or training strategy.
+
+### SNGP: precision matrix and mean field
+
+Four properties of `RandomFeatureGaussianProcess` that are easy to get wrong, and are
+each covered by a test in `tests/models/sngp/`:
+
+1. **Mean-field is applied at inference only.** In train mode `forward` returns the raw
+   logits and `variance is None`; the correction `logits / sqrt(1 + lambda * var)` with
+   `lambda = pi/8` happens in eval mode only. Putting it in the training loss makes the
+   CE objective depend on the covariance state and turns the correction into a detached
+   per-example gradient reweighting that *down-weights* uncertain examples. This project
+   did exactly that before the `sngp-corrections` work; see the note below.
+2. **The precision matrix is reset every epoch.** `SNGPLitModule.on_train_epoch_start`
+   calls `reset_precision()`, so at any epoch boundary `precision_accum` holds exactly
+   one pass over the training set — which is what the paper's single post-training sum
+   means operationally, and what the reference implementation does. It also keeps
+   `save_top_k=1` checkpointing consistent: the epoch that gets checkpointed carries its
+   own complete precision matrix.
+3. **The inverse is cached, not recomputed per batch.** `_cov_stale` marks the cached
+   `covariance` dirty on every precision update; `_ensure_covariance()` recomputes lazily
+   on the next eval-mode forward. Lazily, rather than in `on_train_epoch_end`, because
+   Lightning runs the validation loop *before* that hook. `_cov_stale` is non-persistent,
+   so a reloaded checkpoint recomputes from `precision_accum` and self-heals.
+4. **Spectral norm needs warming up.** `torch.nn.utils.spectral_norm` only advances its
+   power iteration on train-mode forwards, so a freshly built net divides by an estimate
+   taken from random `u`/`v`. The error compounds across layers — an unwarmed
+   spectral-normed resnet50 emits `nan` in eval mode, resnet18 about `1e30`.
+   `apply_spectral_norm` therefore runs `DEFAULT_SN_WARMUP_ITERATIONS` power iterations
+   at construction.
+
+**Pre-correction checkpoints do not load.** The old head stored `cov_ema`/`num_updates`
+instead of `precision_accum`/`covariance`, and its weights were trained against
+mean-field-corrected logits, so there is no meaningful migration. `load_state_dict`
+raises a message pointing at the `sngp-pre-correction` tag (equivalently the `isbi2026`
+branch), which is where the ISBI 2026 paper's checkpoints remain reproducible.
 
 ---
 

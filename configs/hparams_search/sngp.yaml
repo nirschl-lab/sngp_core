@@ -9,19 +9,27 @@
 # diagnostics only, proxy budget (CosineAnnealingLR auto-rescales via
 # model.scheduler.T_max: ${trainer.max_epochs}), retrain top-3 at full length.
 #
-# SNGP additionally searches its own head hyperparameters (length_scale, ridge_penalty,
-# rff_dim) alongside the shared lr/weight_decay/batch_size -- these shape the *fit*,
-# not just the reported uncertainty: with mean_field=True (the project default), the
-# CE loss is computed on the mean-field-corrected logits
-# (logits / sqrt(1 + predictive_variance)), so ridge_penalty genuinely affects
-# training, not only calibration. mean_field and cov_momentum stay fixed -- those are
-# pure uncertainty-mechanism knobs, and tuning them against a discriminative objective
-# would be exactly the kind of calibration-driven training this protocol avoids.
+# SNGP additionally searches length_scale and rff_dim alongside the shared
+# lr/weight_decay/batch_size. Both genuinely shape the *fit*: they define the random
+# feature map phi, which the learned classifier sits on top of -- length_scale sets the
+# RBF kernel width, rff_dim its capacity.
 #
-# rff_dim costs O(d^3) per forward (a Cholesky solve on a rff_dim x rff_dim matrix runs
-# on every batch) -- 2048 is ~8x the head cost of 1024, so equal *trial* budget across
-# this space is not equal *compute* budget. Drop 2048 from the choice list below if
-# wall-clock becomes the binding constraint on your cluster.
+# ridge_penalty is deliberately NOT searched. Under canonical SNGP the CE loss is
+# computed on raw logits (the mean-field correction is applied at inference only), and
+# ridge_penalty only seeds the precision matrix P = ridge*I + sum_i phi_i phi_i^T. It
+# therefore has *zero* effect on the training fit and so zero effect on macro-AUPRC --
+# sweeping it against this objective would be fitting noise. Tune it, if at all, against
+# the calibration diagnostics, and per this project's protocol that is an evaluation
+# axis, never a training-time selection axis. mean_field and cov_momentum stay fixed for
+# the same reason.
+#
+# (Before the canonical-SNGP correction the loss *was* computed on mean-field-corrected
+# logits, which is why ridge_penalty used to be in this space. Any pre-correction sweep
+# result for it is off-regime -- see the `sngp-pre-correction` tag.)
+#
+# rff_dim costs O(d^3), but only once per epoch now that the covariance is inverted
+# lazily rather than per batch -- 2048 is no longer the wall-clock hazard it was, though
+# it still costs 4x the memory of 1024 for the precision/covariance buffers.
 
 defaults:
   - override /hydra/sweeper: optuna
@@ -80,7 +88,8 @@ hydra:
       model.optimizer.weight_decay: tag(log, interval(0.000001, 0.01))
       data.datamodule.batch_size: choice(64, 128, 256)
       model.net.length_scale: tag(log, interval(0.25, 16.0))
-      model.net.ridge_penalty: tag(log, interval(0.0001, 0.1))
+      # model.net.ridge_penalty intentionally omitted -- inference-only under canonical
+      # SNGP, so it cannot move the macro-AUPRC objective. See the header.
       model.net.rff_dim: choice(512, 1024, 2048)
       # ClassBalancedFocalLoss params (see docs/HPO_GUIDE.md#search-space) -- these
       # shape the fit, not just calibration, since every experiment config used here

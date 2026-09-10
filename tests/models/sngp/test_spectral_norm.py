@@ -58,3 +58,64 @@ class TestSpectralNormCompatibility:
     def test_vit_is_incompatible(self, arch):
         with pytest.raises(ValueError, match="not supported"):
             assert_spectral_norm_compatible(arch)
+
+class TestPowerIterationWarmup:
+    """`spectral_norm`'s power iteration only advances on train-mode forwards, so a
+    freshly built net would otherwise normalize by `u^T W v` for random unit u, v. The
+    error compounds across layers: an unwarmed spectral-normed resnet18 emits ~1e30 in
+    eval mode. `cos()` in the GP head used to hide this; LayerNorm on the GP input turns
+    it into NaN, and it corrupts Lightning's pre-training sanity-check validation either
+    way.
+    """
+
+    def test_warmup_keeps_untrained_resnet_activations_sane(self):
+        from src.models.backbones import build_backbone
+
+        torch.manual_seed(0)
+        backbone, _ = build_backbone("resnet18", False)
+        apply_spectral_norm(backbone)
+        backbone.eval()
+        out = backbone(torch.randn(2, 3, 224, 224))
+        assert torch.isfinite(out).all()
+        assert out.abs().max() < 100
+
+    def test_without_warmup_activations_explode(self):
+        """Documents the failure mode the warmup exists to prevent."""
+        from src.models.backbones import build_backbone
+
+        torch.manual_seed(0)
+        backbone, _ = build_backbone("resnet18", False)
+        apply_spectral_norm(backbone, warmup_iterations=0)
+        backbone.eval()
+        assert backbone(torch.randn(2, 3, 224, 224)).abs().max() > 1e6
+
+    def test_warmup_drives_the_normalized_weight_to_unit_spectral_norm(self):
+        from src.models.components.spectral_norm import warm_up_spectral_norm
+
+        def sigma_of(module):
+            return torch.linalg.matrix_norm(module.weight.reshape(module.weight.shape[0], -1), ord=2).item()
+
+        torch.manual_seed(0)
+        wrapped = nn.Sequential(nn.Conv2d(8, 16, 3))
+        apply_spectral_norm(wrapped, warmup_iterations=0)
+        unwarmed = sigma_of(wrapped[0])
+
+        warm_up_spectral_norm(wrapped)
+        warmed = sigma_of(wrapped[0])
+
+        # Spectral norm targets sigma == 1; random u/v under-shoots badly.
+        assert abs(warmed - 1.0) < abs(unwarmed - 1.0)
+        assert warmed == pytest.approx(1.0, abs=0.05)
+
+    def test_further_warmup_does_not_destabilize_sigma(self):
+        """Power iteration keeps refining (and u may converge to -v), so u itself is not
+        stable to compare -- what must hold is that sigma stays pinned near 1."""
+        from src.models.components.spectral_norm import warm_up_spectral_norm
+
+        torch.manual_seed(0)
+        model = nn.Sequential(nn.Conv2d(8, 16, 3))
+        apply_spectral_norm(model)
+        for _ in range(3):
+            warm_up_spectral_norm(model)
+            sigma = torch.linalg.matrix_norm(model[0].weight.reshape(16, -1), ord=2).item()
+            assert sigma == pytest.approx(1.0, abs=0.05)

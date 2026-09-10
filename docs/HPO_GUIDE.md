@@ -17,12 +17,24 @@ is why selection uses macro-AUPRC (a purely discriminative metric) while NLL/ECE
 logged every epoch as **read-only diagnostics** that never feed early stopping,
 checkpointing, or the Optuna objective.
 
-The same principle decides which SNGP knobs are tunable: `length_scale`,
-`ridge_penalty`, and `rff_dim` are in the search space because with
-`mean_field: True` (the project default) the training loss is computed on the
-mean-field-corrected logits (`logits / sqrt(1 + predictive_variance)`, see
-`src/models/sngp/sngp_classifier.py`), so these genuinely shape the *fit*. `mean_field`
-and `cov_momentum` stay fixed -- those are pure uncertainty-mechanism knobs.
+The same principle decides which SNGP knobs are tunable. `length_scale` and `rff_dim`
+are in the search space because they define the random feature map `phi` that the
+learned classifier sits on top of -- kernel width and capacity respectively -- so they
+genuinely shape the *fit*.
+
+`ridge_penalty` is **not** searched. Under canonical SNGP the CE loss is computed on raw
+logits (the mean-field correction is inference-only), and `ridge_penalty` only seeds the
+precision matrix `P = ridge*I + sum_i phi_i phi_i^T`. It therefore has zero effect on the
+training fit, hence zero effect on macro-AUPRC -- sweeping it against that objective
+would be fitting noise. It is an uncertainty/calibration knob, and by the rule above
+calibration is an evaluation axis, never a training-time selection axis. `mean_field` and
+`cov_momentum` stay fixed for the same reason.
+
+> Before the canonical-SNGP correction the training loss *was* computed on
+> mean-field-corrected logits, which is why `ridge_penalty` used to be in this space.
+> Any sweep result for it from before that change is off-regime -- see the
+> `sngp-pre-correction` tag and
+> [DEVELOPMENT.md](DEVELOPMENT.md#sngp-precision-matrix-and-mean-field).
 
 Dropout (`model.net.dropout_p`) is fixed at `0.2` for Baseline/Deep-Ensemble members,
 never tuned: MC-Dropout at inference depends on it being nonzero, and tuning it
@@ -92,14 +104,16 @@ SNGP additionally (`configs/hparams_search/sngp.yaml` only):
 | Param | Range | Current default |
 |---|---|---|
 | `model.net.length_scale` | `tag(log, interval(0.25, 16.0))` | 1.0 |
-| `model.net.ridge_penalty` | `tag(log, interval(1e-4, 1e-1))` | 1e-3 |
 | `model.net.rff_dim` | `choice(512, 1024, 2048)` | 1024 |
 
-`rff_dim` costs O(d³) per forward -- a Cholesky solve on a `rff_dim x rff_dim` matrix
-runs on every batch (`RandomFeatureGaussianProcess.forward`). 2048 is ~8x the head
-cost of 1024, so equal *trial* budget across this space is not equal *compute*
-budget; drop 2048 from the `choice(...)` list if wall-clock becomes the binding
-constraint.
+(`ridge_penalty` was removed from this space by the canonical-SNGP correction -- see
+above. Its default is 1e-3.)
+
+`rff_dim` costs O(d³) for the covariance inverse, but that now runs lazily -- once per
+epoch, on the first eval-mode forward after the precision matrix moves -- rather than on
+every batch. 2048 is no longer the wall-clock hazard it was under the old per-batch
+Cholesky, though it still costs 4x the memory of 1024 for the precision/covariance
+buffers (2048² floats each).
 
 Deep Ensemble is **not swept independently** -- it inherits the tuned Baseline config,
 since ensemble members are baseline models differing only in init seed

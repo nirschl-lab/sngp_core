@@ -53,6 +53,14 @@ def derive_net_spec(net: Any, *, arch_hint: str = None) -> Dict[str, Any]:
                 "Pass --arch explicitly for this checkpoint."
             )
         gp = net.gp_head
+        # Only the keys a legacy net can actually tell us about. Everything the canonical
+        # SNGP head added (mean_field_factor, normalize_input, likelihood, output_bias)
+        # has no legacy counterpart and is left to the ctor default.
+        #
+        # Migrating a legacy SNGP checkpoint produces a v2 metadata block but its weights
+        # still carry the pre-correction `cov_ema` buffers, so loading it on this branch
+        # raises from `RandomFeatureGaussianProcess._load_from_state_dict`. That is
+        # intentional -- see docs/DEVELOPMENT.md#sngp-precision-matrix-and-mean-field.
         return {
             "name": "sngp_classifier",
             "num_classes": net.num_classes,
@@ -63,6 +71,7 @@ def derive_net_spec(net: Any, *, arch_hint: str = None) -> Dict[str, Any]:
             "ridge_penalty": gp.ridge,
             "cov_momentum": gp.cov_momentum,
             "mean_field": gp.mean_field,
+            "n_power_iterations_sn": getattr(net, "n_power_iterations_sn", 1),
         }
     raise TypeError(f"Don't know how to derive a net_spec for legacy net type {cls_name!r}")
 

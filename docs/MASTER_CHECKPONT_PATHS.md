@@ -1,3 +1,10 @@
+> **SNGP checkpoints below predate the canonical-SNGP correction.** They were trained
+> with the old GP head (mean-field applied inside the training loss, `cov_ema` instead of
+> a precision matrix) and will **not** load on the `sngp-corrections` branch or later --
+> `load_state_dict` raises with a pointer to the `sngp-pre-correction` tag. Check out that
+> tag, or the `isbi2026` branch, to use them; they remain the ISBI 2026 paper's
+> checkpoints. Baseline and Deep-Ensemble checkpoints are unaffected.
+
 baseline_acevedo:
 ```bash
 /data1/maheswararao/experiments/uncertaity-aware-ml/train/baseline_classifier_acevedo/runs/2026-08-25_14-31-36/checkpoints/best.ckpt

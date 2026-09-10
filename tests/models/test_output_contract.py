@@ -23,12 +23,22 @@ class TestModelOutputContract:
         _assert_valid_output(net(x))
 
     def test_sngp_classifier(self):
+        """SNGP reports `variance` at inference. In train mode it reports none -- the
+        mean-field correction is inference-only, so no variance is computed at all."""
         net = SNGPClassifier(arch="resnet18", num_classes=NUM_CLASSES, pretrained=False, rff_dim=64)
         x = torch.randn(BATCH_SIZE, 3, 224, 224)
+
+        net.eval()
         output = net(x)
         _assert_valid_output(output)
         assert output.raw_logits.shape == (BATCH_SIZE, NUM_CLASSES)
         assert output.variance.shape == (BATCH_SIZE, 1)
+        assert torch.isfinite(output.variance).all()
+
+        net.train()
+        train_output = net(x)
+        _assert_valid_output(train_output)
+        assert train_output.variance is None
 
     def test_deep_ensemble_train_mode(self):
         net = DeepEnsemble(

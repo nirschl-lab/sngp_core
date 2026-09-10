@@ -37,9 +37,15 @@ from src.models import backbones as backbones_module  # noqa: E402
 from src.models import outputs as outputs_module  # noqa: E402
 from src.models.baseline.baseline_models import BaselineClassifier  # noqa: E402
 from src.models.components import spectral_norm as spectral_norm_module  # noqa: E402
+from src.models.sngp import sngp_classifier as sngp_module  # noqa: E402
 from src.models.sngp.sngp_classifier import RandomFeatureGaussianProcess, SNGPClassifier  # noqa: E402
 
 _REGISTER_NET_DECORATOR = re.compile(r"^@register_net\([^)]*\)\n", re.MULTILINE)
+
+# Module-level names the vendored SNGP classes reference. Only *class* bodies are
+# vendored below, so these have to be emitted separately -- from their live values, so
+# they cannot drift from `src/models/sngp/sngp_classifier.py`.
+_SNGP_MODULE_CONSTANTS = ("DEFAULT_MEAN_FIELD_FACTOR", "_LEGACY_BUFFERS", "_LEGACY_CKPT_MSG")
 _SPECTRAL_NORM_IMPORT_LINE = "from src.models.backbones import SPECTRAL_NORM_COMPATIBLE\n"
 
 
@@ -79,14 +85,22 @@ def _build_sngp_module_source() -> str:
         "re-run the export script to regenerate it.\n\"\"\"\n"
         "import math\n\n"
         "import torch\n"
+        # `RandomFeatureGaussianProcess._ensure_covariance` all-reduces the precision
+        # accumulator under DDP. Never taken in an exported inference bundle, but the
+        # name still has to resolve.
+        "import torch.distributed as dist\n"
         "from transformers import PreTrainedModel, PretrainedConfig\n\n"
     )
     spectral_norm_source = inspect.getsource(spectral_norm_module).replace(_SPECTRAL_NORM_IMPORT_LINE, "")
+    constants_source = "\n".join(
+        f"{name} = {getattr(sngp_module, name)!r}" for name in _SNGP_MODULE_CONSTANTS
+    )
     return "\n\n".join([
         header.rstrip("\n"),
         inspect.getsource(backbones_module),
         inspect.getsource(outputs_module),
         spectral_norm_source,
+        constants_source,
         _class_source(RandomFeatureGaussianProcess),
         _class_source(SNGPClassifier),
     ])

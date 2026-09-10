@@ -27,6 +27,7 @@ rootutils.setup_root(__file__, indicator=".project-root", pythonpath=True)
 # more info: https://github.com/ashleve/rootutils
 # ------------------------------------------------------------------------------------ #
 
+from src.checkpointing.io import read_meta
 from src.checkpointing.resolve import resolve_ckpt_uri
 from src.utils import (
     RankedLogger,
@@ -37,6 +38,45 @@ from src.utils import (
 )
 
 log = RankedLogger(__name__, rank_zero_only=True)
+
+
+def _assert_model_cfg_matches_checkpoint(cfg: DictConfig, model: LightningModule) -> None:
+    """Fail loudly when `cfg.model` describes a different architecture than the checkpoint.
+
+    `eval.py` is config-authoritative (it Hydra-instantiates the model, then hands
+    `ckpt_path` to `trainer.test`), while `src/inference/infer.py` is
+    checkpoint-authoritative. That divergence is a real footgun: `configs/eval.yaml`
+    defaults to `model: sngp_classifier` with `rff_dim: 1024`, but e.g.
+    `configs/experiment/sngp_wong.yaml` trains with `rff_dim: 512`. Rather than
+    restructure `eval.py`, compare the two specs up front and say exactly which keys
+    disagree.
+    """
+    try:
+        meta = read_meta(cfg.ckpt_path)
+    except Exception as exc:  # unreadable/legacy checkpoint -- let trainer.test surface it
+        log.warning(f"Could not read checkpoint metadata for a config/checkpoint consistency check: {exc}")
+        return
+
+    ckpt_spec = dict(meta.net_spec or {})
+    cfg_spec = dict(getattr(model.net, "spec", {}) or {})
+    if not ckpt_spec or not cfg_spec:
+        return
+
+    # `pretrained` only affects how weights were *initialized*; the state_dict overwrites
+    # them either way, so a disagreement there is not a real mismatch.
+    ignored = {"pretrained"}
+    mismatched = {
+        key: (cfg_spec.get(key), ckpt_spec.get(key))
+        for key in set(ckpt_spec) | set(cfg_spec)
+        if key not in ignored and cfg_spec.get(key) != ckpt_spec.get(key)
+    }
+    if mismatched:
+        detail = "\n".join(f"  {key}: config={cfg!r}  checkpoint={ckpt!r}" for key, (cfg, ckpt) in sorted(mismatched.items()))
+        raise ValueError(
+            f"`cfg.model` does not match the architecture stored in {cfg.ckpt_path}:\n{detail}\n"
+            "Re-run with the same `experiment=` override the checkpoint was trained with, "
+            "or use `src/inference/infer.py`, which reads the architecture from the checkpoint."
+        )
 
 # OpenCV performance tweaks for albumentations
 cv2.setNumThreads(0)
@@ -79,6 +119,7 @@ def evaluate(cfg: DictConfig) -> Tuple[Dict[str, Any], Dict[str, Any]]:
 
     log.info(f"Instantiating model <{cfg.model._target_}>")
     model: LightningModule = hydra.utils.instantiate(cfg.model)
+    _assert_model_cfg_matches_checkpoint(cfg, model)
 
     log.info(f"Instantiating trainer <{cfg.trainer._target_}>")
     trainer: Trainer = hydra.utils.instantiate(cfg.trainer, logger=logger)

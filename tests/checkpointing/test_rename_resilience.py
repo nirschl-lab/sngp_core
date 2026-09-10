@@ -22,7 +22,7 @@ class _RelocatedBaselineClassifier(BaselineClassifier):
 
 @pytest.mark.slow
 def test_load_net_does_not_depend_on_the_original_class_still_resolving(tmp_path, monkeypatch):
-    _, ckpt_path = _build_and_train_one_step(tmp_path, "baseline_classifier", ["model.net.pretrained=false"])
+    _, ckpt_path, _ = _build_and_train_one_step(tmp_path, "baseline_classifier", ["model.net.pretrained=false"])
 
     # Simulate "the code moved": whatever is registered under this key at load time is
     # no longer the class the checkpoint was originally saved with.

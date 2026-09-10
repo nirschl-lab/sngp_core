@@ -9,9 +9,18 @@ net:
   pretrained: True         # ok to start from ImageNet
   rff_dim: 1024            # 256–1024 is a good range
   length_scale: 1.0
+  # Seeds the precision matrix (P = ridge*I + sum_i phi_i phi_i^T). Inference-time only:
+  # it has no effect on the training fit -- see docs/HPO_GUIDE.md.
   ridge_penalty: 1e-3
-  cov_momentum: 0.999
-  mean_field: True
+  # -1 = exact sum over one epoch, with a per-epoch reset. This is the paper's scheme
+  # and the reference default. A value in [0, 1) switches to an EMA instead.
+  cov_momentum: -1.0
+  mean_field: True         # applied at INFERENCE only, never in the training loss
+  mean_field_factor: 0.39269908169872414  # lambda = pi/8, the probit approximation
+  normalize_input: True    # LayerNorm on the GP input, per the reference implementation
+  likelihood: "gaussian"   # reference default for image classification (unit Laplace
+                           # weight); "binary_logistic" uses the paper's p(1-p) instead
+  output_bias: False       # reference uses a fixed zero GP output bias
 
 # optimizer and scheduler
 optimizer:

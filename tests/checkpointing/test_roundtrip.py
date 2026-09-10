@@ -47,7 +47,7 @@ def _build_and_train_one_step(tmp_path, model_name: str, overrides):
 
     ckpt_path = tmp_path / "roundtrip.ckpt"
     trainer.save_checkpoint(str(ckpt_path))
-    return cfg, ckpt_path
+    return cfg, ckpt_path, model
 
 
 @pytest.mark.slow
@@ -60,7 +60,7 @@ def _build_and_train_one_step(tmp_path, model_name: str, overrides):
     ],
 )
 def test_checkpoint_roundtrip(tmp_path, model_name, overrides):
-    _, ckpt_path = _build_and_train_one_step(tmp_path, model_name, overrides)
+    _, ckpt_path, trained = _build_and_train_one_step(tmp_path, model_name, overrides)
 
     meta = read_meta(ckpt_path)
     assert meta.format_version == 2
@@ -79,13 +79,46 @@ def test_checkpoint_roundtrip(tmp_path, model_name, overrides):
     assert torch.allclose(net_logits, lit_logits, atol=1e-5)
     assert net_logits.shape == (2, meta.num_classes)
 
+    # Compare against the *in-memory trained* model, not just two reloads of the same
+    # file. Without this the test cannot detect state that silently fails to persist:
+    # two reloads of a checkpoint missing a buffer agree with each other perfectly.
+    trained.eval()
+    with torch.no_grad():
+        trained_logits = trained(x).logits
+    assert torch.allclose(trained_logits, net_logits, atol=1e-5)
+
+
+@pytest.mark.slow
+def test_sngp_precision_matrix_survives_roundtrip(tmp_path):
+    """The GP precision accumulator is the state SNGP's whole uncertainty estimate rests
+    on, and it lives only in a buffer. Nothing asserted it round-tripped before."""
+    _, ckpt_path, trained = _build_and_train_one_step(
+        tmp_path, "sngp_classifier", ["model.net.pretrained=false"]
+    )
+
+    trained_accum = trained.net.gp_head.precision_accum
+    assert torch.count_nonzero(trained_accum) > 0, "training should have populated the precision matrix"
+
+    net = load_net(ckpt_path, device="cpu")
+    assert torch.equal(net.gp_head.precision_accum, trained_accum)
+
+    # `_cov_stale` is deliberately non-persistent, so the reloaded net must recompute the
+    # covariance from the precision rather than trust whatever was cached at save time.
+    x = torch.randn(2, 3, 224, 224)
+    trained.eval()
+    with torch.no_grad():
+        expected = trained(x).variance
+        actual = net(x).variance
+    assert expected is not None
+    torch.testing.assert_close(actual, expected, atol=1e-5, rtol=1e-4)
+
 
 @pytest.mark.slow
 def test_trainer_fit_ckpt_path_resume_still_works(tmp_path):
     """The train.py/eval.py pattern (fresh Hydra-instantiated model +
     trainer.fit/test(ckpt_path=...)) never depended on unpickling `net`, and must keep
     working unchanged by this refactor."""
-    cfg, ckpt_path = _build_and_train_one_step(tmp_path, "baseline_classifier", ["model.net.pretrained=false"])
+    cfg, ckpt_path, _ = _build_and_train_one_step(tmp_path, "baseline_classifier", ["model.net.pretrained=false"])
 
     with initialize(version_base="1.3", config_path="../../configs"):
         cfg2 = compose(

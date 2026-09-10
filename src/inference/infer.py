@@ -33,7 +33,9 @@ from src.utils.resolvers import _dataset_label as dataset_label  # noqa: E402
 DEFAULT_INFER_RUNTIME_CFG: Dict[str, Any] = {
     "device": "cuda",
     "batch_size_override": None,
-    "strict": False,
+    # Mirrors configs/infer/runtime/default.yaml -- a missing buffer must raise, not
+    # silently degrade (an unpopulated SNGP covariance yields near-uniform probs).
+    "strict": True,
     "use_mc_dropout": False,
     "mc_passes": 10,
 }

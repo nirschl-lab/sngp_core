@@ -47,6 +47,15 @@ normalization. That wrapping isn't validated against ViT internals
 (currently all `resnet*` entries). Passing a `vit_*` arch to `sngp_classifier` raises
 immediately rather than silently training something unvalidated.
 
+`apply_spectral_norm` also runs `DEFAULT_SN_WARMUP_ITERATIONS` power iterations at
+construction. `torch.nn.utils.spectral_norm` only advances its power iteration on
+*train-mode* forwards, so without this a freshly built net divides each weight by
+`u^T W v` for random unit `u`, `v` — an estimate that under-shoots badly, and whose
+error compounds across layers. Unwarmed, an untrained spectral-normed resnet50 emits
+`nan` in eval mode and resnet18 about `1e30`. Training fixes this within a few steps on
+its own, so the warmup matters for anything that evaluates a net *before* training it:
+Lightning's `num_sanity_val_steps` pass, and any construct-then-`eval()` call.
+
 ## Adding a backbone or net family
 
 - A new **backbone option** for existing families: add an entry to `BACKBONES` in

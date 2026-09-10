@@ -41,8 +41,10 @@ def predict_image(
     mc_passes: int = 25,
 ) -> Dict:
     """Run one checkpoint on one image. Returns predicted class, confidence, and the
-    full probability vector; adds `uncertainty` (predictive std) when
-    `use_mc_dropout=True` and the net supports it (`BaselineClassifier.mc_predict`)."""
+    full probability vector; adds `uncertainty` whenever the net reports it -- MC-Dropout
+    predictive std when `use_mc_dropout=True` and the net supports it
+    (`BaselineClassifier.mc_predict`), otherwise `ModelOutput.variance` (SNGP predictive
+    variance / ensemble disagreement)."""
     net = load_net(ckpt_path, device=device)
     x = load_image_as_tensor(image_path).to(next(net.parameters()).device)
 
@@ -51,8 +53,10 @@ def predict_image(
             _, probs, std = net.mc_predict(x, T=mc_passes, return_std=True, apply_softmax=True)
             uncertainty = std.mean(dim=1)
         else:
-            probs = torch.softmax(net(x).logits, dim=1)
-            uncertainty = None
+            output = net(x)
+            probs = torch.softmax(output.logits, dim=1)
+            # SNGP predictive variance / ensemble disagreement, when the net reports it.
+            uncertainty = output.variance.squeeze(-1) if output.variance is not None else None
 
     pred_class = int(probs.argmax(dim=1).item())
     result = {
@@ -74,20 +78,28 @@ def predict_batch(
     device: Optional[str] = None,
 ) -> Dict:
     """Run one checkpoint over a list of image paths. Returns per-image predictions
-    plus the stacked probability matrix `[N, num_classes]`."""
+    plus the stacked probability matrix `[N, num_classes]`, and `uncertainty` `[N]`
+    whenever the net reports `ModelOutput.variance`."""
     net = load_net(ckpt_path, device=device)
     net_device = next(net.parameters()).device
 
     all_probs = []
+    all_uncertainty = []
     for start in range(0, len(image_paths), batch_size):
         batch_paths = image_paths[start:start + batch_size]
         batch = torch.cat([load_image_as_tensor(p) for p in batch_paths], dim=0).to(net_device)
         with torch.no_grad():
-            probs = torch.softmax(net(batch).logits, dim=1)
+            output = net(batch)
+            probs = torch.softmax(output.logits, dim=1)
         all_probs.append(probs.cpu())
+        if output.variance is not None:
+            all_uncertainty.append(output.variance.squeeze(-1).cpu())
 
     probs = torch.cat(all_probs, dim=0)
-    return {
+    result = {
         "predictions": probs.argmax(dim=1).numpy(),
         "probs": probs.numpy(),
     }
+    if all_uncertainty:
+        result["uncertainty"] = torch.cat(all_uncertainty, dim=0).numpy()
+    return result

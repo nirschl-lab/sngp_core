@@ -374,7 +374,16 @@ class LitModuleBase(LightningModule):
         probs = torch.softmax(output.logits, dim=1)
         preds = torch.argmax(probs, dim=1)
 
-        return {"img_ids": img_ids, "probs": probs, "preds": preds, "targets": targets, "fold": fold}
+        return {
+            "img_ids": img_ids,
+            "probs": probs,
+            "preds": preds,
+            "targets": targets,
+            "fold": fold,
+            # Carried for the same reason `test_step` carries it: without this,
+            # `trainer.predict()` silently drops all SNGP/ensemble uncertainty.
+            "variance": output.variance.detach() if output.variance is not None else None,
+        }
 
     def load_state_dict(self, state_dict, strict=True):
         """Custom state dict loading to handle mismatched criterion.weight"""
