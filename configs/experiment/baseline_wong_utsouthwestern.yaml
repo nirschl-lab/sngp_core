@@ -1,0 +1,72 @@
+# @package _global_
+
+# to execute this experiment run:
+# python train.py experiment=example
+
+defaults:
+  - override /data: wong
+  - override /model: baseline_classifier
+  - override /callbacks: default
+  - override /trainer: default
+
+# all parameters below will be merged with parameters from default configurations set above
+# this allows you to overwrite only specified parameters
+name: "wong_utsouthwestern_baseline_resnet18"
+WANDB_PROJECT: ${oc.env:PROJECT_NAME}
+tags: ["baseline", "wong", "resnet18", "training"]
+
+seed: 12345
+
+num_classes: 4
+
+trainer:
+  min_epochs: 30
+  max_epochs: 150
+  accelerator: "gpu"
+
+
+model:
+  optimizer:
+    # Placeholder: inherited from baseline_wong_ucdavis.yaml's HPO-winning values as a
+    # warm start. Not tuned for UTSouthwestern -- overwrite after running HPO for this experiment.
+    lr: 0.0003467984236288648
+    weight_decay: 1.2497503880392834e-06
+  net:
+    arch: resnet18
+    num_classes: ${num_classes}
+    dropout_p: 0.2
+    pretrained: false
+  compile: false
+  scheduler:
+    _target_: torch.optim.lr_scheduler.CosineAnnealingLR
+    _partial_: true
+    T_max: ${trainer.max_epochs}
+    eta_min: 0.0
+  num_classes: ${num_classes}
+  class_freq: ${data.class_freq}
+  cb_beta: 0.999 # effective-number-of-samples reweighting; 0 = uniform, closer to 1 = more aggressive
+  focal_gamma: 2.5044458488018835 # focal-loss focusing parameter; 0 = plain class-balanced CE
+
+data:
+  datamodule:
+    batch_size: 64
+    institution: utsouthwestern
+
+logger:
+  wandb:
+    project: "${WANDB_PROJECT}"
+    tags: "${tags_with:${tags},${data.datamodule.institution}}"
+    group: "Training"
+    name: ${name}
+    log_model: True
+  aim:
+    experiment: ""
+
+callbacks:
+  early_stopping:
+    monitor: "val/f1"
+    patience: 20
+    mode: "max"
+    min_delta: 0.005
+  test_artifacts:
+    hist_bins: 10

@@ -8,15 +8,16 @@
 #
 # <family> selects configs/hparams_search/<family>.yaml (baseline | sngp).
 # <dataset> selects configs/experiment/<family>_<dataset>.yaml, so it must be one of
-# the datasets that experiment file exists for: tang, acevedo, wong, kather2018.
+# the datasets that experiment file exists for: tang, acevedo, wong, kather2018,
+# wong_ucdavis, wong_upitt, wong_utsouthwestern.
 #
 # See docs/HPO_GUIDE.md for the full protocol (search space, budget, selection
 # metric). Deep Ensemble is deliberately not swept here -- it inherits the tuned
 # baseline config (see docs/HPO_GUIDE.md).
 set -euo pipefail
 
-FAMILY="${1:?Usage: $0 <baseline|sngp> <tang|acevedo|wong|kather2018>}"
-DATASET="${2:?Usage: $0 <baseline|sngp> <tang|acevedo|wong|kather2018>}"
+FAMILY="${1:?Usage: $0 <baseline|sngp> <tang|acevedo|wong|kather2018|wong_ucdavis|wong_upitt|wong_utsouthwestern>}"
+DATASET="${2:?Usage: $0 <baseline|sngp> <tang|acevedo|wong|kather2018|wong_ucdavis|wong_upitt|wong_utsouthwestern>}"
 EXPERIMENT="${FAMILY}_${DATASET}"
 
 cd "$(dirname "$0")/../.."  # repo root
