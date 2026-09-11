@@ -49,7 +49,7 @@ def example_uncertainty_estimation():
     """MC-Dropout uncertainty for a single image (baseline/MC-dropout checkpoints only
     -- `net.mc_predict` isn't defined for SNGP or Deep Ensemble nets; those get their
     uncertainty from the SNGP predictive variance or ensemble disagreement instead,
-    see docs/DEEP_ENSEMBLES_GUIDE.md)."""
+    see docs/models/DEEP_ENSEMBLES_GUIDE.md)."""
     logger.info("=== MC-Dropout Uncertainty Estimation ===")
 
     result = predict_image(CHECKPOINT_PATH, IMAGE_PATH, use_mc_dropout=True, mc_passes=25)

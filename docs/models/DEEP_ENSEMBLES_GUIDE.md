@@ -2,7 +2,7 @@
 
 How to train, tune, and evaluate the Deep Ensemble model family. For where Deep
 Ensembles fit relative to Baseline/SNGP (config, LightningModule, shared contracts),
-see [SUPPORTED_MODELS.md](SUPPORTED_MODELS.md).
+see [SUPPORTED_MODELS.md](../SUPPORTED_MODELS.md).
 
 ## Background
 
@@ -171,7 +171,7 @@ Useful env vars:
 Members land under
 `train/<model.name>_<data.name>/ensemble_members/<run_id>/member_<i>/` (each an
 ordinary Hydra run dir, plus a `member_<i>.log` capturing stdout/stderr) — see
-[OUTPUT_LAYOUT.md §6](OUTPUT_LAYOUT.md#6-ensemble-member-parallel-training-outputs)
+[OUTPUT_LAYOUT.md §6](../OUTPUT_LAYOUT.md#6-ensemble-member-parallel-training-outputs)
 for the full path derivation.
 
 Once all members finish, combine their checkpoints into one `DeepEnsemble`
@@ -192,7 +192,7 @@ This validates that every member checkpoint shares the same net type/architectur
 (e.g. all `baseline_classifier`, or all `sngp_classifier` -- see [Architecture
 Overview](#architecture-overview) above) and source dataset, then writes a checkpoint
 satisfying the same contract (see
-[../.claude/rules/hard-contracts.md](../.claude/rules/hard-contracts.md)) as one
+[../../.claude/rules/hard-contracts.md](../../.claude/rules/hard-contracts.md)) as one
 produced by a real `DeepEnsembleLitModule` training run — it loads through `src/checkpointing/io.py` and
 works with `src/eval.py`/`src/inference/infer.py` unmodified, with no separate code
 path needed.
@@ -239,7 +239,7 @@ and each individual member's prediction.
 
 For the project's canonical, dataset/artifact-aware inference entrypoint (sweeps,
 batch inference, metrics), use `src/inference/infer.py` per
-[INFERENCE_GUIDE.md](INFERENCE_GUIDE.md) instead — this example script is a minimal,
+[INFERENCE_GUIDE.md](../INFERENCE_GUIDE.md) instead — this example script is a minimal,
 single-image reference, not a second inference entrypoint.
 
 ## Comparing with Other Methods
@@ -271,7 +271,7 @@ This generates a CSV summary plus calibration-curve and uncertainty-distribution
 plots. For the project's standard offline/research metrics (cross-dataset OOD AUROC,
 smooth-ECE, Dempster-Shafer uncertainty) driven from prediction CSVs, use
 `src/metrics/` instead — see
-[DEVELOPMENT.md#metrics--visualization](DEVELOPMENT.md#metrics--visualization).
+[DEVELOPMENT.md#metrics--visualization](../DEVELOPMENT.md#metrics--visualization).
 
 ## Tips & Best Practices
 
@@ -306,7 +306,7 @@ smooth-ECE, Dempster-Shafer uncertainty) driven from prediction CSVs, use
 
 Ensemble members are built through the shared net registry
 (`src/models/registry.py`), the same mechanism every net family uses — see
-[SUPPORTED_MODELS.md#adding-a-backbone-or-net-family](SUPPORTED_MODELS.md#adding-a-backbone-or-net-family).
+[SUPPORTED_MODELS.md#adding-a-backbone-or-net-family](../SUPPORTED_MODELS.md#adding-a-backbone-or-net-family).
 Register a model, then reference it by name from the ensemble config:
 
 ```python
@@ -379,7 +379,7 @@ and already differs per member.
 **Checkpoint won't load**: all checkpoint I/O goes through
 `src/checkpointing/io.py` (`load_lit_module`/`load_net`/`read_meta`) — never a bare
 `torch.load` or `LightningModule.load_from_checkpoint()`, per
-[../.claude/rules/hard-contracts.md](../.claude/rules/hard-contracts.md). If loading a
+[../../.claude/rules/hard-contracts.md](../../.claude/rules/hard-contracts.md). If loading a
 sequentially-trained checkpoint, confirm `num_estimators`
 matches between training and loading; if loading an assembled checkpoint, confirm it
 was built by `assemble_ensemble_checkpoint.py` from checkpoints with matching

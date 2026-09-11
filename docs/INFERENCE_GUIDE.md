@@ -179,7 +179,7 @@ uv run src/inference/infer.py \
   **silent no-op** -- it falls through to a plain forward pass with no warning. Those
   families already expose predictive uncertainty natively (SNGP: `net(x).variance`;
   Deep Ensemble: member disagreement, see
-  [docs/DEEP_ENSEMBLES_GUIDE.md](DEEP_ENSEMBLES_GUIDE.md)), so they don't need
+  [docs/models/DEEP_ENSEMBLES_GUIDE.md](models/DEEP_ENSEMBLES_GUIDE.md)), so they don't need
   MC-Dropout.
 - `infer.runtime.mc_passes` (default `10`) is the number of stochastic forward passes
   averaged per batch; runtime scales roughly linearly with it.

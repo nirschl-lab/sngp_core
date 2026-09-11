@@ -64,7 +64,7 @@ def example_config_based_inference():
 def example_multi_checkpoint_ensemble():
     """Average predictions across several trained checkpoints (e.g. different seeds
     or backbones) -- for a proper Deep Ensemble *model* trained end-to-end as one
-    unit, see docs/DEEP_ENSEMBLES_GUIDE.md instead; this is for combining independently
+    unit, see docs/models/DEEP_ENSEMBLES_GUIDE.md instead; this is for combining independently
     trained checkpoints after the fact."""
     logger.info("=== Multi-Checkpoint Ensemble ===")
 

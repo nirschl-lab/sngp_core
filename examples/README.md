@@ -48,7 +48,7 @@ uv run examples/03_deep_ensemble_inference.py \
     --save-viz output/visualization.png
 ```
 
-See [docs/DEEP_ENSEMBLES_GUIDE.md](../docs/DEEP_ENSEMBLES_GUIDE.md) for the full guide.
+See [docs/models/DEEP_ENSEMBLES_GUIDE.md](../docs/models/DEEP_ENSEMBLES_GUIDE.md) for the full guide.
 
 ## Running
 

@@ -228,6 +228,12 @@ uv run src/train.py experiment=baseline_tang \
   test=True
 ```
 
+That retrain is stage 2 of a longer sequence. For the stages either side of it -- and,
+for SNGP, the post-hoc `mean_field_factor` step that has to happen before the final
+runs -- see the per-family guides in [docs/models/](models/):
+[Baseline](models/BASELINE_GUIDE.md), [SNGP](models/SNGP_GUIDE.md),
+[Deep Ensemble](models/DEEP_ENSEMBLES_GUIDE.md).
+
 ## Sweep-only safety nets
 
 Two behaviors in `src/train.py` are active only when a composed config sets

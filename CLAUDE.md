@@ -20,7 +20,8 @@ it, written to stand on their own for any contributor — human or not:
   [docs/DATASETS.md](docs/DATASETS.md),
   [docs/SUPPORTED_MODELS.md](docs/SUPPORTED_MODELS.md),
   [docs/KNOWN_ISSUES.md](docs/KNOWN_ISSUES.md), and the topic guides (inference, HPO,
-  deep ensembles, output layout).
+  output layout). Per-family, end-to-end workflows — sweep → retrain → tune →
+  inference — live in [docs/models/](docs/models/).
 - **`.claude/rules/`** — must-follow engineering rules (environment, hard contracts,
   testing, conventions, git workflow), one topic per file. Imported below so they're
   always in context for this session.

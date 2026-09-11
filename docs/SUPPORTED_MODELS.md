@@ -12,7 +12,7 @@ actually been published, see the root [README.md](../README.md#-available-models
 |---|---|---|---|
 | **Baseline** | `configs/model/baseline_classifier.yaml` | `BaselineLitModule` | Deterministic classifier. Optional MC-Dropout at inference (`use_mc=true`, `mc_passes=N`) for a cheap uncertainty estimate without retraining. |
 | **SNGP** | `configs/model/sngp_classifier.yaml` | `SNGPLitModule` | Spectral-normalized backbone + a random-feature Gaussian Process head. Produces a predictive `variance` alongside `logits`. **resnet backbones only** — see [ViT compatibility](#sngp--vit-compatibility) below. |
-| **Deep Ensemble** | `configs/model/deep_ensemble_classifier.yaml` | `DeepEnsembleLitModule` | Wraps `num_estimators` independently-initialized baseline members (any registered net as the member architecture). Uncertainty from member disagreement (`variance`, `entropy`, or `mutual_info`). See [docs/DEEP_ENSEMBLES_GUIDE.md](DEEP_ENSEMBLES_GUIDE.md) for training-schedule and tuning details. |
+| **Deep Ensemble** | `configs/model/deep_ensemble_classifier.yaml` | `DeepEnsembleLitModule` | Wraps `num_estimators` independently-initialized baseline members (any registered net as the member architecture). Uncertainty from member disagreement (`variance`, `entropy`, or `mutual_info`). See [docs/models/DEEP_ENSEMBLES_GUIDE.md](models/DEEP_ENSEMBLES_GUIDE.md) for training-schedule and tuning details. |
 
 All three return the same `ModelOutput` shape (`src/models/outputs.py`) and register
 into the same `NET_REGISTRY` (`src/models/registry.py`) — an ensemble member is just

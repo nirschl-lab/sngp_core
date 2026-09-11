@@ -141,7 +141,9 @@ each covered by a test in `tests/models/sngp/`:
    paper does not use mean field at all (it Monte-Carlo averages 10 samples). `pi/8` is
    the textbook probit value but is nearly inert at realistic dataset sizes. Tune it
    post-hoc with `scripts/checkpoints/tune_sngp_mean_field.py` -- it is inference-only,
-   so it needs no retraining and cannot move accuracy or macro-F1 at all.
+   so it needs no retraining and cannot move accuracy or macro-F1 at all. Where this
+   sits in the full pipeline, and how a tuned value actually reaches inference:
+   [docs/models/SNGP_GUIDE.md](models/SNGP_GUIDE.md).
    Putting the correction in the *training loss* instead makes the CE objective depend on
    the covariance state, and turns it into a detached per-example gradient reweighting
    that *down-weights* uncertain examples. This project did exactly that before the
@@ -229,8 +231,8 @@ uv run src/train.py experiment=sngp_wong ckpt_path=logs/train/sngp_classifier_wo
 Deep Ensembles use one extra axis — a sequential training schedule across members
 (`model.train_strategy=sequential`, the default) so `trainer.max_epochs` is divided
 across `model.num_estimators` members rather than each seeing the full epoch count.
-See [docs/DEEP_ENSEMBLES_GUIDE.md](DEEP_ENSEMBLES_GUIDE.md) for the schedule math and
-tuning notes.
+See [docs/models/DEEP_ENSEMBLES_GUIDE.md](models/DEEP_ENSEMBLES_GUIDE.md) for the
+schedule math and tuning notes.
 
 ---
 
@@ -377,6 +379,7 @@ For which command to run for a given code change, see
 | New training strategy (different loss, multi-stage training) | A new `LitModuleBase` subclass — see [Model Methodology](#model-methodology). |
 | Run inference / checkpoint sweeps / artifact inference | `src/inference/infer.py` — see [docs/INFERENCE_GUIDE.md](INFERENCE_GUIDE.md). |
 | Tune hyperparameters (fair cross-model comparison) | `scripts/hpo/sweep.sh <baseline\|sngp> <dataset>` — see [docs/HPO_GUIDE.md](HPO_GUIDE.md). |
+| Take one model family from untuned config to reported results | Stage-by-stage guides in [docs/models/](models/): [Baseline](models/BASELINE_GUIDE.md), [SNGP](models/SNGP_GUIDE.md), [Deep Ensemble](models/DEEP_ENSEMBLES_GUIDE.md). |
 | Offline/research metrics | `src/metrics/` — see [Metrics & Visualization](#metrics--visualization). |
 | Publication figures | `src/visualization/` — see [Metrics & Visualization](#metrics--visualization). |
 | Publish a trained model to HF Hub | See [Publishing to Hugging Face](#publishing-to-hugging-face). |
