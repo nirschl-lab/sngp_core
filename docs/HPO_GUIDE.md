@@ -36,6 +36,27 @@ calibration is an evaluation axis, never a training-time selection axis. `mean_f
 > `sngp-pre-correction` tag and
 > [DEVELOPMENT.md](DEVELOPMENT.md#sngp-precision-matrix-and-mean-field).
 
+`mean_field_factor` is excluded for the same reason, and it is the more important of the
+two to get right. It divides every logit of an example by one positive scalar, so
+**accuracy and macro-F1 are exactly invariant** to it and macro-AUPRC/AUROC move only by
+a few tenths of a percent -- an Optuna run selecting on macro-AUPRC would be choosing at
+random. Only NLL and ECE respond, and they have an interior optimum.
+
+Tune both post-hoc instead:
+
+```bash
+uv run python scripts/checkpoints/tune_sngp_mean_field.py \
+    --ckpt <best.ckpt> --experiment sngp_acevedo --split val
+```
+
+Because `precision_accum` is stored in the checkpoint, this is one forward pass, not a
+training run. **Select on validation NLL** -- a proper scoring rule, and unlike ECE it
+has no bin-count artifact -- then report ECE on test. Selecting and reporting on the same
+split would make the calibration numbers circular, which is exactly what the protocol
+note at the top of this file guards against. The containment is that this knob cannot
+move accuracy, F1, or OOD separation, so it cannot inflate discriminative or OOD claims
+either way.
+
 Dropout (`model.net.dropout_p`) is fixed at `0.2` for Baseline/Deep-Ensemble members,
 never tuned: MC-Dropout at inference depends on it being nonzero, and tuning it
 against a *deterministic* validation forward pass would push it toward 0, silently

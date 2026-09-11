@@ -3,7 +3,11 @@ import math
 import pytest
 import torch
 
-from src.models.sngp.sngp_classifier import DEFAULT_MEAN_FIELD_FACTOR, RandomFeatureGaussianProcess
+from src.models.sngp.sngp_classifier import (
+    DEFAULT_MEAN_FIELD_FACTOR,
+    PROBIT_MEAN_FIELD_FACTOR,
+    RandomFeatureGaussianProcess,
+)
 
 
 def make_gp(**overrides):
@@ -70,9 +74,12 @@ class TestMeanFieldIsInferenceOnly:
         torch.testing.assert_close(logits, expected)
         assert not torch.allclose(logits, raw_logits)
 
-    def test_default_factor_is_pi_over_eight(self):
-        assert DEFAULT_MEAN_FIELD_FACTOR == pytest.approx(math.pi / 8)
-        assert make_gp().mean_field_factor == pytest.approx(math.pi / 8)
+    def test_default_factor_matches_the_imagenet_reference(self):
+        """The reference treats this as tunable (1.0 ImageNet, 20.0 CIFAR), not as the
+        textbook probit constant -- which is nearly inert at realistic dataset sizes."""
+        assert DEFAULT_MEAN_FIELD_FACTOR == pytest.approx(1.0)
+        assert make_gp().mean_field_factor == pytest.approx(1.0)
+        assert PROBIT_MEAN_FIELD_FACTOR == pytest.approx(math.pi / 8)
 
     def test_custom_factor_is_honored(self):
         gp = train_steps(make_gp(mean_field_factor=2.0), 5)
@@ -302,3 +309,53 @@ class TestNormalizeInput:
         without.load_state_dict({k: v for k, v in with_norm.state_dict().items() if not k.startswith("input_norm")})
         x = torch.randn(4, 64) * 10.0
         assert not torch.allclose(with_norm._features(x), without._features(x))
+
+
+class TestRandomFeatureType:
+    """ORF keeps the per-column marginal of plain RFF (uniform direction x chi norm) but
+    removes redundancy between directions, lowering kernel-approximation variance."""
+
+    def test_orf_is_the_default(self):
+        assert make_gp().random_feature_type == "orf"
+
+    def test_orf_columns_are_orthogonal_within_a_block(self):
+        gp = make_gp(in_dim=32, rff_dim=32, random_feature_type="orf", length_scale=1.0)
+        directions = gp.W / gp.W.norm(dim=0, keepdim=True)
+        gram = directions.T @ directions
+        off_diagonal = gram - torch.diag(torch.diagonal(gram))
+        assert off_diagonal.abs().max() < 1e-5
+
+    def test_rff_columns_are_not_orthogonal(self):
+        gp = make_gp(in_dim=32, rff_dim=32, random_feature_type="rff", length_scale=1.0)
+        directions = gp.W / gp.W.norm(dim=0, keepdim=True)
+        gram = directions.T @ directions
+        off_diagonal = gram - torch.diag(torch.diagonal(gram))
+        assert off_diagonal.abs().max() > 0.1
+
+    def test_orf_handles_rff_dim_larger_than_in_dim(self):
+        gp = make_gp(in_dim=16, rff_dim=40, random_feature_type="orf")
+        assert gp.W.shape == (16, 40)
+
+    def test_orf_handles_rff_dim_smaller_than_in_dim(self):
+        gp = make_gp(in_dim=64, rff_dim=8, random_feature_type="orf")
+        assert gp.W.shape == (64, 8)
+
+    def test_orf_column_norms_match_the_gaussian_marginal(self):
+        """A standard Gaussian column has chi(in_dim)-distributed norm; ORF must too,
+        or the kernel it approximates would differ from the RBF kernel."""
+        torch.manual_seed(0)
+        in_dim = 64
+        orf = make_gp(in_dim=in_dim, rff_dim=2048, random_feature_type="orf", length_scale=1.0)
+        rff = make_gp(in_dim=in_dim, rff_dim=2048, random_feature_type="rff", length_scale=1.0)
+        assert orf.W.norm(dim=0).mean() == pytest.approx(rff.W.norm(dim=0).mean(), rel=0.05)
+
+    def test_length_scale_still_divides_the_projection(self):
+        torch.manual_seed(0)
+        wide = make_gp(in_dim=32, rff_dim=64, length_scale=4.0)
+        torch.manual_seed(0)
+        unit = make_gp(in_dim=32, rff_dim=64, length_scale=1.0)
+        torch.testing.assert_close(wide.W * 4.0, unit.W)
+
+    def test_rejects_unknown_type(self):
+        with pytest.raises(ValueError, match="Unsupported random_feature_type"):
+            make_gp(random_feature_type="sobol")

@@ -45,7 +45,12 @@ _REGISTER_NET_DECORATOR = re.compile(r"^@register_net\([^)]*\)\n", re.MULTILINE)
 # Module-level names the vendored SNGP classes reference. Only *class* bodies are
 # vendored below, so these have to be emitted separately -- from their live values, so
 # they cannot drift from `src/models/sngp/sngp_classifier.py`.
-_SNGP_MODULE_CONSTANTS = ("DEFAULT_MEAN_FIELD_FACTOR", "_LEGACY_BUFFERS", "_LEGACY_CKPT_MSG")
+_SNGP_MODULE_CONSTANTS = (
+    "DEFAULT_MEAN_FIELD_FACTOR",
+    "PROBIT_MEAN_FIELD_FACTOR",
+    "_LEGACY_BUFFERS",
+    "_LEGACY_CKPT_MSG",
+)
 _SPECTRAL_NORM_IMPORT_LINE = "from src.models.backbones import SPECTRAL_NORM_COMPATIBLE\n"
 
 

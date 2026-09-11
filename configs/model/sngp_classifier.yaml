@@ -16,11 +16,18 @@ net:
   # and the reference default. A value in [0, 1) switches to an EMA instead.
   cov_momentum: -1.0
   mean_field: True         # applied at INFERENCE only, never in the training loss
-  mean_field_factor: 0.39269908169872414  # lambda = pi/8, the probit approximation
-  normalize_input: True    # LayerNorm on the GP input, per the reference implementation
+  # Tunable multiplicative factor, NOT a fixed constant: the reference uses 1.0 for
+  # ImageNet and 20.0 for CIFAR. Inference-only, so tune it post-hoc on a trained
+  # checkpoint (scripts/checkpoints/tune_sngp_mean_field.py) rather than in the sweep --
+  # it cannot move accuracy or F1 at all. pi/8 is the textbook probit value but is
+  # nearly inert at realistic dataset sizes.
+  mean_field_factor: 1.0
+  normalize_input: True    # LayerNorm on the GP input ("similar to ARD")
   likelihood: "gaussian"   # reference default for image classification (unit Laplace
                            # weight); "binary_logistic" uses the paper's p(1-p) instead
   output_bias: False       # reference uses a fixed zero GP output bias
+  random_feature_type: "orf"  # orthogonal random features (Yu et al. 2016), the default
+                              # in both reference baselines; "rff" for plain i.i.d. Gaussian
 
 # optimizer and scheduler
 optimizer:

@@ -135,11 +135,17 @@ Four properties of `RandomFeatureGaussianProcess` that are easy to get wrong, an
 each covered by a test in `tests/models/sngp/`:
 
 1. **Mean-field is applied at inference only.** In train mode `forward` returns the raw
-   logits and `variance is None`; the correction `logits / sqrt(1 + lambda * var)` with
-   `lambda = pi/8` happens in eval mode only. Putting it in the training loss makes the
-   CE objective depend on the covariance state and turns the correction into a detached
-   per-example gradient reweighting that *down-weights* uncertain examples. This project
-   did exactly that before the `sngp-corrections` work; see the note below.
+   logits and `variance is None`; the correction `logits / sqrt(1 + lambda * var)`
+   happens in eval mode only. `lambda` (`mean_field_factor`) is a **tunable** knob, not a
+   constant: the reference uses 1.0 for ImageNet and 20.0 for CIFAR, and the original
+   paper does not use mean field at all (it Monte-Carlo averages 10 samples). `pi/8` is
+   the textbook probit value but is nearly inert at realistic dataset sizes. Tune it
+   post-hoc with `scripts/checkpoints/tune_sngp_mean_field.py` -- it is inference-only,
+   so it needs no retraining and cannot move accuracy or macro-F1 at all.
+   Putting the correction in the *training loss* instead makes the CE objective depend on
+   the covariance state, and turns it into a detached per-example gradient reweighting
+   that *down-weights* uncertain examples. This project did exactly that before the
+   `sngp-corrections` work; see the note below.
 2. **The precision matrix is reset every epoch.** `SNGPLitModule.on_train_epoch_start`
    calls `reset_precision()`, so at any epoch boundary `precision_accum` holds exactly
    one pass over the training set — which is what the paper's single post-training sum

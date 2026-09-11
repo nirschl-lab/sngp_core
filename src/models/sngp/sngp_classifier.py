@@ -10,8 +10,14 @@ from src.models.components.spectral_norm import apply_spectral_norm, assert_spec
 from src.models.outputs import ModelOutput
 from src.models.registry import register_net
 
-# Mean-field correction constant from the probit approximation, lambda = pi / 8.
-DEFAULT_MEAN_FIELD_FACTOR = math.pi / 8
+# Mean-field multiplicative factor. The reference implementation treats this as a
+# *tunable* knob rather than a constant -- 1.0 in the ImageNet SNGP baseline, 20.0 in
+# the CIFAR one -- so this default matches ImageNet (the closer setting to 224px
+# resnets) and is meant to be tuned post-hoc. pi/8 is the textbook probit constant,
+# but at realistic dataset sizes it makes the correction nearly inert (~2% logit
+# shrink); see scripts/checkpoints/tune_sngp_mean_field.py.
+DEFAULT_MEAN_FIELD_FACTOR = 1.0
+PROBIT_MEAN_FIELD_FACTOR = math.pi / 8
 
 _LEGACY_BUFFERS = ("cov_ema", "num_updates")
 
@@ -82,11 +88,14 @@ class RandomFeatureGaussianProcess(nn.Module):
         normalize_input: bool = True,
         likelihood: str = "gaussian",
         output_bias: bool = False,
+        random_feature_type: str = "orf",
         dtype: torch.dtype = torch.float32,
     ):
         super().__init__()
         if likelihood not in ("gaussian", "binary_logistic"):
             raise ValueError(f"Unsupported likelihood: {likelihood!r}. Use 'gaussian' or 'binary_logistic'.")
+        if random_feature_type not in ("rff", "orf"):
+            raise ValueError(f"Unsupported random_feature_type: {random_feature_type!r}. Use 'rff' or 'orf'.")
         if ridge_penalty <= 0:
             raise ValueError(f"ridge_penalty must be > 0 (it seeds the precision matrix), got {ridge_penalty}")
 
@@ -101,15 +110,17 @@ class RandomFeatureGaussianProcess(nn.Module):
         self.normalize_input = normalize_input
         self.likelihood = likelihood
         self.output_bias = output_bias
+        self.random_feature_type = random_feature_type
 
-        # LayerNorm on the GP input, matching the reference implementation's
-        # `normalize_input=True` default -- keeps the RFF kernel well-scaled as backbone
-        # feature magnitudes drift during training.
+        # LayerNorm on the GP input ("similar to applying ARD", per the reference's own
+        # description) -- also keeps the RFF kernel well-scaled as backbone feature
+        # magnitudes drift during training.
         self.input_norm = nn.LayerNorm(in_dim) if normalize_input else None
 
         # Random Fourier feature parameters (fixed, not learned)
-        # W ~ N(0, 1/length_scale^2), b ~ Uniform(0, 2pi) => RBF kernel with length-scale l
-        W = torch.randn(in_dim, rff_dim, dtype=dtype) / length_scale
+        # b ~ Uniform(0, 2pi); W columns are random directions with chi-distributed
+        # norms => RBF kernel with length-scale l.
+        W = self._sample_projection(in_dim, rff_dim, random_feature_type, dtype) / length_scale
         b = 2 * math.pi * torch.rand(rff_dim, dtype=dtype)
         self.register_buffer("W", W)
         self.register_buffer("b", b)
@@ -129,6 +140,39 @@ class RandomFeatureGaussianProcess(nn.Module):
 
         # Pre-scaling constant for RFFs
         self.rff_scale = math.sqrt(2.0 / rff_dim)
+
+    # -- random feature map --------------------------------------------------
+
+    @staticmethod
+    def _sample_projection(in_dim: int, rff_dim: int, kind: str, dtype: torch.dtype) -> torch.Tensor:
+        """Draw the fixed `[in_dim, rff_dim]` projection whose columns are the random
+        directions of the RBF feature map.
+
+        `"rff"` draws them i.i.d. Gaussian. `"orf"` (orthogonal random features, Yu et
+        al. 2016, and the default in both reference SNGP baselines) draws orthonormal
+        blocks and rescales each column by an independent chi(in_dim) norm. A standard
+        Gaussian vector decomposes into a uniform direction times a chi norm, so the
+        per-column marginal is identical to `"rff"` -- what changes is that directions
+        within a block no longer partially duplicate each other, which lowers the
+        variance of the kernel approximation at a given `rff_dim`. Cost is paid once,
+        at construction; the forward pass is unchanged.
+        """
+        if kind == "rff":
+            return torch.randn(in_dim, rff_dim, dtype=dtype)
+
+        blocks = []
+        remaining = rff_dim
+        while remaining > 0:
+            # `torch.linalg.qr` of a square Gaussian gives Q with orthonormal columns,
+            # Haar-distributed over the orthogonal group.
+            q, _ = torch.linalg.qr(torch.randn(in_dim, in_dim, dtype=dtype))
+            blocks.append(q[:, :min(in_dim, remaining)])
+            remaining -= in_dim
+        directions = torch.cat(blocks, dim=1)
+
+        # chi(in_dim) samples: the norm of an in_dim-dimensional standard Gaussian.
+        norms = torch.randn(in_dim, rff_dim, dtype=dtype).norm(dim=0)
+        return directions * norms.unsqueeze(0)
 
     # -- precision lifecycle -------------------------------------------------
 
@@ -266,6 +310,7 @@ class SNGPClassifier(nn.Module):
         normalize_input: bool = True,
         likelihood: str = "gaussian",
         output_bias: bool = False,
+        random_feature_type: str = "orf",
     ):
         super().__init__()
         self.num_classes = num_classes
@@ -281,6 +326,7 @@ class SNGPClassifier(nn.Module):
         self.normalize_input = normalize_input
         self.likelihood = likelihood
         self.output_bias = output_bias
+        self.random_feature_type = random_feature_type
 
         if arch not in BACKBONES:
             raise ValueError(f"Unsupported backbone: {arch}. Supported: {sorted(BACKBONES)}")
@@ -306,6 +352,7 @@ class SNGPClassifier(nn.Module):
             normalize_input=normalize_input,
             likelihood=likelihood,
             output_bias=output_bias,
+            random_feature_type=random_feature_type,
         )
 
     def reset_precision(self) -> None:
@@ -330,6 +377,7 @@ class SNGPClassifier(nn.Module):
             "normalize_input": self.normalize_input,
             "likelihood": self.likelihood,
             "output_bias": self.output_bias,
+            "random_feature_type": self.random_feature_type,
         }
 
     def forward(self, x: torch.Tensor, update_precision: bool = True) -> ModelOutput:
