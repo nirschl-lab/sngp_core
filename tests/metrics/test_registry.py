@@ -193,3 +193,83 @@ def test_ood_auroc_empty_ood_frames_yields_no_rows(tmp_path):
     ctx = MetricContext(frame=load_predictions(path), ood_frames={})
     assert get_metric("ood_auroc_msp").fn(ctx) == []
     assert get_metric("ood_auroc_entropy").fn(ctx) == []
+
+
+# --- uncertainty metrics (predictions_csv_schema: 3) ----------------------------------
+
+
+def test_predictive_uncertainty_reports_mean_and_spread_for_each_comparable_column(tmp_path):
+    path = tmp_path / "predictions.csv"
+    write_predictions_csv(path, n=8, num_classes=3, seed=0, with_logits=True, with_comparable_uncertainty=True)
+    frame = load_predictions(path)
+
+    rows = get_metric("predictive_uncertainty").fn(MetricContext(frame=frame))
+
+    by_name = {row.metric: row for row in rows}
+    assert set(by_name) == {"mean_predictive_entropy", "mean_confidence_margin", "mean_dempster_shafer"}
+    for row in rows:
+        # `MetricRow.std` was part of the contract from the start but only ood_auroc_*
+        # ever filled it; these per-sample columns are the other natural source.
+        assert row.std is not None and row.std >= 0.0
+        assert row.value_str == f"{row.value:.4f} ± {row.std:.4f}"
+        assert row.extra["n"] == 8
+
+
+def test_predictive_uncertainty_skips_a_run_written_before_schema_3(tmp_path):
+    path = tmp_path / "predictions.csv"
+    write_predictions_csv(path, n=4, num_classes=2, seed=0)
+    frame = load_predictions(path)
+
+    assert "comparable_uncertainty" not in frame.capabilities
+    assert "comparable_uncertainty" in get_metric("predictive_uncertainty").requires
+
+
+def test_uncertainty_decomposition_is_additive_in_the_reported_means(tmp_path):
+    path = tmp_path / "predictions.csv"
+    write_predictions_csv(path, n=10, num_classes=3, seed=1, with_decomposition=True)
+    frame = load_predictions(path)
+
+    by_name = {row.metric: row.value for row in get_metric("uncertainty_decomposition").fn(MetricContext(frame=frame))}
+
+    assert by_name["mean_total_entropy"] == pytest.approx(
+        by_name["mean_aleatoric_entropy"] + by_name["mean_mutual_information"]
+    )
+
+
+def test_uncertainty_decomposition_skips_sngp_and_baseline_runs(tmp_path):
+    """Neither has a member stack: a single GP latent variance is not a sample over
+    models, so there is nothing to decompose."""
+    path = tmp_path / "predictions.csv"
+    write_predictions_csv(path, n=4, num_classes=2, seed=0, with_logits=True, with_uncertainty=True)
+    frame = load_predictions(path)
+
+    assert "uncertainty_decomposition" not in frame.capabilities
+
+
+def test_model_uncertainty_records_which_unit_it_is_in(tmp_path):
+    path = tmp_path / "predictions.csv"
+    write_predictions_csv(
+        path, n=6, num_classes=2, seed=0, with_uncertainty=True, uncertainty_kind="gp_predictive_variance"
+    )
+    frame = load_predictions(path)
+
+    (row,) = get_metric("model_uncertainty").fn(MetricContext(frame=frame))
+
+    assert row.metric == "mean_model_uncertainty"
+    assert row.std is not None
+    # The unit travels with the number: these rows are not comparable across families.
+    assert row.extra["uncertainty_kind"] == "gp_predictive_variance"
+
+
+def test_model_uncertainty_falls_back_to_unknown_for_a_schema_2_run(tmp_path):
+    """A pre-schema-3 run can have `uncertainty` but never recorded what it meant."""
+    import pandas as pd
+
+    path = tmp_path / "predictions.csv"
+    write_predictions_csv(path, n=4, num_classes=2, seed=0, with_uncertainty=True)
+    df = pd.read_csv(path).drop(columns=["uncertainty_kind"])
+    df.to_csv(path, index=False)
+
+    (row,) = get_metric("model_uncertainty").fn(MetricContext(frame=load_predictions(path)))
+
+    assert row.extra["uncertainty_kind"] == "unknown"

@@ -19,7 +19,18 @@ from src.inference.records import (
 	resolve_device,
 	write_outputs,
 )
-from src.metrics.brier import brier_score
+from src.metrics.dispersion import (
+	per_sample_brier,
+	per_sample_correct,
+	per_sample_nll,
+	summarize_metric,
+)
+
+
+def _prefixed(stream_name: str, summary: Dict[str, Any]) -> Dict[str, Any]:
+	"""Namespace a `summarize_metric` dict under its stream, matching the
+	`<stream>.<metric>` convention the torchmetrics values above already use."""
+	return {f"{stream_name}.{key}": value for key, value in summary.items()}
 
 
 def _save_tensor_image(tensor: torch.Tensor, image_path: Path) -> None:
@@ -148,24 +159,38 @@ class ArtifactInferenceRunner:
 			items = list(self.cfg.infer.metrics["items"])
 			compute_nll = "nll" in items
 			compute_brier = "brier" in items
+			compute_acc = "acc" in items
 
 			for stream_name, stream_metrics in self._metric_states.items():
 				for name, metric in stream_metrics.items():
 					value = metric.compute()
 					metrics[f"{stream_name}.{name}"] = float(value.detach().cpu().item())
 
-				if (compute_nll or compute_brier) and records_df is not None:
+				if (compute_nll or compute_brier or compute_acc) and records_df is not None:
 					stream_df = records_df[records_df["stream"] == stream_name]
 					if not stream_df.empty:
 						probs_t = torch.tensor(stream_df["class_probs"].map(json.loads).tolist(), dtype=torch.float32)
 						targets_t = torch.tensor(stream_df["target"].tolist(), dtype=torch.long)
+						preds_t = torch.tensor(stream_df["prediction"].tolist(), dtype=torch.long)
 						if compute_nll:
-							nll = torch.nn.functional.nll_loss(torch.log(probs_t + 1e-8), targets_t)
-							metrics[f"{stream_name}.nll"] = float(nll.item())
-						if compute_brier:
-							metrics[f"{stream_name}.brier"] = brier_score(
-								probs_t, targets_t, num_classes=probs_t.shape[1]
+							metrics.update(
+								_prefixed(stream_name, summarize_metric("nll", per_sample_nll(probs_t, targets_t)))
 							)
+						if compute_brier:
+							metrics.update(
+								_prefixed(
+									stream_name,
+									summarize_metric(
+										"brier", per_sample_brier(probs_t, targets_t, probs_t.shape[1])
+									),
+								)
+							)
+						if compute_acc:
+							# `<stream>.acc` already came from torchmetrics above; keep
+							# only the dispersion keys so it isn't computed two ways.
+							acc_summary = summarize_metric("acc", per_sample_correct(preds_t, targets_t))
+							acc_summary.pop("acc", None)
+							metrics.update(_prefixed(stream_name, acc_summary))
 		elif self._skip_metrics:
 			logger.warning(self._skip_metrics_reason)
 
@@ -205,7 +230,6 @@ class ArtifactInferenceRunner:
 					x=x,
 					use_mc_dropout=bool(self.cfg.infer.runtime.use_mc_dropout),
 					mc_passes=int(self.cfg.infer.runtime.mc_passes),
-					capture_members=save_member_logits,
 				)
 				preds = torch.argmax(outputs.probs, dim=1)
 				num_classes = outputs.probs.shape[1]

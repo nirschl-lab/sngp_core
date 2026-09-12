@@ -25,7 +25,12 @@ from src.inference.records import (  # noqa: E402
     resolve_device,
     write_outputs,
 )
-from src.metrics.brier import brier_score  # noqa: E402
+from src.metrics.dispersion import (  # noqa: E402
+    per_sample_brier,
+    per_sample_correct,
+    per_sample_nll,
+    summarize_metric,
+)
 from src.utils.random_seed import set_random_seed  # noqa: E402
 from src.utils.resolvers import _dataset_label as dataset_label  # noqa: E402
 
@@ -264,16 +269,24 @@ class BaseInferenceRunner:
                 metrics[name] = float(value.detach().cpu().item())
 
             items = list(self.cfg.infer.metrics["items"])
-            if ("nll" in items or "brier" in items) and self._records:
+            if ("nll" in items or "brier" in items or "acc" in items) and self._records:
                 records_df = pd.DataFrame(self._records)
                 probs = records_df["class_probs"].map(json.loads).to_list()
                 probs_t = torch.tensor(probs, dtype=torch.float32)
                 targets_t = torch.tensor(records_df["target"].tolist(), dtype=torch.long)
+                preds_t = torch.tensor(records_df["prediction"].tolist(), dtype=torch.long)
                 if "nll" in items:
-                    nll = torch.nn.functional.nll_loss(torch.log(probs_t + 1e-8), targets_t)
-                    metrics["nll"] = float(nll.item())
+                    metrics.update(summarize_metric("nll", per_sample_nll(probs_t, targets_t)))
                 if "brier" in items:
-                    metrics["brier"] = brier_score(probs_t, targets_t, num_classes=probs_t.shape[1])
+                    metrics.update(
+                        summarize_metric("brier", per_sample_brier(probs_t, targets_t, probs_t.shape[1]))
+                    )
+                if "acc" in items:
+                    # `acc` itself already came from torchmetrics above; only the
+                    # dispersion keys are new, so drop the duplicate mean.
+                    acc_summary = summarize_metric("acc", per_sample_correct(preds_t, targets_t))
+                    acc_summary.pop("acc", None)
+                    metrics.update(acc_summary)
         elif self._skip_metrics:
             logger.warning(self._skip_metrics_reason)
 
@@ -306,7 +319,6 @@ class ClassificationInferenceRunner(BaseInferenceRunner):
                 x=x,
                 use_mc_dropout=bool(self.cfg.infer.runtime.use_mc_dropout),
                 mc_passes=int(self.cfg.infer.runtime.mc_passes),
-                capture_members=save_member_logits,
             )
             if not torch.isfinite(outputs.logits).all():
                 raise RuntimeError("Encountered non-finite logits during inference.")
@@ -451,7 +463,7 @@ def run_inference(cfg: DictConfig) -> Dict[str, Any]:
         num_members = int(cfg.infer.runtime.mc_passes)
 
     provenance: Dict[str, Any] = {
-        "predictions_csv_schema": 2,
+        "predictions_csv_schema": 3,
         "ckpt_path": str(cfg.ckpt_path),
         "ckpt_run_id": _extract_ckpt_run_id(cfg.ckpt_path),
         "net_spec": dict(ckpt_meta.net_spec),

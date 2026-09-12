@@ -20,6 +20,22 @@ another net built from a `base_model_spec`, so e.g. an ensemble of SNGP members 
 possible without new code, only a config that points `base_model_spec.name` at
 `sngp_classifier`'s registry key.
 
+### Comparing uncertainty across these families
+
+`ModelOutput.variance` is a **different physical quantity** in each: a GP latent
+variance for SNGP, a mean per-class logit *variance* for a Deep Ensemble, a mean
+per-class logit *standard deviation* for MC-Dropout, and `None` for a plain Baseline.
+It reaches the prediction CSVs as one `uncertainty` column, so they are not
+interchangeable and ranking families by that column is meaningless.
+
+For cross-family comparison use the `predictive_entropy` / `confidence_margin` /
+`dempster_shafer` columns, written on every row for every family, or
+`mutual_information` between two runs that both have member stacks. Each row's
+`uncertainty_kind` records which quantity its `uncertainty` is. One implementation
+behind all of them: [src/metrics/uncertainty.py](../src/metrics/uncertainty.py); full
+table in
+[.claude/skills/metrics/references/csv_schema.md](../.claude/skills/metrics/references/csv_schema.md).
+
 ## Backbones
 
 Built in exactly one place, `src/models/backbones.py`:

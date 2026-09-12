@@ -36,13 +36,29 @@ belongs to before writing anything:
   fold=..., require=...)` returns a `PredictionFrame` (normalized `confidence`/
   `correct`/`probs`/`entropy_norm`/`entropy_nats`/`stream_canonical` columns, plus a
   `capabilities` set telling you what's actually in this file -- `"logits"` only on
-  runs written after `predictions_csv_schema: 2`, `"member_logits"` only when
-  `infer.save.save_member_logits` was on, `"paired_streams"` only for a real+artifact
-  run). Also has the canonical `parse_float_list`/`normalized_entropy`/
+  runs written after `predictions_csv_schema: 2`, `"comparable_uncertainty"` and
+  `"uncertainty_decomposition"` only after schema 3 (and the latter only for a run
+  with a member stack), `"member_logits"` only when `infer.save.save_member_logits`
+  was on, `"paired_streams"` only for a real+artifact run). Array accessors:
+  `probs_array`/`logits_array`/`member_logits_array`/`uncertainty_array`, plus
+  `uncertainty_kind(frame)` -- **always check that before comparing `uncertainty`
+  across runs**, its unit is family-dependent. Also has the canonical
+  `parse_float_list`/`normalized_entropy`/
   `shannon_entropy_nats`/`filter_fold`/`canonicalize_stream` -- **use these, don't
   re-derive them**; `auc.py`'s `_parse_class_probs`/`_normalized_entropy` and
   `artifact_quantification.py`'s `_parse_class_probs`/`_normalized_entropy_from_probs`
   are now thin aliases for exactly this reason.
+- `src/metrics/uncertainty.py` — the **single** implementation of every per-sample
+  uncertainty scalar, shared by both CSV writers: `predictive_entropy`,
+  `confidence_margin`, `dempster_shafer`, `decompose_member_uncertainty`
+  (`[M,B,C]` → total/aleatoric/epistemic), `infer_uncertainty_kind`. Torch-native and
+  batched. **Don't write a fourth entropy formula** -- this one matches
+  `io.shannon_entropy_nats` and `dempster_shafer_uncertainity.py` exactly, and those
+  equivalences are asserted in `tests/metrics/test_uncertainty.py`.
+- `src/metrics/dispersion.py` — `mean_std_sem`, `summarize_metric`, and the per-sample
+  decompositions (`per_sample_nll`/`per_sample_brier`/`per_sample_correct`) behind
+  `metrics.json`'s `_std`/`_sem` keys. Only for metrics that *are* a mean over
+  per-sample values; AUROC/ECE/macro-F1 are not, and deliberately get no `_std`.
 - `src/metrics/auc.py` — `AUROC` (single ID/OOD pair), `AUROC_across_dataset` (one ID
   dataset vs many OOD datasets, bootstrapped over 10 seeds). Takes a `fold_policy`
   (`OodFoldPolicy` from `io.py`) -- defaults to `LEGACY_ISBI_FOLD_POLICY`, which

@@ -295,6 +295,10 @@ class LitModuleBase(LightningModule):
             "targets": targets.detach(),
             "variance": output.variance.detach() if output.variance is not None else None,
             "member_logits": output.member_logits.detach() if output.member_logits is not None else None,
+            # Carried so `TestArtifactsCallback` can name the *unit* of `variance`
+            # (SNGP is the only family with raw_logits) and write SNGP's pre-mean-field
+            # head output, matching the inference CSV schema.
+            "raw_logits": output.raw_logits.detach() if output.raw_logits is not None else None,
         }
 
     def on_save_checkpoint(self, checkpoint: Dict[str, Any]) -> None:

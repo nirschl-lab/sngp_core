@@ -130,12 +130,42 @@ Files produced (depending on infer.save flags):
 - run.json (provenance sidecar -- ckpt path, net_spec, resolved infer.* sections)
 - images/ (artifact mode when image saving is enabled)
 
-### Backfilling class_logits/raw_logits onto already-tracked runs
+### Uncertainty columns
 
-`predictions_csv_schema: 2` (this doc's `predictions.csv` shape) added `class_logits`;
-runs written before that have none, and it can't be derived after the fact (softmax
-is shift-invariant) — the only fix is to manually re-run `infer.py` against the same
-checkpoint and dataset. Since `derive_default_run_name` is deterministic from
+Every run gets three **cross-family comparable** per-sample columns, whatever the
+model: `predictive_entropy` (nats), `confidence_margin` (top-1 minus top-2), and
+`dempster_shafer`. Use these when comparing families.
+
+`uncertainty` is the model's own variance and is **not** comparable across families --
+it is a GP latent variance for SNGP, a member logit variance for a Deep Ensemble, a
+per-pass logit std for MC-Dropout, and absent for a plain Baseline. The `uncertainty_kind`
+column records which. Runs with a member stack (Deep Ensemble, MC-Dropout) additionally
+get `total_entropy`/`aleatoric_entropy`/`mutual_information`, the
+aleatoric/epistemic split.
+
+Full column list, units, and the comparability caveat:
+[.claude/skills/metrics/references/csv_schema.md](../.claude/skills/metrics/references/csv_schema.md).
+One implementation behind all of them: [src/metrics/uncertainty.py](../src/metrics/uncertainty.py).
+
+### metrics.json dispersion
+
+Metrics that are a mean over per-sample values -- `acc`, `nll`, `brier` -- also get
+`<name>_std` and `<name>_sem` keys, plus a shared `n_samples`. `_std` is the spread
+across samples (a property of data and model); `_sem = _std / sqrt(n)` is the
+uncertainty of the mean itself and is what belongs on a reported error bar.
+
+AUROC/AUPRC/ECE/macro-F1 deliberately get no `_std`: they are rank-, bin-, or
+count-based and have no per-sample decomposition, so any spread for them would have to
+be resampled rather than measured. See
+[src/metrics/dispersion.py](../src/metrics/dispersion.py).
+
+### Backfilling uncertainty/logit columns onto already-tracked runs
+
+`predictions_csv_schema: 2` added `class_logits`/`raw_logits`; schema `3` added the
+uncertainty columns above. Runs written before each have none, and they can't be
+derived after the fact (softmax is shift-invariant, and a discarded member stack is
+gone) — the only fix is to manually re-run `infer.py` against the same checkpoint and
+dataset. Since `derive_default_run_name` is deterministic from
 checkpoint path + flags, a plain re-run overwrites the existing `predictions.csv`/
 `metrics.json` in place, so back up the run directory first if you want to keep the
 old files around for comparison. MC-Dropout runs (`mc_*`) are unseeded by default, so
@@ -184,12 +214,17 @@ uv run src/inference/infer.py \
 - `infer.runtime.mc_passes` (default `10`) is the number of stochastic forward passes
   averaged per batch; runtime scales roughly linearly with it.
 - The resulting per-sample predictive std is written to predictions.csv's
-  `uncertainty` column, same column SNGP/ensemble uncertainty is written to.
-- Set `infer.save.save_member_logits=true` to additionally persist the raw per-pass
-  logits (`[T, C]` per row, JSON-encoded) needed for epistemic/aleatoric
-  decomposition -- off by default since it multiplies row size by roughly `T` (same
-  flag, same column shape, for a Deep Ensemble's per-member logits). Set `seed` above
-  if you need the run to be reproducible.
+  `uncertainty` column, same column SNGP/ensemble uncertainty is written to -- but
+  note those are **different units**, recorded per-row in `uncertainty_kind`; see
+  [Uncertainty columns](#uncertainty-columns) below.
+- The epistemic/aleatoric decomposition
+  (`total_entropy`/`aleatoric_entropy`/`mutual_information`) is written automatically
+  for MC-Dropout runs, computed from the per-pass stack before it is discarded. You do
+  **not** need `save_member_logits` for it.
+- Set `infer.save.save_member_logits=true` only if you need the raw per-pass logits
+  themselves (`[T, C]` per row, JSON-encoded) -- off by default since it multiplies row
+  size by roughly `T` (same flag, same column shape, for a Deep Ensemble's per-member
+  logits). Set `seed` above if you need the run to be reproducible.
 
 ## Notes
 

@@ -91,9 +91,23 @@ The live training/test path reports ensemble disagreement generically via
 the same field every uncertainty-aware family (SNGP included) populates. No
 per-run configuration is needed or available for this.
 
+Both prediction CSVs additionally carry the full decomposition —
+`total_entropy`, `aleatoric_entropy`, `mutual_information` (nats) — computed from the
+member stack at write time. This does **not** require
+`infer.save.save_member_logits=true`: the decomposition is three floats per row, while
+the raw stack is ~4.8x a row for a 5-member ensemble, so the split is always written
+and the stack stays opt-in. `mutual_information` is the epistemic part.
+
+Note `total_entropy` is `H[mean(softmax(member_logits))]`, the correct predictive
+distribution for a model average, while `predictive_entropy` on the same row comes from
+`class_probs = softmax(mean(member_logits))` — `forward`'s logit-space pooling. The two
+differ slightly by construction.
+
 For offline/notebook analysis with a specific uncertainty formulation, call
 `DeepEnsemble.get_predictive_uncertainty(x, uncertainty_type=...)` directly on the
-net (see [Programmatic Usage](#programmatic-usage) below) — it supports:
+net (see [Programmatic Usage](#programmatic-usage) below) — its `entropy`/`mutual_info`
+branches delegate to the same `src/metrics/uncertainty.py` code the CSV columns use, so
+they cannot disagree. It supports:
 
 1. **`variance`** — variance of predicted probabilities across the ensemble.
    Captures disagreement between members; higher variance = more uncertainty.

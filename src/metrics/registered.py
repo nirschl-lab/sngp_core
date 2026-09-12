@@ -11,13 +11,17 @@ having been imported before or after any other module.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import List
 
 import numpy as np
+import pandas as pd
+import torch
 
 from src.metrics.calculate_ood_metrics import DEFAULT_SAMPLE_RATE, _auroc_mean_std_parts
 from src.metrics.dempster_shafer_uncertainity import DempsterShaferUncertainty
-from src.metrics.io import logits_array
+from src.metrics.dispersion import mean_std_sem
+from src.metrics.io import logits_array, uncertainty_kind
 from src.metrics.registry import MetricContext, MetricRow, register_metric
 
 
@@ -99,3 +103,81 @@ def _basic_stats(ctx: MetricContext) -> List[MetricRow]:
         MetricRow(metric="mean_confidence", value=float(df["confidence"].mean()), scope="run"),
         MetricRow(metric="mean_entropy", value=float(df["entropy_norm"].mean()), scope="run"),
     ]
+
+
+def _mean_row(metric: str, values: pd.Series) -> MetricRow:
+    """A `MetricRow` carrying both the mean and the spread of a per-sample column.
+
+    `MetricRow.std` has been part of the contract since the registry was written but
+    only `ood_auroc_*` ever filled it; these per-sample columns are the other natural
+    source, since their spread is exact rather than resampled
+    (`src/metrics/dispersion.py`).
+    """
+    summary = mean_std_sem(torch.tensor(values.to_numpy(dtype=float)))
+    return MetricRow(
+        metric=metric,
+        value=summary.mean,
+        std=summary.std,
+        value_str=f"{summary.mean:.4f} ± {summary.std:.4f}",
+        scope="run",
+        extra={"sem": summary.sem, "n": summary.n},
+    )
+
+
+@register_metric(
+    "predictive_uncertainty",
+    requires=frozenset({"comparable_uncertainty"}),
+    description=(
+        "Mean predictive entropy (nats), confidence margin, and Dempster-Shafer uncertainty -- the "
+        "cross-family comparable per-sample uncertainty columns, each with its across-sample spread."
+    ),
+)
+def _predictive_uncertainty(ctx: MetricContext) -> List[MetricRow]:
+    """Unlike `dempster_shafer` (which recomputes from `class_logits`), this reads the
+    columns the write path already produced, so it also covers the callback schema and
+    costs no re-derivation. The two agree by construction -- `build_records` writes
+    `src.metrics.uncertainty.dempster_shafer`, which reproduces the numpy original."""
+    df = ctx.frame.df
+    return [
+        _mean_row("mean_predictive_entropy", df["predictive_entropy"]),
+        _mean_row("mean_confidence_margin", df["confidence_margin"]),
+        _mean_row("mean_dempster_shafer", df["dempster_shafer"]),
+    ]
+
+
+@register_metric(
+    "uncertainty_decomposition",
+    requires=frozenset({"uncertainty_decomposition"}),
+    description=(
+        "Mean total/aleatoric/epistemic predictive entropy (nats) for runs with a member stack "
+        "(Deep Ensemble or MC-Dropout), each with its across-sample spread."
+    ),
+)
+def _uncertainty_decomposition(ctx: MetricContext) -> List[MetricRow]:
+    """Skips on SNGP and plain-Baseline runs: a single latent variance is not a sample
+    over models, so there is nothing to decompose (`requires` handles the skip, giving
+    a `status=skipped` row with a reason rather than an error)."""
+    df = ctx.frame.df
+    return [
+        _mean_row("mean_total_entropy", df["total_entropy"]),
+        _mean_row("mean_aleatoric_entropy", df["aleatoric_entropy"]),
+        _mean_row("mean_mutual_information", df["mutual_information"]),
+    ]
+
+
+@register_metric(
+    "model_uncertainty",
+    requires=frozenset({"uncertainty"}),
+    description=(
+        "Mean model-side uncertainty (SNGP GP variance / ensemble logit variance / MC-Dropout logit "
+        "std). Units differ per family -- the scope names which, via uncertainty_kind."
+    ),
+)
+def _model_uncertainty(ctx: MetricContext) -> List[MetricRow]:
+    """The `uncertainty` column's unit is family-dependent, so this row is *not*
+    comparable across families -- `use predictive_uncertainty` for that. The kind is
+    carried in `extra` so a reader that aggregates these rows can tell that two of them
+    are in different units instead of averaging them together."""
+    row = _mean_row("mean_model_uncertainty", ctx.frame.df["uncertainty"])
+    kind = uncertainty_kind(ctx.frame)
+    return [replace(row, extra={**row.extra, "uncertainty_kind": kind or "unknown"})]

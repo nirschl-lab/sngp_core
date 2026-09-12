@@ -51,9 +51,22 @@ class BaselineLitModule(LitModuleBase):
         if not self.use_mc:
             return self.forward(x)
         logger.info(f"Using Monte Carlo Dropout for inference for {self.mc_passes} passes")
-        _, mean_probs = self.net.mc_predict(x, T=self.mc_passes, return_std=False, apply_softmax=True)
+        # `mc_forward_samples` rather than `mc_predict`: the same `mc_passes` forward
+        # passes either way, but keeping the stack lets this report the uncertainty
+        # MC-Dropout actually produced. `mc_predict(return_std=False)` discarded it,
+        # which is why a MC run through `trainer.test()` used to report no uncertainty
+        # at all while the same checkpoint through `src/inference/infer.py` did.
+        logits_stack = self.net.mc_forward_samples(x, T=self.mc_passes)  # [T, B, C]
+        mean_probs = torch.softmax(logits_stack, dim=-1).mean(dim=0)
         # The true MC-Dropout predictive distribution is the mean of per-pass softmax
         # outputs, not softmax(mean logits) -- those differ. test_step/predict_step
         # always derive probs via softmax(output.logits), so we hand back log(mean_probs):
         # softmax(log(p)) == p exactly when p already sums to 1, which mean_probs does.
-        return ModelOutput(logits=torch.log(mean_probs.clamp_min(1e-12)))
+        return ModelOutput(
+            logits=torch.log(mean_probs.clamp_min(1e-12)),
+            # Per-class std of per-pass logits, reduced to one scalar per sample -- the
+            # same quantity and reduction `src/inference/records.py` writes for a
+            # MC-Dropout run, so both write paths agree on what `uncertainty` means.
+            variance=logits_stack.std(dim=0, unbiased=False).mean(dim=1, keepdim=True),
+            member_logits=logits_stack,
+        )

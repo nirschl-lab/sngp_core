@@ -13,6 +13,7 @@ from typing import Tuple
 import torch
 import torch.nn as nn
 
+from src.metrics.uncertainty import decompose_member_uncertainty
 from src.models.outputs import ModelOutput
 from src.models.registry import build_net, register_net
 
@@ -157,43 +158,34 @@ class DeepEnsemble(nn.Module):
         Returns:
             probs: Mean predicted probabilities [batch_size, num_classes]
             uncertainty: Uncertainty values [batch_size]
+
+        The "entropy"/"mutual_info" branches delegate to `src/metrics/uncertainty.py`,
+        which is the same code the `predictions.csv` write path uses -- so this offline
+        API and the `total_entropy`/`mutual_information` columns cannot drift apart.
+        They now use that module's `1e-12` epsilon rather than the `1e-10` this method
+        used to hardcode; the difference is ~1e-10 absolute, far below any reported
+        precision.
         """
-        mean_logits, individual_logits = self.ensemble_predict(x, return_individual=True)
-        
+        _, individual_logits = self.ensemble_predict(x, return_individual=True)
+
         # Convert to probabilities: [num_estimators, batch_size, num_classes]
         individual_probs = torch.softmax(individual_logits, dim=-1)
-        
+
         # Mean probabilities: [batch_size, num_classes]
         mean_probs = individual_probs.mean(dim=0)
-        
+
         if uncertainty_type == "variance":
             # Variance of predicted class probabilities
             # Average variance across classes
             variance = individual_probs.var(dim=0).mean(dim=-1)  # [batch_size]
             return mean_probs, variance
-        
-        elif uncertainty_type == "entropy":
-            # Mean entropy of ensemble predictions
-            epsilon = 1e-10
-            entropy = -(mean_probs * torch.log(mean_probs + epsilon)).sum(dim=-1)
-            return mean_probs, entropy
-        
-        elif uncertainty_type == "mutual_info":
-            # Mutual information = Total uncertainty - Aleatoric uncertainty
-            # Total uncertainty: entropy of mean predictions
-            epsilon = 1e-10
-            total_entropy = -(mean_probs * torch.log(mean_probs + epsilon)).sum(dim=-1)
-            
-            # Aleatoric (data) uncertainty: mean of individual entropies
-            individual_entropy = -(individual_probs * torch.log(individual_probs + epsilon)).sum(dim=-1)
-            aleatoric_entropy = individual_entropy.mean(dim=0)
-            
-            # Mutual information (epistemic uncertainty)
-            mutual_info = total_entropy - aleatoric_entropy
-            return mean_probs, mutual_info
-        
-        else:
-            raise ValueError(f"Unknown uncertainty type: {uncertainty_type}")
+
+        if uncertainty_type in ("entropy", "mutual_info"):
+            decomposed = decompose_member_uncertainty(individual_logits)
+            uncertainty = decomposed.total if uncertainty_type == "entropy" else decomposed.epistemic
+            return mean_probs, uncertainty.to(mean_probs.dtype)
+
+        raise ValueError(f"Unknown uncertainty type: {uncertainty_type}")
     
     def get_member(self, idx: int) -> nn.Module:
         """Get a specific ensemble member."""

@@ -1,3 +1,4 @@
+import pytest
 import torch
 
 from src.models.baseline.baseline_models import BaselineClassifier
@@ -56,3 +57,57 @@ def test_mc_predict_apply_softmax_false_returns_logit_mean_twice():
     mean_logits, mean_of_logits, _ = model.mc_predict(x, T=4, return_std=True, apply_softmax=False)
 
     assert torch.allclose(mean_logits, mean_of_logits)
+
+
+# --- the Lightning test/predict path ---------------------------------------------------
+
+
+def _lit_module(use_mc: bool, mc_passes: int = 4):
+    from src.models.baseline_lit_module import BaselineLitModule
+
+    return BaselineLitModule(
+        net=_model(num_classes=3),
+        optimizer=torch.optim.Adam,
+        scheduler=None,
+        num_classes=3,
+        use_mc=use_mc,
+        mc_passes=mc_passes,
+    )
+
+
+def test_mc_predict_forward_reports_the_uncertainty_it_computed():
+    """`_predict_forward` used to call `mc_predict(return_std=False)`, so a MC-Dropout
+    run through `trainer.test()` reported no uncertainty at all while the same
+    checkpoint through `src/inference/infer.py` did."""
+    module = _lit_module(use_mc=True, mc_passes=4).eval()
+
+    output = module._predict_forward(torch.randn(2, 3, 224, 224))
+
+    assert output.variance is not None
+    assert output.variance.shape == (2, 1)
+    assert (output.variance >= 0).all()
+    assert output.member_logits is not None
+    assert output.member_logits.shape == (4, 2, 3)
+
+
+def test_mc_predict_forward_still_returns_the_mean_of_per_pass_softmax():
+    """softmax(.logits) must stay the true MC predictive distribution -- the mean of
+    per-pass softmax, not softmax of the mean logits."""
+    module = _lit_module(use_mc=True, mc_passes=3).eval()
+    torch.manual_seed(0)
+    x = torch.randn(2, 3, 224, 224)
+
+    output = module._predict_forward(x)
+    probs = torch.softmax(output.logits, dim=1)
+
+    assert probs.sum(dim=1).tolist() == pytest.approx([1.0, 1.0], abs=1e-5)
+    assert (probs >= 0).all()
+
+
+def test_non_mc_forward_is_unchanged_and_has_no_variance():
+    module = _lit_module(use_mc=False).eval()
+
+    output = module._predict_forward(torch.randn(2, 3, 224, 224))
+
+    assert output.variance is None
+    assert output.member_logits is None

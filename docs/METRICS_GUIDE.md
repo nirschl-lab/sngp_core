@@ -13,6 +13,43 @@ re-parsing `class_probs` from scratch; `src/metrics/auc.py`'s `AUROC`/
 Untested-by-policy does **not** apply here (unlike `src/visualization/**`) — `src/metrics/**`
 is covered by `pytest tests/metrics/` per `.claude/rules/testing.md`.
 
+## Per-sample uncertainty
+
+[src/metrics/uncertainty.py](../src/metrics/uncertainty.py) is the single
+implementation of every per-sample uncertainty scalar, used by **both** CSV writers
+(`src/inference/records.py` and `src/callbacks/test_artifacts_callback.py`) so the two
+cannot drift. `predictive_entropy`, `confidence_margin` and `dempster_shafer` are
+written on every row for every family and are the only ones comparable *between*
+families; `decompose_member_uncertainty` splits total predictive entropy into
+aleatoric and epistemic (mutual information / BALD) parts for runs with a member stack.
+
+The `uncertainty` column is the model's own variance and is **not** cross-family
+comparable — GP latent variance (SNGP), member logit variance (Deep Ensemble), per-pass
+logit std (MC-Dropout), absent (plain Baseline). `uncertainty_kind` records which;
+`io.uncertainty_kind(frame)` reads it. Full table:
+[csv_schema.md](../.claude/skills/metrics/references/csv_schema.md).
+
+## Standard deviations on metrics
+
+A metric that is literally `mean(per-sample value)` carries its own spread, so
+`metrics.json` reports `<name>_std` and `<name>_sem` next to `acc`, `nll` and `brier`,
+plus a shared `n_samples` ([src/metrics/dispersion.py](../src/metrics/dispersion.py)).
+`_std` describes the across-sample distribution; `_sem = _std / sqrt(n)` is the error
+bar on the mean.
+
+This covers only that class of metric. AUROC/AUPRC are rank statistics, ECE is
+bin-based, and macro precision/recall/F1 are ratios of aggregate counts — none
+decomposes per sample, so none gets a `_std` here. The project's dispersion estimate
+for AUROC remains the fixed-seed subsampling in
+[src/metrics/calculate_ood_metrics.py](../src/metrics/calculate_ood_metrics.py), which
+is frozen for reproducibility against published paper numbers — don't rework it into
+this shape.
+
+Registered metrics (`metrics_long.csv`) that consume these columns:
+`predictive_uncertainty`, `uncertainty_decomposition`, `model_uncertainty`. Each fills
+`MetricRow.std` from the same helper, so the long-format CSV's `std` column is now
+populated for more than just `ood_auroc_*`.
+
 ## Batch metrics from prediction CSVs
 
 [src/metrics/run_metrics.py](../src/metrics/run_metrics.py) runs every registered

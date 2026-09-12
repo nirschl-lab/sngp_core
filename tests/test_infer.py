@@ -235,6 +235,11 @@ def test_build_records_emits_one_row_per_sample_with_expected_columns():
         "class_logits",
         "class_probs",
         "stream",
+        # Always written, for every family: these are the cross-family comparable
+        # uncertainty columns, unlike `uncertainty` (see src/metrics/uncertainty.py).
+        "predictive_entropy",
+        "confidence_margin",
+        "dempster_shafer",
     ]
     assert rows[0]["image_id"] == "a"
     assert rows[1]["target"] == 1
@@ -554,54 +559,56 @@ def test_write_outputs_run_json_columns_empty_when_no_records(tmp_path):
     assert run_json["n_rows"] == 0
 
 
-# --- member_logits: capture_members / save_member_logits opt-in ---------------------
+# --- member_logits: always captured, `save_member_logits` gates persistence only -----
 
 
-def test_extract_model_outputs_ensemble_member_logits_is_free_regardless_of_capture_members():
-    """DeepEnsemble already returns member_logits on ModelOutput -- no extra compute,
-    so it should show up whether or not capture_members is requested."""
+def test_extract_model_outputs_ensemble_member_logits_is_free():
+    """DeepEnsemble already returns member_logits on ModelOutput -- no extra compute."""
     logits = torch.tensor([[1.0, 2.0]])
     member_logits = torch.stack([logits, logits + 1.0, logits + 2.0])  # [M=3, B=1, C=2]
     model = _FakeNet(ModelOutput(logits=logits, member_logits=member_logits))
 
-    for capture_members in (False, True):
-        out = records.extract_model_outputs(
-            model, torch.zeros(1, 3), use_mc_dropout=False, mc_passes=5, capture_members=capture_members
-        )
-        assert out.member_logits.shape == (3, 1, 2)
+    out = records.extract_model_outputs(model, torch.zeros(1, 3), use_mc_dropout=False, mc_passes=5)
+
+    assert out.member_logits.shape == (3, 1, 2)
 
 
-def test_extract_model_outputs_mc_dropout_without_capture_members_omits_member_logits():
+def test_mc_dropout_always_captures_the_per_pass_stack():
+    """`save_member_logits` gates *persisting* the stack, never computing it: the
+    aleatoric/epistemic decomposition needs it in memory on every MC run, and capturing
+    it is free because `mc_predict` calls `mc_forward_samples` itself anyway."""
+
     class _McNet(torch.nn.Module):
         def mc_predict(self, x, T, return_std, apply_softmax):
-            per_pass = torch.randn(T, x.shape[0], 2)
-            return per_pass.mean(0), torch.softmax(per_pass, dim=-1).mean(0), per_pass.std(0, unbiased=False)
-
-    out = records.extract_model_outputs(
-        _McNet(), torch.zeros(2, 3), use_mc_dropout=True, mc_passes=4, capture_members=False
-    )
-    assert out.member_logits is None
-
-
-def test_extract_model_outputs_mc_dropout_with_capture_members_populates_member_logits():
-    class _McNet(torch.nn.Module):
-        def mc_predict(self, x, T, return_std, apply_softmax):
-            raise AssertionError("capture_members=True must call mc_forward_samples, not mc_predict")
+            raise AssertionError("MC-Dropout must go through mc_forward_samples, not mc_predict")
 
         def mc_forward_samples(self, x, T):
             torch.manual_seed(0)
             return torch.randn(T, x.shape[0], 2)
 
-    out = records.extract_model_outputs(
-        _McNet(), torch.zeros(2, 3), use_mc_dropout=True, mc_passes=4, capture_members=True
-    )
+    out = records.extract_model_outputs(_McNet(), torch.zeros(2, 3), use_mc_dropout=True, mc_passes=4)
 
     assert out.member_logits.shape == (4, 2, 2)
+    assert out.uncertainty_kind == "mc_logit_std"
     torch.manual_seed(0)
     expected_stack = torch.randn(4, 2, 2)
     assert torch.allclose(out.logits, expected_stack.mean(0))
     assert torch.allclose(out.probs, torch.softmax(expected_stack, dim=-1).mean(0))
     assert torch.allclose(out.uncertainty, expected_stack.std(0, unbiased=False).mean(dim=1, keepdim=True))
+
+
+def test_mc_dropout_falls_back_to_mc_predict_without_a_stack_accessor():
+    """A net exposing only `mc_predict` still works; it just has no decomposition."""
+
+    class _LegacyMcNet(torch.nn.Module):
+        def mc_predict(self, x, T, return_std, apply_softmax):
+            per_pass = torch.randn(T, x.shape[0], 2)
+            return per_pass.mean(0), torch.softmax(per_pass, dim=-1).mean(0), per_pass.std(0, unbiased=False)
+
+    out = records.extract_model_outputs(_LegacyMcNet(), torch.zeros(2, 3), use_mc_dropout=True, mc_passes=4)
+
+    assert out.member_logits is None
+    assert out.uncertainty_kind == "mc_logit_std"
 
 
 def test_build_records_writes_member_logits_only_when_flag_and_data_both_present():
@@ -723,3 +730,166 @@ def test_artifact_runner_rejects_invalid_stream_name(tmp_path):
     cfg = _artifact_cfg(tmp_path, streams=["bogus"])
     with pytest.raises(ValueError, match="real.*artifact"):
         ArtifactInferenceRunner(model=model, dataloader=[_artifact_batch()], cfg=cfg)
+
+
+# --- predictions_csv_schema: 3 uncertainty columns -----------------------------------
+
+
+def test_comparable_uncertainty_columns_are_written_for_every_family():
+    """A plain Baseline emits no variance at all, so these three columns are the only
+    thing that makes its rows comparable with SNGP/ensemble rows."""
+    rows = records.build_records(
+        image_ids=["a"],
+        fold=["test"],
+        targets=torch.tensor([0]),
+        preds=torch.tensor([0]),
+        outputs=_batch_outputs(torch.tensor([[2.0, 0.0]])),  # no variance, no members
+        stream_name="default",
+    )
+
+    assert "uncertainty" not in rows[0]
+    assert "uncertainty_kind" not in rows[0]
+    for column in ("predictive_entropy", "confidence_margin", "dempster_shafer"):
+        assert isinstance(rows[0][column], float)
+
+
+def test_uncertainty_kind_is_written_next_to_uncertainty():
+    outputs = _batch_outputs(
+        torch.tensor([[2.0, 0.0]]),
+        uncertainty=torch.tensor([[0.25]]),
+        raw_logits=torch.tensor([[3.0, 0.0]]),
+        uncertainty_kind="gp_predictive_variance",
+    )
+
+    rows = records.build_records(
+        image_ids=["a"],
+        fold=["test"],
+        targets=torch.tensor([0]),
+        preds=torch.tensor([0]),
+        outputs=outputs,
+        stream_name="default",
+    )
+
+    assert rows[0]["uncertainty"] == pytest.approx(0.25)
+    assert rows[0]["uncertainty_kind"] == "gp_predictive_variance"
+
+
+def test_decomposition_is_written_even_when_member_logits_are_not_saved():
+    """The whole point of computing the split at write time: `save_member_logits`
+    defaults off because the raw stack is ~4.8x a row, but the epistemic/aleatoric
+    numbers derived from it are three cheap floats."""
+    member_logits = torch.tensor([[[5.0, -5.0]], [[-5.0, 5.0]]])  # [M=2, B=1, C=2]
+    outputs = _batch_outputs(torch.tensor([[0.0, 0.0]]), member_logits=member_logits)
+
+    rows = records.build_records(
+        image_ids=["a"],
+        fold=["test"],
+        targets=torch.tensor([0]),
+        preds=torch.tensor([0]),
+        outputs=outputs,
+        stream_name="default",
+        save_member_logits=False,
+    )
+
+    assert "member_logits" not in rows[0]
+    assert rows[0]["total_entropy"] == pytest.approx(
+        rows[0]["aleatoric_entropy"] + rows[0]["mutual_information"], abs=1e-9
+    )
+    # Members predicting opposite classes: the disagreement is epistemic.
+    assert rows[0]["mutual_information"] > 0.5
+
+
+def test_decomposition_is_absent_when_there_is_no_member_stack():
+    rows = records.build_records(
+        image_ids=["a"],
+        fold=["test"],
+        targets=torch.tensor([0]),
+        preds=torch.tensor([0]),
+        outputs=_batch_outputs(torch.tensor([[1.0, 0.0]]), uncertainty=torch.tensor([[0.5]])),
+        stream_name="default",
+    )
+
+    for column in ("total_entropy", "aleatoric_entropy", "mutual_information"):
+        assert column not in rows[0]
+
+
+# --- metrics.json dispersion ----------------------------------------------------------
+
+
+def _finalize_with_records(tmp_path, rows, items=("acc", "nll", "brier")):
+    """Drive `BaseInferenceRunner._finalize` over canned records.
+
+    `_finalize` is where `metrics.json` is assembled and is shared by both runners, so
+    this exercises the real assembly without needing a checkpoint or a dataloader.
+    """
+    cfg = OmegaConf.create(
+        {
+            "save_path": str(tmp_path),
+            "infer": {
+                "runtime": {"device": "cpu"},
+                "metrics": {"enabled": True, "items": list(items)},
+                "save": {"run_name": "", "save_csv": False, "save_metrics_json": True, "save_run_json": False},
+            },
+        }
+    )
+    runner = infer.BaseInferenceRunner(
+        model=torch.nn.Linear(2, 2), dataloader=None, cfg=cfg, default_run_name=""
+    )
+    runner._records = rows
+    return runner._finalize()
+
+
+def _record(probs, target, prediction):
+    return {"class_probs": json.dumps(probs), "target": target, "prediction": prediction}
+
+
+def test_metrics_json_reports_std_and_sem_for_mean_decomposable_metrics(tmp_path):
+    rows = [
+        _record([0.9, 0.1], 0, 0),
+        _record([0.6, 0.4], 0, 0),
+        _record([0.2, 0.8], 1, 1),
+        _record([0.3, 0.7], 0, 1),
+    ]
+
+    metrics = _finalize_with_records(tmp_path, rows)
+
+    for name in ("nll", "brier"):
+        assert metrics[f"{name}_std"] > 0.0
+        assert metrics[f"{name}_sem"] == pytest.approx(metrics[f"{name}_std"] / 2.0)  # sqrt(4)
+    assert metrics["n_samples"] == 4
+    # Accuracy gets dispersion but keeps torchmetrics as the single source of its mean.
+    assert "acc_std" in metrics and "acc_sem" in metrics
+
+
+def test_metrics_json_dispersion_keys_are_absent_for_rank_and_bin_metrics(tmp_path):
+    """AUROC/ECE/macro-F1 have no per-sample decomposition, so a `_std` for them would
+    have to be resampled -- deliberately not done here."""
+    metrics = _finalize_with_records(tmp_path, [_record([0.9, 0.1], 0, 0), _record([0.2, 0.8], 1, 1)])
+
+    for name in ("auroc", "auprc", "ece", "f1", "precision", "recall"):
+        assert f"{name}_std" not in metrics
+
+
+def test_metrics_json_nll_is_unchanged_by_adding_dispersion(tmp_path):
+    """The mean must still be exactly what the previous mean-reduced nll_loss gave,
+    or `_std` would have silently moved every reported NLL."""
+    probs = [[0.7, 0.3], [0.25, 0.75], [0.45, 0.55]]
+    targets = [0, 1, 1]
+    rows = [_record(p, t, 0) for p, t in zip(probs, targets)]
+
+    metrics = _finalize_with_records(tmp_path, rows, items=("nll",))
+
+    expected = torch.nn.functional.nll_loss(
+        torch.log(torch.tensor(probs) + 1e-8), torch.tensor(targets)
+    ).item()
+    assert metrics["nll"] == pytest.approx(expected, abs=1e-6)
+
+
+def test_metrics_json_stays_json_serializable_with_a_single_row(tmp_path):
+    """A one-row run makes the sample std undefined; it must land as 0.0, not NaN,
+    or metrics.json fails to round-trip."""
+    metrics = _finalize_with_records(tmp_path, [_record([0.8, 0.2], 0, 0)])
+
+    written = json.loads((tmp_path / "metrics.json").read_text())
+    assert written["nll_std"] == 0.0
+    assert written["n_samples"] == 1

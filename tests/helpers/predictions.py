@@ -6,6 +6,10 @@ Both schemas this project uses are covered -- "inference"
 (`src/callbacks/test_artifacts_callback.py`: `prediction_prob_score`/
 `true_bin_label`/`class_logits`/`class_probs`, repr-encoded lists) -- see
 `.claude/skills/metrics/references/csv_schema.md`.
+
+The optional `with_*` flags let one fixture stand in for any schema version: leaving
+them all off reproduces a pre-schema-2 run (the shape every CSV on disk had before
+2026-09-04), which is what the `requires=`/`status=skipped` paths need to exercise.
 """
 
 from __future__ import annotations
@@ -32,6 +36,10 @@ def write_predictions_csv(
     with_logits: bool = False,
     with_raw_logits: bool = False,
     with_member_logits: bool = False,
+    with_uncertainty: bool = False,
+    uncertainty_kind: str = "gp_predictive_variance",
+    with_comparable_uncertainty: bool = False,
+    with_decomposition: bool = False,
     members: int = 3,
 ) -> pd.DataFrame:
     """Write a synthetic predictions.csv at `path` and return the DataFrame written.
@@ -82,6 +90,24 @@ def write_predictions_csv(
         if with_member_logits:
             member_logits = rng.normal(size=(n, members, num_classes))
             data["member_logits"] = [json.dumps(row.tolist()) for row in member_logits]
+        if with_uncertainty:
+            data["uncertainty"] = rng.gamma(shape=2.0, scale=0.5, size=n)
+            data["uncertainty_kind"] = [uncertainty_kind] * n
+        if with_comparable_uncertainty:
+            # Real values for the always-written schema-3 columns, so a metric reading
+            # them gets something consistent with `class_probs` rather than noise.
+            clipped = np.clip(probs, 1e-12, 1.0)
+            data["predictive_entropy"] = -(clipped * np.log(clipped)).sum(axis=1)
+            ordered = np.sort(probs, axis=1)
+            data["confidence_margin"] = ordered[:, -1] - (ordered[:, -2] if num_classes > 1 else 0.0)
+            ds_logits = np.log(clipped)
+            data["dempster_shafer"] = num_classes / (np.exp(ds_logits).sum(axis=1) + num_classes)
+        if with_decomposition:
+            aleatoric = rng.uniform(0.0, 0.5, size=n)
+            epistemic = rng.uniform(0.0, 0.2, size=n)
+            data["total_entropy"] = aleatoric + epistemic
+            data["aleatoric_entropy"] = aleatoric
+            data["mutual_information"] = epistemic
     elif schema == "callback":
         logits = rng.normal(size=(n, num_classes))
         data = {

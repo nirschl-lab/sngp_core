@@ -33,6 +33,13 @@ from torchmetrics.classification import (
     MulticlassRecall,
 )
 
+from src.metrics.uncertainty import (
+    confidence_margin,
+    decompose_member_uncertainty,
+    dempster_shafer,
+    infer_uncertainty_kind,
+    predictive_entropy,
+)
 from src.models.outputs import ModelOutput
 
 
@@ -44,6 +51,10 @@ class BatchOutputs:
     reduction in `extract_model_outputs`. `raw_logits` is SNGP's pre-mean-field head
     output. `member_logits` is `[M, B, C]` -- ensemble members or MC-Dropout passes,
     which are the same thing downstream (see `build_records`).
+
+    `uncertainty_kind` names the *unit* of `uncertainty`, which is not the same
+    quantity across families -- see `src/metrics/uncertainty.py`. It is `None` exactly
+    when `uncertainty` is.
     """
 
     logits: torch.Tensor
@@ -51,6 +62,7 @@ class BatchOutputs:
     uncertainty: Optional[torch.Tensor] = None
     raw_logits: Optional[torch.Tensor] = None
     member_logits: Optional[torch.Tensor] = None
+    uncertainty_kind: Optional[str] = None
 
 
 def resolve_device(device_name: str) -> torch.device:
@@ -123,7 +135,6 @@ def extract_model_outputs(
     *,
     use_mc_dropout: bool,
     mc_passes: int,
-    capture_members: bool = False,
 ) -> BatchOutputs:
     """Run one batch through `model` and collect everything a record may need.
 
@@ -132,15 +143,16 @@ def extract_model_outputs(
     the *mean of per-pass softmax*, so `softmax(logits) != probs` for MC runs. That
     asymmetry is inherent to the estimator, not a bug -- see `docs/KNOWN_ISSUES.md`.
 
-    `capture_members=True` additionally populates `member_logits` -- `[M, B, C]`,
-    ensemble members or MC-Dropout passes (the same shape convention either way, so
-    `build_records` doesn't need to know which). For an ensemble this is free (already
-    on `ModelOutput`); for MC-Dropout it means calling `mc_forward_samples` directly
-    instead of `mc_predict`, which runs the same `T` forward passes either way -- never
-    both -- and reduces them here rather than inside `mc_predict`.
+    `member_logits` (`[M, B, C]` -- ensemble members or MC-Dropout passes, the same
+    shape convention either way) is populated whenever the model can produce it, and is
+    never gated on `infer.save.save_member_logits`: that flag gates *persisting* the
+    stack, while `build_records` needs it in memory either way to write the
+    aleatoric/epistemic decomposition. For MC-Dropout that means going through
+    `mc_forward_samples` rather than `mc_predict`, which costs nothing -- `mc_predict`
+    calls `mc_forward_samples` itself and then discards the stack.
     """
     if use_mc_dropout and hasattr(model, "mc_predict"):
-        if capture_members and hasattr(model, "mc_forward_samples"):
+        if hasattr(model, "mc_forward_samples"):
             logits_stack = model.mc_forward_samples(x, T=mc_passes)  # [T, B, C]
             probs_stack = torch.softmax(logits_stack, dim=-1)
             uncertainty = logits_stack.std(dim=0, unbiased=False)
@@ -149,11 +161,22 @@ def extract_model_outputs(
                 probs=probs_stack.mean(dim=0),
                 uncertainty=_reduce_uncertainty(uncertainty),
                 member_logits=logits_stack,
+                uncertainty_kind=infer_uncertainty_kind(
+                    variance=uncertainty, raw_logits=None, member_logits=logits_stack, mc_dropout=True
+                ),
             )
+        # Fallback for a net exposing `mc_predict` but not the underlying stack.
         result = model.mc_predict(x, T=mc_passes, return_std=True, apply_softmax=True)
         if isinstance(result, tuple) and len(result) == 3:
             logits, probs, uncertainty = result
-            return BatchOutputs(logits=logits, probs=probs, uncertainty=_reduce_uncertainty(uncertainty))
+            return BatchOutputs(
+                logits=logits,
+                probs=probs,
+                uncertainty=_reduce_uncertainty(uncertainty),
+                uncertainty_kind=infer_uncertainty_kind(
+                    variance=uncertainty, raw_logits=None, member_logits=None, mc_dropout=True
+                ),
+            )
 
     output = model(x)
 
@@ -182,6 +205,9 @@ def extract_model_outputs(
         uncertainty=_reduce_uncertainty(uncertainty),
         raw_logits=raw_logits,
         member_logits=member_logits,
+        uncertainty_kind=infer_uncertainty_kind(
+            variance=uncertainty, raw_logits=raw_logits, member_logits=member_logits, mc_dropout=False
+        ),
     )
 
 
@@ -207,6 +233,19 @@ def build_records(
     (Dempster-Shafer, energy, temperature scaling) are unrecoverable without them.
     `raw_logits` (SNGP's pre-mean-field head output) and `uncertainty` follow the
     optional-column pattern -- present only when the net emits them.
+
+    `predictive_entropy`/`confidence_margin`/`dempster_shafer` are always written, and
+    are the only *cross-family comparable* uncertainty columns: they are defined on
+    `probs`/`logits`, which every family emits, whereas `uncertainty` is a different
+    physical quantity per family (see `src/metrics/uncertainty.py`). `uncertainty_kind`
+    records which quantity this run's `uncertainty` is, so frames concatenated across
+    families stay interpretable.
+
+    `total_entropy`/`aleatoric_entropy`/`mutual_information` are written whenever a
+    member stack is present -- deliberately **not** gated on `save_member_logits`,
+    which only controls persisting the raw `[M, C]` stack. Computing the decomposition
+    here is what makes the epistemic/aleatoric split available on ensemble and
+    MC-Dropout runs without paying that column's ~4.8x row-size cost.
 
     `count`/`severity`/`percent_pixels_affected` follow the same optional-column pattern,
     for the artifact-mode axis knobs (`ArtifactImageDataModule`'s `artifact_count` and
@@ -246,6 +285,19 @@ def build_records(
     confs_cpu = confs.detach().cpu().tolist()
     probs_cpu = outputs.probs.detach().cpu().tolist()
     logits_cpu = outputs.logits.detach().cpu().tolist()
+
+    probs_cpu_t = outputs.probs.detach().cpu()
+    logits_cpu_t = outputs.logits.detach().cpu()
+    entropy_cpu = predictive_entropy(probs_cpu_t).tolist()
+    margin_cpu = confidence_margin(probs_cpu_t).tolist()
+    ds_cpu = dempster_shafer(logits_cpu_t).tolist()
+
+    total_cpu = aleatoric_cpu = mi_cpu = None
+    if outputs.member_logits is not None:
+        decomposed = decompose_member_uncertainty(outputs.member_logits.detach().cpu())
+        total_cpu = decomposed.total.tolist()
+        aleatoric_cpu = decomposed.aleatoric.tolist()
+        mi_cpu = decomposed.epistemic.tolist()
 
     raw_logits_cpu = None
     if outputs.raw_logits is not None:
@@ -294,11 +346,20 @@ def build_records(
             "class_logits": json.dumps(logits_cpu[idx]),
             "class_probs": json.dumps(probs_cpu[idx]),
             "stream": stream_name,
+            "predictive_entropy": float(entropy_cpu[idx]),
+            "confidence_margin": float(margin_cpu[idx]),
+            "dempster_shafer": float(ds_cpu[idx]),
         }
+        if total_cpu is not None:
+            record["total_entropy"] = float(total_cpu[idx])
+            record["aleatoric_entropy"] = float(aleatoric_cpu[idx])
+            record["mutual_information"] = float(mi_cpu[idx])
         if raw_logits_cpu is not None:
             record["raw_logits"] = json.dumps(raw_logits_cpu[idx])
         if unc_cpu is not None:
             record["uncertainty"] = float(unc_cpu[idx])
+            if outputs.uncertainty_kind is not None:
+                record["uncertainty_kind"] = outputs.uncertainty_kind
         if member_logits_cpu is not None:
             record["member_logits"] = json.dumps(member_logits_cpu[idx])
         if count is not None:

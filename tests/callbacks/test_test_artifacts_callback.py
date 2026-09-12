@@ -69,3 +69,22 @@ def test_test_artifacts_callback_computes_metrics_and_csv(tmp_path, model_name, 
     assert len(df) == 8, f"expected 8 predictions in CSV for {model_name}, got {len(df)}"
     for col in ("image_id", "target", "prediction", "prediction_prob_score", "class_logits", "class_probs"):
         assert col in df.columns
+
+    # The comparable uncertainty columns are written for every family, matching the
+    # inference schema -- this writer used to drop uncertainty entirely.
+    for col in ("predictive_entropy", "confidence_margin", "dempster_shafer"):
+        assert col in df.columns, f"{col} missing from callback CSV for {model_name}"
+        assert df[col].notna().all()
+
+    if model_name == "deep_ensemble_classifier":
+        # `member_logits` used to be accumulated by this callback and never read.
+        for col in ("total_entropy", "aleatoric_entropy", "mutual_information", "uncertainty"):
+            assert col in df.columns, f"{col} missing for {model_name}"
+        assert (df["mutual_information"] >= 0).all()
+        assert df["total_entropy"].values == pytest.approx(
+            (df["aleatoric_entropy"] + df["mutual_information"]).values, abs=1e-9
+        )
+        assert set(df["uncertainty_kind"]) == {"member_logit_variance"}
+    else:
+        # A plain Baseline has no model-side variance at all.
+        assert "uncertainty" not in df.columns

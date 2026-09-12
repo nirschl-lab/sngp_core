@@ -34,6 +34,13 @@ from torchmetrics.functional.classification import (
     multiclass_recall,
 )
 
+from src.metrics.uncertainty import (
+    confidence_margin,
+    decompose_member_uncertainty,
+    dempster_shafer,
+    infer_uncertainty_kind,
+    predictive_entropy,
+)
 from src.visualization.dempster_shafer_uncertainity_plot import DempsterShaferUncertaintyPlot
 from src.visualization.multi_class_ROC import plot_roc_curve
 from src.visualization.plot_ece import plot_calibration_curve
@@ -68,6 +75,7 @@ class TestArtifactsCallback(Callback):
         self._fold: List[str] = []
         self._variance: List[torch.Tensor] = []
         self._member_logits: List[torch.Tensor] = []
+        self._raw_logits: List[torch.Tensor] = []
         self._inference_times: List[float] = []
         self._batch_start_time: Optional[float] = None
 
@@ -95,6 +103,8 @@ class TestArtifactsCallback(Callback):
             self._variance.append(outputs["variance"].cpu())
         if outputs.get("member_logits") is not None:
             self._member_logits.append(outputs["member_logits"].cpu())
+        if outputs.get("raw_logits") is not None:
+            self._raw_logits.append(outputs["raw_logits"].cpu())
 
     def on_test_epoch_end(self, trainer: Trainer, pl_module: LightningModule) -> None:
         if not self._logits:
@@ -115,7 +125,7 @@ class TestArtifactsCallback(Callback):
 
         if self.log_csv:
             self._write_csv(
-                trainer, logits_all.numpy(), probs_np, targets_np, prediction, prediction_prob_score, true_bin_label
+                trainer, pl_module, logits_all, probs_all, targets_np, prediction, prediction_prob_score, true_bin_label
             )
 
         idx_to_class = self._padded_class_names(trainer, pl_module.num_classes)
@@ -187,9 +197,64 @@ class TestArtifactsCallback(Callback):
             log.info("Class names not found, using numbers for plotting.")
         return idx_to_class
 
+    def _uncertainty_columns(self, pl_module: LightningModule, n_rows: int) -> Dict[str, Any]:
+        """The optional, family-dependent uncertainty columns for this run.
+
+        Empty for a plain Baseline, which has no model-side variance at all -- the
+        always-present `predictive_entropy`/`confidence_margin`/`dempster_shafer`
+        columns are what make that run comparable with the others.
+
+        Batches of `member_logits` concatenate along **dim 1**, not 0: the stack is
+        `[M, B, C]`, so members are the leading axis and the batch axis is the middle
+        one. Concatenating along 0 would silently produce `[M*n_batches, B, C]` and
+        misalign every row.
+        """
+        columns: Dict[str, Any] = {}
+
+        member_logits = torch.cat(self._member_logits, dim=1) if self._member_logits else None
+        raw_logits = torch.cat(self._raw_logits) if self._raw_logits else None
+
+        if member_logits is not None:
+            decomposed = decompose_member_uncertainty(member_logits)
+            columns["total_entropy"] = decomposed.total.tolist()
+            columns["aleatoric_entropy"] = decomposed.aleatoric.tolist()
+            columns["mutual_information"] = decomposed.epistemic.tolist()
+
+        if raw_logits is not None:
+            columns["raw_logits"] = raw_logits.tolist()
+
+        if self._variance:
+            variance = torch.cat(self._variance).reshape(-1)
+            if variance.numel() == n_rows:
+                columns["uncertainty"] = variance.tolist()
+                kind = infer_uncertainty_kind(
+                    variance=variance,
+                    raw_logits=raw_logits,
+                    member_logits=member_logits,
+                    mc_dropout=bool(getattr(pl_module, "use_mc", False)),
+                )
+                if kind is not None:
+                    columns["uncertainty_kind"] = [kind] * n_rows
+            else:
+                log.warning(
+                    f"Skipping the uncertainty column: got {variance.numel()} variance values for "
+                    f"{n_rows} rows. A per-class variance must be reduced to one scalar per sample."
+                )
+
+        return columns
+
     def _write_csv(
-        self, trainer, logits_all, probs_all, targets, prediction, prediction_prob_score, true_bin_label
+        self, trainer, pl_module, logits_all, probs_all, targets, prediction, prediction_prob_score, true_bin_label
     ) -> None:
+        """Write the `trainer.test()` prediction CSV.
+
+        Carries the same uncertainty columns as the inference schema
+        (`src/inference/records.py`), computed through the same
+        `src/metrics/uncertainty.py` helpers -- the two writers keep their own *column
+        names* for the shared quantities (`prediction_prob_score` here vs `confidence`
+        there) since consumers key on those to tell the schemas apart, but there is no
+        reason for them to disagree on which uncertainty signals exist.
+        """
         datamodule = getattr(trainer, "datamodule", None)
         dataset_name = getattr(datamodule, "dataset_name", None) if datamodule is not None else None
         dataset_name = dataset_name.split("/")[-1] if dataset_name else "test_predictions"
@@ -203,7 +268,13 @@ class TestArtifactsCallback(Callback):
             "class_logits": logits_all.tolist(),
             "class_probs": probs_all.tolist(),
             "fold": self._fold,
+            "predictive_entropy": predictive_entropy(probs_all).tolist(),
+            "confidence_margin": confidence_margin(probs_all).tolist(),
+            "dempster_shafer": dempster_shafer(logits_all).tolist(),
         })
+
+        for name, values in self._uncertainty_columns(pl_module, len(df)).items():
+            df[name] = values
         os.makedirs(self.csv_save_path, exist_ok=True)
         csv_path = os.path.join(self.csv_save_path, dataset_name + ".csv")
         df.to_csv(csv_path, index=False)

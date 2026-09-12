@@ -224,6 +224,37 @@ def logits_array(frame: PredictionFrame) -> np.ndarray:
     return _stack_column(frame, "logits", "class_logits")
 
 
+def uncertainty_array(frame: PredictionFrame) -> np.ndarray:
+    """`[N]` model-side uncertainty, one scalar per sample.
+
+    **Not comparable across model families.** This is a GP latent variance for SNGP, a
+    mean per-class logit variance for a Deep Ensemble, and a mean per-class logit
+    standard deviation for MC-Dropout; a plain Baseline has no column at all. Read
+    `uncertainty_kind` (`predictions_csv_schema: 3` and later) to find out which, and
+    prefer `entropy_nats` / the `dempster_shafer` column when comparing *between*
+    families -- see `src/metrics/uncertainty.py`.
+    """
+    if "uncertainty" not in frame.capabilities:
+        raise MissingPredictionData(
+            f"{frame.path} has no 'uncertainty' column. Either the net emits no variance "
+            "(a plain Baseline without MC-Dropout), or the run predates the column."
+        )
+    return frame.df["uncertainty"].to_numpy(dtype=float)
+
+
+def uncertainty_kind(frame: PredictionFrame) -> Optional[str]:
+    """The unit of this frame's `uncertainty` column, or `None` if unrecorded.
+
+    `None` covers both "no uncertainty column" and a pre-schema-3 run that has one but
+    never recorded what it meant -- the caller cannot distinguish those from the value,
+    which is exactly why the column was added.
+    """
+    if "uncertainty_kind" not in frame.df.columns:
+        return None
+    values = frame.df["uncertainty_kind"].dropna().unique().tolist()
+    return str(values[0]) if len(values) == 1 else None
+
+
 def member_logits_array(frame: PredictionFrame) -> np.ndarray:
     """`[N, M, C]` per-member/per-pass logits (ensemble members or MC-Dropout passes --
     same shape convention either way). Only present when the run was written with
@@ -337,6 +368,16 @@ def load_predictions(
 
     if "uncertainty" in df.columns:
         capabilities.add("uncertainty")
+
+    # Written directly by both writers from `predictions_csv_schema: 3` on. Not derived
+    # as a fallback for older runs the way `entropy_nats` is: `dempster_shafer` needs
+    # logits an older run may not have, and the decomposition needs a member stack that
+    # is absent unless `save_member_logits` was on.
+    if {"predictive_entropy", "confidence_margin", "dempster_shafer"} <= set(df.columns):
+        capabilities.add("comparable_uncertainty")
+
+    if {"total_entropy", "aleatoric_entropy", "mutual_information"} <= set(df.columns):
+        capabilities.add("uncertainty_decomposition")
 
     if "stream" in df.columns:
         df["stream_canonical"] = df["stream"].map(canonicalize_stream)

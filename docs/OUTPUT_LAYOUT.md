@@ -207,6 +207,15 @@ place the checkpoint-to-run binding is recorded on disk -- see [§8](#8-known-qu
 nothing else records it -- and is written last, from `_finalize`, so a run that crashed partway
 leaves no `run.json` behind either.
 
+`run.json["predictions_csv_schema"]` is `3` for runs written by current code: schema 2 added
+`class_logits`/`raw_logits`, schema 3 the uncertainty columns (`predictive_entropy`,
+`confidence_margin`, `dempster_shafer`, `uncertainty_kind`, and the
+`total_entropy`/`aleatoric_entropy`/`mutual_information` decomposition). Check it before
+assuming a column exists -- neither set can be derived from an older CSV, so an older run needs
+re-inference. `metrics.json` from the same code additionally carries `<name>_std`/`<name>_sem`
+for `acc`/`nll`/`brier` and an `n_samples` count (`<stream>.`-prefixed in artifact mode, so
+each stream reports its own).
+
 ### Artifact-mode axis sweeps
 
 A count/severity sweep (`data.datamodule.artifact_count`/`artifact_severity`, see
