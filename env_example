@@ -24,6 +24,11 @@ HYDRA_FULL_ERROR=1
 EXPERIMENTS_HOME=<path, e.g. /data1/<you>/experiments>
 PROJECT_NAME=<this project's folder name under EXPERIMENTS_HOME, e.g. sngp-core>
 
+# Optional: the W&B entity (team or username) that hyperparameter sweeps are created
+# under (scripts/hpo/sweep.py). Unset = your W&B default entity. The W&B *project* is
+# PROJECT_NAME above, the same one every experiment config logs to.
+# WANDB_ENTITY=<team-or-username>
+
 # Artifact simulation (only needed for `data=artifact_image_classifier`).
 # BANK is the asset folder holding alpha/ and paired/; configs/paths/default.yaml exposes
 # it as ${paths.artifact_bank_dir}. CACHE is read by histo-artifact-sim itself -- it is

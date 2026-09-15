@@ -179,3 +179,5 @@ data/artifact/
 # allow dvc
 !data/**/*.dvc
 !*.dvc
+# W&B sweep *definitions* are source, not run output -- the wandb/ rule above is for run dirs.
+!configs/hparams_search/wandb/

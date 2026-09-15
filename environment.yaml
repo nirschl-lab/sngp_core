@@ -40,6 +40,5 @@ dependencies:
 
   - pip>=23
   - pip:
-      - hydra-optuna-sweeper
       - hydra-colorlog
       - rootutils

@@ -1,0 +1,49 @@
+# W&B sweep definition for the Baseline family -- the SEARCH SPACE half of an HPO run.
+# The RUN PRESET half is configs/hparams_search/baseline.yaml, injected via `command:`
+# below.
+#
+# Dataset-agnostic on purpose: scripts/hpo/sweep.py loads this file, inserts
+# `experiment=<family>_<dataset>` right before ${args_no_hyphens}, sets `name`, and calls
+# wandb.sweep(). Do not `wandb sweep` this file by hand (no experiment -> no ${name}).
+# tests/test_sweeps.py asserts every `parameters` key resolves in the composed Hydra
+# config, metric.name == the preset's optimized_metric, and goal == minimize.
+#
+# NOTE: this is a plain W&B YAML, not a Hydra config -- `${env}` / `${program}` /
+# `${args_no_hyphens}` are W&B command macros. Load it with yaml.safe_load, never
+# OmegaConf (which would try to resolve them as interpolations).
+program: src/train.py
+method: bayes
+run_cap: 48 # total trials; agents beyond this exit immediately
+metric:
+  name: val/nll_cal_best # running min, so W&B's summary (= last logged) equals the best
+  goal: minimize
+parameters:
+  model.optimizer.lr:
+    distribution: log_uniform_values
+    min: 1.0e-5
+    max: 1.0e-2
+  model.optimizer.weight_decay:
+    distribution: log_uniform_values
+    min: 1.0e-6
+    max: 1.0e-2
+  data.datamodule.batch_size:
+    values: [64, 128, 256]
+# Hyperband counts an "iteration" as one logged value of metric.name -- the step value
+# is not used (W&B docs). LitModuleBase logs it exactly once per epoch and Lightning never
+# forwards sanity-check epochs to the logger, so min_iter is in EPOCHS. Brackets at 10
+# and 30 epochs (eta=3); trainer.min_epochs=10 in the preset means Lightning's own
+# EarlyStopping cannot stop earlier either. Delete this block to rely on EarlyStopping
+# alone.
+early_terminate:
+  type: hyperband
+  min_iter: 10
+  eta: 3
+command:
+  - ${env}
+  - uv
+  - run
+  - --no-sync # concurrent `uv run`s must not race to sync .venv; sweep.py syncs once up front
+  - python
+  - ${program}
+  - hparams_search=baseline
+  - ${args_no_hyphens} # -> model.optimizer.lr=0.00123 ... (dotted keys verbatim)
