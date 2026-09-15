@@ -160,25 +160,20 @@ def main(cfg: DictConfig) -> Optional[float]:
         raise ValueError(
             f"optimized_metric={optimized_metric!r} looks like a test-time metric. "
             "Hyperparameter search must select on a validation metric (e.g. "
-            "'val/auprc_best'), never a 'test/*' metric -- that would be tuning "
+            "'val/nll_cal_best'), never a 'test/*' metric -- that would be tuning "
             "against the test set."
         )
 
-    # train the model
-    if cfg.get("sweep_fail_safe"):
-        # Hyperparameter-search safety net: one OOM or divergent trial should not abort
-        # the whole Optuna study. Only active when a hparams_search config opts in
-        # (never for a normal single run) -- task_wrapper's own `raise ex` still
-        # applies for everything else, this only guards the top-level sweep entrypoint.
-        try:
-            metric_dict, _ = train(cfg)
-        except Exception:
-            log.exception(f"Sweep trial failed; returning floor value for {optimized_metric!r}.")
-            return 0.0
-    else:
-        metric_dict, _ = train(cfg)
+    # train the model. A hyperparameter-search trial is an ordinary single run launched by
+    # a W&B agent (see configs/hparams_search/); the W&B controller reads the objective from
+    # the *logged* metric, and a crashed trial is simply a crashed run that the Bayesian
+    # search ignores. There is deliberately no fail-safe that swallows exceptions and
+    # returns a floor value: under a minimised objective such a floor would rank as the
+    # best trial. task_wrapper still closes the loggers and re-raises.
+    metric_dict, _ = train(cfg)
 
-    # safely retrieve metric value for hydra-based hyperparameter optimization
+    # Return the objective value too (informational; also lets a plain `-m` multirun read
+    # it). A run that never logged it exits non-zero, which is correct: it has no value.
     metric_value = get_metric_value(
         metric_dict=metric_dict, metric_name=optimized_metric
     )

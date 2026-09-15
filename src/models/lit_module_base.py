@@ -4,7 +4,7 @@ import torch
 import torch.nn.functional as F
 from lightning import LightningModule
 from loguru import logger
-from torchmetrics import MaxMetric, MeanMetric, MetricCollection
+from torchmetrics import MaxMetric, MeanMetric, MetricCollection, MinMetric
 from torchmetrics.classification import (
     Accuracy,
     MulticlassAveragePrecision,
@@ -15,6 +15,7 @@ from torchmetrics.classification import (
 )
 
 from src.checkpointing.spec import FORMAT_VERSION, build_meta
+from src.metrics.posthoc_calibration import CalibratedNLL
 from src.models.components.losses import ClassBalancedFocalLoss
 from src.models.outputs import ModelOutput
 from src.models.registry import build_net
@@ -24,12 +25,20 @@ class LitModuleBase(LightningModule):
     """Shared train/val loop for classification model families.
 
     Deliberately lean: this class only trains on the train set and validates on the
-    val set (loss/acc/precision/recall/F1, used for checkpointing and early stopping).
-    Rich test-time analysis (per-class metrics, calibration, uncertainty, CSV/figure
-    export) lives entirely in
+    val set. Rich test-time analysis (per-class metrics, calibration, uncertainty,
+    CSV/figure export) lives entirely in
     `src.callbacks.test_artifacts_callback.TestArtifactsCallback` -- `test_step` here
     only produces raw batch outputs for that callback to accumulate via
     `on_test_batch_end`.
+
+    Selection metric: `val/nll_cal` -- validation NLL *after* fitting the family's single
+    post-hoc calibration knob on that epoch's validation outputs (temperature for
+    Baseline/Deep Ensemble, the mean-field factor for SNGP; see
+    `src/metrics/posthoc_calibration.py`). Its running minimum `val/nll_cal_best` is the
+    hyperparameter-search objective, and `val/nll_cal` is what checkpointing and early
+    stopping monitor (configs/callbacks/default.yaml). Rationale in docs/HPO_GUIDE.md: it
+    is the quantity a post-hoc-calibrated final model actually reports, and it gives every
+    family the same one-scalar freedom, so the comparison is fair.
     """
 
     def __init__(
@@ -45,6 +54,7 @@ class LitModuleBase(LightningModule):
         cb_beta: float = 0.999,
         focal_gamma: float = 2.0,
         label_smoothing: float = 0.0,
+        calibration_knob: str = "auto",
         **kwargs,
     ) -> None:
         super().__init__()
@@ -92,27 +102,40 @@ class LitModuleBase(LightningModule):
         self.train_loss = MeanMetric()
         self.val_loss = MeanMetric()
 
-        # Selection-metric family: probability-based, updated alongside val_metrics but
-        # kept out of that MetricCollection deliberately -- val_metrics is updated with
-        # hard `preds`, and mixing metric input types under one `.update()` call would
-        # silently change what val/f1 measures. These never feed early stopping or
-        # checkpointing during normal training; they exist so hparams_search sweeps can
-        # select on macro-AUPRC (threshold-free, imbalance-robust) while NLL/ECE stay
-        # visible as read-only calibration diagnostics -- never the selection axis.
+        # Probability-based validation metrics, updated alongside val_metrics but kept
+        # out of that MetricCollection deliberately -- val_metrics is updated with hard
+        # `preds`, and mixing metric input types under one `.update()` call would
+        # silently change what val/f1 measures.
+        #
+        # `val/nll_cal` (and its running min `val/nll_cal_best`) is the selection metric:
+        # NLL after fitting the family's post-hoc calibration knob on this epoch's val
+        # outputs. `val/nll` / `val/nll_best` are the raw (uncalibrated) twins, kept as
+        # diagnostics and as the alternative objective. `val/auprc*` and `val/ece` are
+        # read-only diagnostics. The `*_best` running extrema exist because `train()`'s
+        # metric_dict is a last-epoch snapshot and W&B's sweep summary is the last logged
+        # value -- a running best makes "last" == "best".
         self.val_auprc = MulticlassAveragePrecision(num_classes=self.num_classes, average="macro")
         self.val_ece = MulticlassCalibrationError(num_classes=self.num_classes, n_bins=10, norm="l1")
         self.val_nll = MeanMetric()
         self.val_auprc_best = MaxMetric()
+        self.val_nll_best = MinMetric()
+        self.val_nll_cal = CalibratedNLL(knob=calibration_knob)
+        self.val_nll_cal_best = MinMetric()
 
     def _init_criterion(self):
         """Initialize the loss criterion.
 
-        `class_freq` (per-class training-split sample counts) is the standard,
-        data-driven path: builds a `ClassBalancedFocalLoss` so every model family
-        gets identical imbalance handling for a given dataset. `class_weights` (an
-        explicit weight vector, no `class_freq`) is a manual-override escape hatch
-        that falls back to plain weighted `CrossEntropyLoss`. Neither given means
-        unweighted `CrossEntropyLoss`.
+        Protocol default is plain, unweighted `CrossEntropyLoss` -- a proper scoring rule,
+        identical for every family and dataset, so the calibration comparison between
+        families is not confounded by a loss that reshapes calibration (focal /
+        class-balanced reweighting does; Mukhoti et al. 2020). Imbalance is handled at
+        reporting time (macro metrics), not in the loss -- see docs/HPO_GUIDE.md.
+
+        Two escape hatches remain, off by default: `class_freq` (per-class training-split
+        counts) builds a `ClassBalancedFocalLoss(cb_beta, focal_gamma)`; `class_weights`
+        (an explicit weight vector, no `class_freq`) gives weighted `CrossEntropyLoss`.
+        If either is used it must be identical across families for that dataset
+        (tests/test_configs.py enforces this).
         """
         if self.class_freq:
             assert len(self.class_freq) == self.num_classes, "Length of class_freq must match num_classes"
@@ -160,28 +183,34 @@ class LitModuleBase(LightningModule):
         self.val_auprc.reset()
         self.val_ece.reset()
         self.val_nll.reset()
-        # val_auprc_best tracks a running max ACROSS epochs by design -- without this
-        # reset, a sanity-check AUPRC computed on a barely-initialized model would
-        # become a spurious early high-water mark that real training could never beat.
+        self.val_nll_cal.reset()
+        # The `*_best` metrics track running extrema ACROSS epochs by design -- without
+        # this reset, a sanity-check value computed on a barely-initialized model would
+        # become a spurious early high/low-water mark that real training could never beat.
         self.val_auprc_best.reset()
+        self.val_nll_best.reset()
+        self.val_nll_cal_best.reset()
 
     def model_step(
         self, batch: Tuple[torch.Tensor, torch.Tensor]
-    ) -> Tuple[Any, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, Any]:
+    ) -> Tuple[Any, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, Any, ModelOutput]:
         """Perform a single train/val model step on a batch of data -- plain
         cross-entropy classification, shared by every family unless a subclass
         genuinely needs a different training-time loss.
 
         :param batch: A batch of data (img_ids, images, targets, fold).
-        :return: (img_ids, loss, logits, probs, preds, targets, fold).
+        :return: (img_ids, loss, logits, probs, preds, targets, fold, output) -- `output`
+            is the full `ModelOutput`, carried so validation can hand SNGP's
+            `raw_logits`/`variance` to the calibrated-NLL metric.
         """
         img_ids, x, targets, fold = batch
-        logits = self.forward(x).logits
+        output = self.forward(x)
+        logits = output.logits
         probs = torch.softmax(logits, dim=1)
         loss = self.criterion(logits, targets)
         preds = torch.argmax(probs, dim=1)
 
-        return img_ids, loss, logits, probs, preds, targets, fold
+        return img_ids, loss, logits, probs, preds, targets, fold, output
 
     def training_step(
         self, batch: Tuple[torch.Tensor, torch.Tensor], batch_idx: int
@@ -193,7 +222,7 @@ class LitModuleBase(LightningModule):
         :param batch_idx: The index of the current batch.
         :return: A tensor of losses between model predictions and targets.
         """
-        img_ids, loss, logits, probs, preds, targets, _ = self.model_step(batch)
+        img_ids, loss, logits, probs, preds, targets, _, _ = self.model_step(batch)
 
         # update and log metrics
         self.train_loss(loss)
@@ -217,35 +246,39 @@ class LitModuleBase(LightningModule):
             logger.warning("Skipping validation step for batch 0 in epoch 0")
             return
 
-        img_ids, loss, logits, probs, preds, targets, fold = self.model_step(batch)
+        img_ids, loss, logits, probs, preds, targets, fold, output = self.model_step(batch)
 
         # update and log metrics. val_metrics (acc/precision/recall/f1) streams via
         # log_dict as before -- Lightning computes/resets it automatically at epoch
-        # end. val_auprc/val_ece/val_nll are updated here too but computed explicitly
-        # in on_validation_epoch_end instead (see there for why).
+        # end. val_auprc/val_ece/val_nll/val_nll_cal are updated here too but computed
+        # explicitly in on_validation_epoch_end instead (see there for why).
         self.val_loss(loss)
         self.val_metrics.update(preds, targets)
         self.val_auprc.update(probs, targets)
         self.val_ece.update(probs, targets)
         self.val_nll(F.cross_entropy(logits, targets))
+        # `raw_logits`/`variance` are only ever both present for SNGP in eval mode; the
+        # metric picks the mean-field fit then and a temperature fit otherwise.
+        self.val_nll_cal.update(logits, targets, raw_logits=output.raw_logits, variance=output.variance)
         self.log("val/loss", self.val_loss, on_step=False, on_epoch=True, prog_bar=True)
         self.log_dict(self.val_metrics, on_step=False, on_epoch=True, prog_bar=True)
 
     def on_validation_epoch_end(self) -> None:
-        """Compute and log the probability-based validation metrics that back
-        hparams-search selection (`val/auprc`, `val/auprc_best`) and read-only
-        calibration diagnostics (`val/nll`, `val/ece`).
+        """Compute and log the probability-based validation metrics: the selection
+        metric `val/nll_cal` and its running min `val/nll_cal_best` (the HPO objective),
+        their raw twins `val/nll` / `val/nll_best`, the fitted calibration knob
+        (`val/temperature_fit` or `val/mean_field_factor_fit`), and the read-only
+        diagnostics `val/auprc`, `val/auprc_best`, `val/ece`.
 
         Computed explicitly (rather than logged as streaming Metric objects the way
-        `val_metrics` is) because `val_auprc_best` needs the already-*computed* epoch
+        `val_metrics` is) because the `*_best` metrics need the already-*computed* epoch
         value to update against -- logging the Metric object directly and reading it
         back in the same hook would race with Lightning's own compute/reset cycle.
 
-        `val/nll` is deliberately a plain (unweighted) cross-entropy, not `val/loss`
-        (the class-balanced focal loss) -- NLL is only a proper scoring rule when it
-        isn't reweighted. Neither `val/nll` nor `val/ece` ever feeds selection, early
-        stopping, or checkpointing -- calibration/uncertainty are the evaluation axis
-        for this project, never the training-selection axis.
+        `val/nll` is deliberately a plain (unweighted) cross-entropy, not `val/loss`:
+        under the protocol's plain-CE criterion the two coincide, but NLL is only a proper
+        scoring rule when it isn't reweighted, so it must not silently follow the
+        criterion if an escape-hatch loss is ever enabled.
         """
         if self.val_auprc.update_count == 0:
             # No validation batches were actually processed this epoch -- e.g.
@@ -260,16 +293,24 @@ class LitModuleBase(LightningModule):
         auprc = self.val_auprc.compute()
         ece = self.val_ece.compute()
         nll = self.val_nll.compute()
+        nll_cal, knob_value, knob_name = self.val_nll_cal.compute()
         self.val_auprc_best.update(auprc)
+        self.val_nll_best.update(nll)
+        self.val_nll_cal_best.update(nll_cal)
 
-        self.log("val/auprc", auprc, prog_bar=True)
-        self.log("val/auprc_best", self.val_auprc_best.compute(), prog_bar=True)
-        self.log("val/nll", nll, prog_bar=False)
+        self.log("val/nll", nll, prog_bar=True)
+        self.log("val/nll_best", self.val_nll_best.compute(), prog_bar=False)
+        self.log("val/nll_cal", nll_cal, prog_bar=True)
+        self.log("val/nll_cal_best", self.val_nll_cal_best.compute(), prog_bar=True)
+        self.log(f"val/{knob_name}_fit", knob_value, prog_bar=False)
+        self.log("val/auprc", auprc, prog_bar=False)
+        self.log("val/auprc_best", self.val_auprc_best.compute(), prog_bar=False)
         self.log("val/ece", ece, prog_bar=False)
 
         self.val_auprc.reset()
         self.val_ece.reset()
         self.val_nll.reset()
+        self.val_nll_cal.reset()
 
     def test_step(self, batch: Tuple[torch.Tensor, torch.Tensor], batch_idx: int) -> Dict[str, Any]:
         """Minimal test step: forward pass plus raw outputs for
