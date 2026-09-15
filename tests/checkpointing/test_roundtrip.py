@@ -56,6 +56,9 @@ def _build_and_train_one_step(tmp_path, model_name: str, overrides):
     [
         ("baseline_classifier", ["model.net.pretrained=false"]),
         ("sngp_classifier", ["model.net.pretrained=false"]),
+        # Bounded spectral norm (Liu et al. eq. 15): the bound must persist in the spec
+        # and rebuild the *bounded* hook, not the stock one.
+        ("sngp_classifier", ["model.net.pretrained=false", "++model.net.spectral_norm_bound=2.0"]),
         ("deep_ensemble_classifier", ["model.net.base_model_spec.pretrained=false"]),
     ],
 )
@@ -64,10 +67,14 @@ def test_checkpoint_roundtrip(tmp_path, model_name, overrides):
 
     meta = read_meta(ckpt_path)
     assert meta.format_version == 2
+    # Every spec key -- including additive ones like `temperature` / `spectral_norm_bound`
+    # -- must survive the write; `load_net` rebuilds from exactly this dict.
+    assert meta.net_spec == trained.net.spec
 
     x = torch.randn(2, 3, 224, 224)
 
     net = load_net(ckpt_path, device="cpu")
+    assert net.spec == trained.net.spec
     net.eval()
     with torch.no_grad():
         net_logits = net(x).logits

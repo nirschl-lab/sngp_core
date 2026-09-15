@@ -22,6 +22,16 @@ class BaselineClassifier(nn.Module):
     Classification model with selectable ResNet/ViT backbone.
     Grabs penultimate features, then applies Dropout + Linear.
     Includes helpers for Monte Carlo Dropout inference.
+
+    `temperature` is this family's single post-hoc calibration knob (Guo et al. 2017):
+    `logits / T`. It is never trained or swept -- training always runs at the config
+    default `1.0` -- and is fit afterwards on validation NLL by
+    `scripts/checkpoints/calibrate_checkpoint.py`, which writes the fitted value into the
+    checkpoint's `net_spec` so inference picks it up without a config edit. It is the
+    counterpart of SNGP's `mean_field_factor` (the paper's kernel amplitude sigma), so the
+    two families are compared with the same one-scalar post-hoc freedom. Applied
+    unconditionally (train, eval and MC-Dropout passes alike): `/ 1.0` is bit-exact, and a
+    single code path means `mc_forward_samples` inherits the fitted temperature too.
     """
 
     def __init__(
@@ -30,12 +40,16 @@ class BaselineClassifier(nn.Module):
         num_classes: int = 2,
         dropout_p: float = 0.5,
         pretrained: bool = True,
+        temperature: float = 1.0,
     ):
         super().__init__()
+        if temperature <= 0:
+            raise ValueError(f"temperature must be > 0, got {temperature}")
         self.backbone_name = arch
         self.num_classes = num_classes
         self.dropout_p = dropout_p
         self.pretrained = pretrained
+        self.temperature = float(temperature)
 
         self.feature_extractor, feat_dim = build_backbone(arch, pretrained)
 
@@ -53,6 +67,7 @@ class BaselineClassifier(nn.Module):
             "num_classes": self.num_classes,
             "dropout_p": self.dropout_p,
             "pretrained": self.pretrained,
+            "temperature": self.temperature,
         }
 
     # -------------------------
@@ -62,7 +77,9 @@ class BaselineClassifier(nn.Module):
         feats = self.feature_extractor(x)
         if isinstance(feats, torch.Tensor) and feats.dim() == 4:
             feats = feats.flatten(1)  # safety for rare shapes
-        logits = self.classifier(feats)
+        # Post-hoc temperature; a plain attribute (not a buffer) so the state dict of
+        # every existing checkpoint still loads with strict=True.
+        logits = self.classifier(feats) / self.temperature
         return ModelOutput(logits=logits, features=feats if return_features else None)
 
     # -------------------------

@@ -112,10 +112,61 @@ class TestSNGPClassifier:
             normalize_input=False,
             likelihood="binary_logistic",
             output_bias=True,
+            spectral_norm_bound=2.0,
         )
         rebuilt = build_net(model.spec)
         assert isinstance(rebuilt, SNGPClassifier)
         assert rebuilt.spec == model.spec
+        assert rebuilt.spec["spectral_norm_bound"] == 2.0
+
+    def test_ctor_defaults_are_the_paper_constants(self):
+        """A bare SNGPClassifier is the Liu et al. 2022 Table 9 model -- except the
+        spectral-norm bound, whose ctor default stays None (stock hard normalization) so
+        checkpoints written before the key existed rebuild identically."""
+        model = SNGPClassifier(num_classes=4, rff_dim=64)
+        assert model.rff_dim == 64  # explicit here; the default is 1024
+        assert SNGPClassifier.__init__.__defaults__ is not None
+        assert model.length_scale == pytest.approx(1.4142)
+        assert model.cov_momentum == -1.0
+        assert model.random_feature_type == "orf"
+        assert model.n_power_iterations_sn == 1
+        assert model.spectral_norm_bound is None
+
+    def test_spec_without_bound_key_rebuilds_with_stock_normalization(self):
+        """Back-compat: a pre-bound checkpoint's spec lacks `spectral_norm_bound`."""
+        from torch.nn.utils.spectral_norm import SpectralNorm
+
+        from src.models.registry import build_net
+
+        spec = SNGPClassifier(num_classes=4, arch="resnet18", pretrained=False, rff_dim=64).spec
+        del spec["spectral_norm_bound"]
+        rebuilt = build_net(spec)
+        assert rebuilt.spectral_norm_bound is None
+        hooks = [h for m in rebuilt.backbone.modules() for h in m._forward_pre_hooks.values()]
+        assert hooks and all(type(h) is SpectralNorm for h in hooks)
+
+    def test_bounded_classifier_layers_respect_bound(self):
+        from src.models.components.spectral_norm import BoundedSpectralNorm
+
+        torch.manual_seed(0)
+        bound = 1.0
+        model = SNGPClassifier(num_classes=4, arch="resnet18", pretrained=False, rff_dim=64, spectral_norm_bound=bound)
+        wrapped = [m for m in model.backbone.modules() if hasattr(m, "weight_u")]
+        assert wrapped
+        for m in wrapped:
+            hook = next(iter(m._forward_pre_hooks.values()))
+            assert isinstance(hook, BoundedSpectralNorm) and hook.bound == bound
+            sigma = torch.linalg.matrix_norm(m.weight.reshape(m.weight.shape[0], -1), ord=2).item()
+            assert sigma <= bound + 0.05, f"{m}: sigma={sigma}"
+        # An integer override (as a W&B sweep may emit) is stored as a float in the spec.
+        assert isinstance(SNGPClassifier(num_classes=4, rff_dim=64, spectral_norm_bound=2).spec["spectral_norm_bound"], float)
+
+    def test_bounded_model_forward_is_finite(self):
+        model = SNGPClassifier(num_classes=4, arch="resnet18", pretrained=False, rff_dim=64, spectral_norm_bound=2.0)
+        model.eval()
+        out = model(torch.randn(2, 3, 224, 224))
+        assert torch.isfinite(out.logits).all()
+        assert torch.isfinite(out.variance).all()
 
     def test_spec_is_json_serializable(self):
         import json

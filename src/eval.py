@@ -65,17 +65,24 @@ def _assert_model_cfg_matches_checkpoint(cfg: DictConfig, model: LightningModule
     # `pretrained` only affects how weights were *initialized*; the state_dict overwrites
     # them either way, so a disagreement there is not a real mismatch.
     ignored = {"pretrained"}
+    # Only keys the checkpoint actually recorded can disagree. A key present in the
+    # config spec but absent from the checkpoint's is an *additive* spec key introduced
+    # after the checkpoint was written (e.g. `temperature`, `spectral_norm_bound`); the
+    # ctor default applies on both sides, so it is not a mismatch.
     mismatched = {
-        key: (cfg_spec.get(key), ckpt_spec.get(key))
-        for key in set(ckpt_spec) | set(cfg_spec)
-        if key not in ignored and cfg_spec.get(key) != ckpt_spec.get(key)
+        key: (cfg_spec.get(key), ckpt_spec[key])
+        for key in ckpt_spec
+        if key not in ignored and cfg_spec.get(key) != ckpt_spec[key]
     }
     if mismatched:
         detail = "\n".join(f"  {key}: config={cfg!r}  checkpoint={ckpt!r}" for key, (cfg, ckpt) in sorted(mismatched.items()))
         raise ValueError(
             f"`cfg.model` does not match the architecture stored in {cfg.ckpt_path}:\n{detail}\n"
             "Re-run with the same `experiment=` override the checkpoint was trained with, "
-            "or use `src/inference/infer.py`, which reads the architecture from the checkpoint."
+            "or use `src/inference/infer.py`, which reads the architecture from the checkpoint. "
+            "If the checkpoint was post-hoc calibrated (`sngp_core.calibration` is set), pass the "
+            "fitted knob explicitly, e.g. `model.net.temperature=<value>` or "
+            "`model.net.mean_field_factor=<value>`."
         )
 
 # OpenCV performance tweaks for albumentations

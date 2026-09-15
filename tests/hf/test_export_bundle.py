@@ -34,6 +34,9 @@ def _assert_no_src_imports(module_path):
     [
         ("baseline_classifier", ["model.net.pretrained=false"], "modeling_baseline_classifier.py"),
         ("sngp_classifier", ["model.net.pretrained=false"], "modeling_sngp_classifier.py"),
+        # Bounded spectral norm (Liu et al. eq. 15) -- proves the vendored spectral_norm.py
+        # still resolves every name it needs inside the self-contained bundle.
+        ("sngp_classifier", ["model.net.pretrained=false", "++model.net.spectral_norm_bound=2.0"], "modeling_sngp_classifier.py"),
     ],
 )
 def test_export_bundle_is_self_contained_and_matches_original(tmp_path, model_name, overrides, modeling_file):

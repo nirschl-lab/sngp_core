@@ -31,6 +31,11 @@ class DeepEnsemble(nn.Module):
             build each ensemble member via `src.models.registry.build_net`.
         num_estimators: Number of ensemble members
         task: Task type ("classification" or "regression")
+        temperature: Ensemble-level post-hoc calibration knob applied to the pooled
+            (mean) logits, `logits / T`. Never trained or swept; fit on validation NLL
+            by `scripts/checkpoints/calibrate_checkpoint.py`, which writes it into the
+            checkpoint's `net_spec`. Members keep their own (default 1.0) temperature and
+            `member_logits`/`variance` are reported unscaled, in raw member-logit units.
     """
 
     def __init__(
@@ -38,13 +43,17 @@ class DeepEnsemble(nn.Module):
         base_model_spec: dict,
         num_estimators: int = 5,
         task: str = "classification",
+        temperature: float = 1.0,
     ):
         super().__init__()
+        if temperature <= 0:
+            raise ValueError(f"temperature must be > 0, got {temperature}")
 
         self.base_model_spec = dict(base_model_spec)
         self.num_classes = self.base_model_spec.get('num_classes', None)
         self.num_estimators = num_estimators
         self.task = task
+        self.temperature = float(temperature)
         self.active_member_idx = None  # Used during training
 
         # Create ensemble members
@@ -65,6 +74,7 @@ class DeepEnsemble(nn.Module):
             "base_model_spec": self.base_model_spec,
             "num_estimators": self.num_estimators,
             "task": self.task,
+            "temperature": self.temperature,
         }
     
     def _reset_parameters(self, model: nn.Module, seed: int):
@@ -100,12 +110,16 @@ class DeepEnsemble(nn.Module):
                     "active_member_idx must be set during training. "
                     "Call set_active_member(idx) before forward pass."
                 )
-            return ModelOutput(logits=self.ensemble_members[self.active_member_idx](x).logits)
+            return ModelOutput(logits=self.ensemble_members[self.active_member_idx](x).logits / self.temperature)
         else:
             # During inference, average predictions from all members
             mean_logits, individual_logits = self.ensemble_predict(x, return_individual=True)
             variance = individual_logits.var(dim=0).mean(dim=-1, keepdim=True)
-            return ModelOutput(logits=mean_logits, member_logits=individual_logits, variance=variance)
+            # Temperature applies to the pooled predictive only; member_logits/variance
+            # stay in raw member-logit units (see the class docstring).
+            return ModelOutput(
+                logits=mean_logits / self.temperature, member_logits=individual_logits, variance=variance
+            )
 
     def ensemble_predict(self, x: torch.Tensor, return_individual: bool = False) -> torch.Tensor:
         """

@@ -10,12 +10,13 @@ from src.models.components.spectral_norm import apply_spectral_norm, assert_spec
 from src.models.outputs import ModelOutput
 from src.models.registry import register_net
 
-# Mean-field multiplicative factor. The reference implementation treats this as a
-# *tunable* knob rather than a constant -- 1.0 in the ImageNet SNGP baseline, 20.0 in
-# the CIFAR one -- so this default matches ImageNet (the closer setting to 224px
-# resnets) and is meant to be tuned post-hoc. pi/8 is the textbook probit constant,
-# but at realistic dataset sizes it makes the correction nearly inert (~2% logit
-# shrink); see scripts/checkpoints/tune_sngp_mean_field.py.
+# Mean-field multiplicative factor. This is the paper's "kernel amplitude" sigma (Liu et
+# al. 2022, Table 10): the reference implementation collapses it into the single tunable
+# `gp_mean_field_factor` -- 1.0 in the ImageNet SNGP baseline, 20.0 in the CIFAR one --
+# so this default matches ImageNet (the closer setting to 224px resnets) and is meant to
+# be fit post-hoc on validation NLL, exactly as the paper recommends for sigma. pi/8 is
+# the textbook probit constant, but at realistic dataset sizes it makes the correction
+# nearly inert (~2% logit shrink); see scripts/checkpoints/calibrate_checkpoint.py.
 DEFAULT_MEAN_FIELD_FACTOR = 1.0
 PROBIT_MEAN_FIELD_FACTOR = math.pi / 8
 
@@ -293,6 +294,21 @@ class RandomFeatureGaussianProcess(nn.Module):
 class SNGPClassifier(nn.Module):
     """
     ResNet backbone (torchvision) with spectral normalization + RFF-GP head.
+
+    Constructor defaults are the Liu et al. 2022 (Table 9) / reference-implementation
+    constants, so a bare `SNGPClassifier(num_classes=...)` is the paper's model:
+    `rff_dim=1024`, `length_scale=1.4142` (sqrt(2): edward2's `gp_kernel_scale=2.0` scales
+    the GP input by 1/sqrt(2); here `W` is divided by `length_scale`, so sqrt(2) is the
+    same kernel width), exact per-epoch precision (`cov_momentum=-1`), orthogonal random
+    features, one power iteration. `configs/model/sngp_classifier.yaml` restates them and
+    tests/test_configs.py keeps the two in sync.
+
+    The one deliberate exception is `spectral_norm_bound`: the paper's `c` (eq. 15), the
+    only SNGP-specific knob that is *swept* (it changes the trained function, unlike
+    `mean_field_factor`/`ridge_penalty`, which are inference-only). Its ctor default is
+    `None` -- stock hard normalization, sigma == 1 -- so that checkpoints written before
+    the bound existed (whose `net_spec` lacks the key) rebuild bit-identically. The model
+    config sets the paper/reference default of 6.0 explicitly.
     """
 
     def __init__(
@@ -301,7 +317,7 @@ class SNGPClassifier(nn.Module):
         arch: str = "resnet18",
         pretrained: bool = False,
         rff_dim: int = 1024,
-        length_scale: float = 1.0,
+        length_scale: float = 1.4142,
         ridge_penalty: float = 1e-3,
         cov_momentum: float = -1.0,
         mean_field: bool = True,
@@ -311,6 +327,7 @@ class SNGPClassifier(nn.Module):
         likelihood: str = "gaussian",
         output_bias: bool = False,
         random_feature_type: str = "orf",
+        spectral_norm_bound: Optional[float] = None,
     ):
         super().__init__()
         self.num_classes = num_classes
@@ -327,6 +344,7 @@ class SNGPClassifier(nn.Module):
         self.likelihood = likelihood
         self.output_bias = output_bias
         self.random_feature_type = random_feature_type
+        self.spectral_norm_bound = None if spectral_norm_bound is None else float(spectral_norm_bound)
 
         if arch not in BACKBONES:
             raise ValueError(f"Unsupported backbone: {arch}. Supported: {sorted(BACKBONES)}")
@@ -336,8 +354,11 @@ class SNGPClassifier(nn.Module):
         # features for both resnet and ViT archs.
         self.backbone, feat_dim = build_backbone(arch, pretrained)
 
-        # Apply spectral norm to all convs/linears in the backbone
-        apply_spectral_norm(self.backbone, n_power_iterations=n_power_iterations_sn)
+        # Apply spectral norm to all convs/linears in the backbone. `bound=None` is the
+        # stock sigma == 1 normalization; a float is the paper's eq. 15 upper bound c.
+        apply_spectral_norm(
+            self.backbone, n_power_iterations=n_power_iterations_sn, bound=self.spectral_norm_bound
+        )
 
         # --- RFF-GP head ---
         self.gp_head = RandomFeatureGaussianProcess(
@@ -378,6 +399,7 @@ class SNGPClassifier(nn.Module):
             "likelihood": self.likelihood,
             "output_bias": self.output_bias,
             "random_feature_type": self.random_feature_type,
+            "spectral_norm_bound": self.spectral_norm_bound,
         }
 
     def forward(self, x: torch.Tensor, update_precision: bool = True) -> ModelOutput:
