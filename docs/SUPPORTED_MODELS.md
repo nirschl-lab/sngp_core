@@ -10,9 +10,9 @@ actually been published, see the root [README.md](../README.md#-available-models
 
 | Family | Config | LightningModule | Notes |
 |---|---|---|---|
-| **Baseline** | `configs/model/baseline_classifier.yaml` | `BaselineLitModule` | Deterministic classifier. Optional MC-Dropout at inference (`use_mc=true`, `mc_passes=N`) for a cheap uncertainty estimate without retraining. |
-| **SNGP** | `configs/model/sngp_classifier.yaml` | `SNGPLitModule` | Spectral-normalized backbone + a random-feature Gaussian Process head. Produces a predictive `variance` alongside `logits`. **resnet backbones only** — see [ViT compatibility](#sngp--vit-compatibility) below. |
-| **Deep Ensemble** | `configs/model/deep_ensemble_classifier.yaml` | `DeepEnsembleLitModule` | Wraps `num_estimators` independently-initialized baseline members (any registered net as the member architecture). Uncertainty from member disagreement (`variance`, `entropy`, or `mutual_info`). See [docs/models/DEEP_ENSEMBLES_GUIDE.md](models/DEEP_ENSEMBLES_GUIDE.md) for training-schedule and tuning details. |
+| **Baseline** | `configs/model/baseline_classifier.yaml` | `BaselineLitModule` | Deterministic classifier. Optional MC-Dropout at inference (`use_mc=true`, `mc_passes=N`) for a cheap uncertainty estimate without retraining. Post-hoc calibration knob: `temperature` (`logits / T`), fit on validation NLL by `scripts/checkpoints/calibrate_checkpoint.py` and stored in the checkpoint's `net_spec`. |
+| **SNGP** | `configs/model/sngp_classifier.yaml` | `SNGPLitModule` | Spectral-normalized backbone + a random-feature Gaussian Process head. Produces a predictive `variance` alongside `logits`. Constants fixed to Liu et al. (2022) Table 9; `spectral_norm_bound` (the paper's `c`, eq. 15) is the swept knob and `mean_field_factor` (the paper's kernel amplitude sigma) the post-hoc one. **resnet backbones only** — see [ViT compatibility](#sngp--vit-compatibility) below. |
+| **Deep Ensemble** | `configs/model/deep_ensemble_classifier.yaml` | `DeepEnsembleLitModule` | Wraps `num_estimators` independently-initialized baseline members (any registered net as the member architecture). Uncertainty from member disagreement (`variance`, `entropy`, or `mutual_info`). Ensemble-level post-hoc `temperature` on the pooled logits. See [docs/models/DEEP_ENSEMBLES_GUIDE.md](models/DEEP_ENSEMBLES_GUIDE.md) for training-schedule and tuning details. |
 
 All three return the same `ModelOutput` shape (`src/models/outputs.py`) and register
 into the same `NET_REGISTRY` (`src/models/registry.py`) — an ensemble member is just
@@ -62,6 +62,15 @@ normalization. That wrapping isn't validated against ViT internals
 `SPECTRAL_NORM_COMPATIBLE` in `src/models/backbones.py` enumerates the allowed set
 (currently all `resnet*` entries). Passing a `vit_*` arch to `sngp_classifier` raises
 immediately rather than silently training something unvalidated.
+
+The wrapping is bounded, not hard: with `spectral_norm_bound: c` (the paper's eq. 15,
+`BoundedSpectralNorm` in `src/models/components/spectral_norm.py`) a weight is rescaled
+to spectral norm `c` only when its estimate exceeds `c`, otherwise left alone -- exactly
+edward2's `SpectralNormalization(norm_multiplier=c)`. `null` is the stock
+`torch.nn.utils.spectral_norm` (always sigma = 1), kept so checkpoints written before the
+bound existed rebuild identically. Both use torch's reshaped-matrix estimate of a conv
+kernel's spectral norm, not the conv operator norm, which is one reason `c` is a swept
+hyperparameter rather than a derived constant.
 
 `apply_spectral_norm` also runs `DEFAULT_SN_WARMUP_ITERATIONS` power iterations at
 construction. `torch.nn.utils.spectral_norm` only advances its power iteration on

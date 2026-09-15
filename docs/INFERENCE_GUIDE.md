@@ -127,7 +127,9 @@ Files produced (depending on infer.save flags):
 
 - predictions.csv
 - metrics.json
-- run.json (provenance sidecar -- ckpt path, net_spec, resolved infer.* sections)
+- run.json (provenance sidecar -- ckpt path, net_spec, the checkpoint's post-hoc
+  `calibration` block if it was written by `scripts/checkpoints/calibrate_checkpoint.py`
+  (else `null`), resolved infer.* sections)
 - images/ (artifact mode when image saving is enabled)
 
 ### Uncertainty columns

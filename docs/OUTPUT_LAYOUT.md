@@ -52,9 +52,14 @@ $EXPERIMENTS_HOME/$PROJECT_NAME/
     └── images/                    # artifact mode only, if infer.save.save_images=true
 ```
 
-`train/` and `eval/` multirun/HPO sweeps (`scripts/hpo/sweep.sh`) land at the equivalent
+`train/` and `eval/` Hydra multiruns (`-m`) land at the equivalent
 `multiruns/<run_id>/<job.num>/` shape automatically -- `hydra.sweep.dir` interpolates the same
 `${task_name}` as `hydra.run.dir`, so no separate configuration was needed for that.
+Hyperparameter-search trials (`scripts/hpo/sweep.sh`, W&B sweeps) are ordinary single runs
+whose preset overrides `hydra.run.dir` to
+`train/<model.name>_<data.name>/sweeps/<experiment name>_hpo/<run_id>_<wandb_run_id>/`
+(`configs/hparams_search/<family>.yaml`): the W&B run id suffix keeps concurrent agents
+from colliding on a same-second timestamp, and `sweeps/` keeps `runs/` for real training runs.
 `train/<model.name>_<data.name>/ensemble_members/` is a sibling of `runs/` under the same
 model+dataset root, but is constructed directly by a bash script rather than driven by
 `task_name` -- see [§6](#6-ensemble-member-parallel-training-outputs).
@@ -326,8 +331,10 @@ is added on top from `net_spec["name"]` alone.
 - **`ensemble_members/<run_id>/` is a sibling of `runs/<run_id>/`, but each member's own run dir
   is built by an explicit `hydra.run.dir=` override, not `task_name`** -- described in
   [§6](#6-ensemble-member-parallel-training-outputs); deliberate, not an oversight.
-- **HPO sweep dirs inherit the new layout for free.** `configs/hparams_search/*.yaml` only
-  reference the unrelated top-level `name` field for their Optuna storage path
-  (`${paths.log_dir}/optuna/${name}_hpo.db`); the sweep *output* directory
-  (`hydra.sweep.dir`) picks up `train/<model.name>_<data.name>/multiruns/...` automatically since
-  it interpolates the same `${task_name}` as `hydra.run.dir`.
+- **HPO trial dirs sit under `train/<model.name>_<data.name>/sweeps/<name>_hpo/`.**
+  `configs/hparams_search/*.yaml` override `hydra.run.dir` to
+  `${paths.log_dir}/${task_name}/sweeps/${name}_hpo/${now:...}_${oc.env:WANDB_RUN_ID,local}`
+  -- the same `${task_name}` prefix as `runs/`, a `sweeps/` segment so proxy-budget trial
+  checkpoints are never mistaken for real training runs, and the W&B run id (exported by
+  `wandb agent`; `local` for a by-hand run) so several agents starting in the same second
+  cannot collide.

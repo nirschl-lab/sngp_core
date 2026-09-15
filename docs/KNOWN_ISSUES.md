@@ -40,6 +40,18 @@ Tracked here so they aren't re-litigated on every change.
   with `seed` set will not reproduce the exact numbers already published for it, since
   those were never seeded to begin with.
 
+- **Every checkpoint and sweep from before the fair-comparison protocol is
+  off-protocol.** They were trained with `ClassBalancedFocalLoss` (tuned `cb_beta` /
+  `focal_gamma` per family), stock hard spectral normalization (no `spectral_norm_bound`),
+  swept `rff_dim` / `length_scale`, and selected on `val/auprc_best`; the SNGP ones from
+  before the `sngp-corrections` branch also carry the pre-correction head. They still
+  load (additive spec keys default to the old behaviour) and the ISBI 2026 numbers remain
+  reproducible from them, but they are not comparable to runs under the current protocol
+  (plain CE, calibrated-val-NLL selection, one post-hoc knob per family --
+  [docs/HPO_GUIDE.md](HPO_GUIDE.md)). The Optuna sqlite studies under
+  `${EXPERIMENTS_HOME}/${PROJECT_NAME}/optuna/*.db` are historical only; nothing reads
+  them any more.
+
 ## Known test flakiness
 
 Pre-existing, not caused by any particular change, verified against an untouched

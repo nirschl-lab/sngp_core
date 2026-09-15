@@ -48,8 +48,15 @@ Or use one of the existing experiment presets, which also set a sane
 
 ```bash
 uv run src/train.py experiment=deep_ensemble_acevedo
-# also: deep_ensemble_tang, deep_ensemble_wong, deep_ensemble_kather2018
+# also: deep_ensemble_tang, deep_ensemble_wong, deep_ensemble_kather2018,
+#       deep_ensemble_baseline_wong_ucdavis, deep_ensemble_sngp_wong_ucdavis (SNGP members)
 ```
+
+Deep Ensemble is never swept on its own: each `deep_ensemble_<dataset>.yaml` inherits
+its partner's (`baseline_<dataset>.yaml`, or `sngp_wong_ucdavis.yaml` for the SNGP-member
+variant) optimizer and batch size, and `tests/test_configs.py` fails if the two drift
+apart -- update them together after the partner's W&B re-sweep
+([../HPO_GUIDE.md](../HPO_GUIDE.md)).
 
 Customize member count or backbone:
 
@@ -72,9 +79,26 @@ net:
     name: baseline_classifier # Net registry key (see src/models/registry.py)
     arch: resnet18            # Backbone architecture
     num_classes: 8            # Number of output classes
-    dropout_p: 0.2            # Dropout probability
-    pretrained: true          # Use ImageNet pretrained weights
+    pretrained: false         # protocol constant; members train from scratch
+  temperature: 1.0            # ensemble-level post-hoc calibration knob (see below)
 ```
+
+`base_model_spec` in the *model* config deliberately carries no family-specific key
+(`dropout_p`, `temperature`, ...): Hydra merges this subtree per key and `build_net()`
+passes every key to the member's constructor, so anything set here would leak into
+`deep_ensemble_sngp_*` experiments (`SNGPClassifier` has no `dropout_p`). Baseline-member
+experiments set `dropout_p: 0.2` in their own `base_model_spec`; SNGP-member experiments
+set `spectral_norm_bound: 6.0` there (the members are built from `SNGPClassifier`'s ctor
+defaults, whose bound default is `None` for back-compat).
+
+`temperature` is the ensemble's post-hoc calibration knob, applied to the pooled (mean)
+logits only -- `member_logits` / `variance` stay in raw member-logit units. Fit it on
+validation NLL with `scripts/checkpoints/calibrate_checkpoint.py --ckpt <ensemble.ckpt>
+--experiment deep_ensemble_<dataset> --split val`, which writes `best.calibrated.ckpt`
+next to the source; never hand-edit it. Note that this ensemble pools member *logits*
+(softmax of the mean logit), not member probabilities as Lakshminarayanan et al. do --
+the mean-logit pooling is more confident than the mean of probabilities, which matters
+more for the ensemble's calibration than the temperature does.
 
 - **`sequential`** (the only implemented strategy): trains one ensemble member at a
   time, cycling across epochs — epochs are divided equally among members. More
@@ -311,8 +335,17 @@ smooth-ECE, Dempster-Shafer uncertainty) driven from prediction CSVs, use
 - 3 members can work for quick experiments; 10+ for critical applications.
 
 ### Optimization
-- Use the same hyperparameters (LR, weight decay) as the baseline model — no special
-  tricks are needed. Each member should converge to similar accuracy independently.
+- Use the same hyperparameters (LR, weight decay, batch size) as the tuned partner
+  experiment -- no special tricks are needed; each member should converge to similar
+  accuracy independently. This is enforced: `tests/test_configs.py` compares each
+  `deep_ensemble_<dataset>.yaml` with its partner, so update both after a re-sweep.
+- `model.scheduler.T_0` must equal `trainer.max_epochs // num_estimators` (one cosine
+  restart per member); Hydra has no arithmetic resolver, so the experiment files keep the
+  two in sync by hand and the same test checks the equality.
+- After the final run, fit the ensemble-level temperature
+  (`scripts/checkpoints/calibrate_checkpoint.py`) and report from
+  `best.calibrated.ckpt`, exactly as for the Baseline
+  ([BASELINE_GUIDE.md](BASELINE_GUIDE.md), stage 3).
 
 ## Advanced Usage
 

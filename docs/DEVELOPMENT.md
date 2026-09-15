@@ -136,13 +136,16 @@ each covered by a test in `tests/models/sngp/`:
 
 1. **Mean-field is applied at inference only.** In train mode `forward` returns the raw
    logits and `variance is None`; the correction `logits / sqrt(1 + lambda * var)`
-   happens in eval mode only. `lambda` (`mean_field_factor`) is a **tunable** knob, not a
-   constant: the reference uses 1.0 for ImageNet and 20.0 for CIFAR, and the original
-   paper does not use mean field at all (it Monte-Carlo averages 10 samples). `pi/8` is
-   the textbook probit value but is nearly inert at realistic dataset sizes. Tune it
-   post-hoc with `scripts/checkpoints/tune_sngp_mean_field.py` -- it is inference-only,
-   so it needs no retraining and cannot move accuracy or macro-F1 at all. Where this
-   sits in the full pipeline, and how a tuned value actually reaches inference:
+   happens in eval mode only. `lambda` (`mean_field_factor`) is the paper's **kernel
+   amplitude sigma** (Table 10: 20 for CIFAR, 1.0 for ImageNet, 0.1 for CLINC), which the
+   reference implementation collapses into the single tunable `gp_mean_field_factor`; the
+   paper's own recommendation is to estimate sigma on held-out data by minimizing the log
+   score. `pi/8` is the textbook probit value but is nearly inert at realistic dataset
+   sizes. It is therefore fit post-hoc, on validation NLL, by
+   `scripts/checkpoints/calibrate_checkpoint.py`, which writes the fitted value into a
+   sibling checkpoint's `net_spec` -- inference-only, so no retraining, and it cannot move
+   accuracy or macro-F1 at all. It is also refit every validation epoch to produce the
+   selection metric `val/nll_cal` (`LitModuleBase`). Where this sits in the pipeline:
    [docs/models/SNGP_GUIDE.md](models/SNGP_GUIDE.md).
    Putting the correction in the *training loss* instead makes the CE objective depend on
    the covariance state, and turns it into a detached per-example gradient reweighting
@@ -165,6 +168,22 @@ each covered by a test in `tests/models/sngp/`:
    spectral-normed resnet50 emits `nan` in eval mode, resnet18 about `1e30`.
    `apply_spectral_norm` therefore runs `DEFAULT_SN_WARMUP_ITERATIONS` power iterations
    at construction.
+5. **Spectral norm is bounded, not hard.** `spectral_norm_bound` is the paper's `c`
+   (eq. 15): `W <- c * W / sigma` only when `sigma > c`, implemented as
+   `BoundedSpectralNorm`, a `SpectralNorm` subclass with the same state-dict layout, so
+   checkpoints load `strict=True` in both directions. The ctor default is `None` (stock
+   sigma = 1) for checkpoints that predate the key; the model config sets the reference
+   value 6.0, and the sweep searches `{1, 2, 4, 6, 8}` -- it is the one SNGP knob that
+   changes the trained function. torch estimates a conv kernel's spectral norm on the
+   reshaped `[out, in*k*k]` matrix, not the conv operator; the paper's App. A.2 notes SN
+   lacks precise control for convs, which is why `c` is swept rather than derived.
+
+The constructor defaults of `SNGPClassifier` are the paper's Table 9 constants
+(`rff_dim=1024`, `length_scale=1.4142` -- edward2's `gp_kernel_scale=2.0` scales the GP
+input by `1/sqrt(2)`, and this code divides `W` by `length_scale` -- exact per-epoch
+precision, orthogonal random features), restated once in
+`configs/model/sngp_classifier.yaml`; `tests/test_configs.py` keeps the two in sync and
+rejects per-experiment overrides.
 
 **Pre-correction checkpoints do not load.** The old head stored `cov_ema`/`num_updates`
 instead of `precision_accum`/`covariance`, and its weights were trained against
@@ -264,6 +283,19 @@ uv run scripts/checkpoints/migrate_checkpoints.py --in <glob> --out <dir>
 There is no dual-format reading anywhere in production code; `src/checkpointing/legacy.py`
 exists only to support that one migration script.
 
+The one sanctioned way to *modify* a checkpoint is
+`write_checkpoint_with_net_spec(src, dst, {key: value}, calibration=...)` in `io.py`. It
+rewrites keys of `net_spec` -- in both copies, `sngp_core.net_spec` (what `load_net`
+rebuilds from) and `hyper_parameters.net_spec` (what `load_lit_module` rebuilds from) --
+copies the weights verbatim, refuses to write in place, and records a `calibration`
+provenance block (`CheckpointMeta.calibration`: knob, value, split, dataset, NLL before/
+after). `scripts/checkpoints/calibrate_checkpoint.py` uses it to bake a post-hoc-fitted
+`temperature` / `mean_field_factor` into a sibling `best.calibrated.ckpt`, which is why
+inference never needs a config to pick the fitted value up. Every new `net_spec` key is
+additive with a ctor default (`temperature`, `spectral_norm_bound`, `calibration` itself),
+so older checkpoints keep reading and rebuild the net they were trained as; `read_meta`
+ignores metadata keys it does not know for the same reason.
+
 ---
 
 ## Evaluation vs. Inference
@@ -331,10 +363,12 @@ Two-tier split:
 
 - **Online/per-step metrics** — `torchmetrics` objects inside `LitModuleBase`
   (accuracy, precision/recall/F1, macro-AUPRC, ECE, NLL), automatic during
-  training/eval, logged via `self.log(...)`. `val/auprc_best` is the hyperparameter
-  -search selection metric (see [docs/HPO_GUIDE.md](HPO_GUIDE.md)) — `val/nll`/
-  `val/ece` are read-only calibration diagnostics, never a training-time selection
-  target.
+  training/eval, logged via `self.log(...)`. `val/nll_cal` -- validation NLL after
+  fitting the family's post-hoc calibration knob on that epoch's outputs
+  (`src/metrics/posthoc_calibration.py::CalibratedNLL`) -- is what checkpointing and
+  early stopping monitor, and its running minimum `val/nll_cal_best` is the
+  hyperparameter-search objective (see [docs/HPO_GUIDE.md](HPO_GUIDE.md)). `val/nll`,
+  `val/auprc*` and `val/ece` are diagnostics.
 - **Offline/research metrics** — `src/metrics/` (cross-dataset OOD-AUROC, smooth-ECE,
   Dempster-Shafer uncertainty), driven by prediction CSVs from inference/eval runs --
   see [docs/METRICS_GUIDE.md](METRICS_GUIDE.md).
@@ -378,7 +412,8 @@ For which command to run for a given code change, see
 | New backbone / net family | Add an entry to `BACKBONES`, or a new registered net class — see [docs/SUPPORTED_MODELS.md#adding-a-backbone-or-net-family](SUPPORTED_MODELS.md#adding-a-backbone-or-net-family). |
 | New training strategy (different loss, multi-stage training) | A new `LitModuleBase` subclass — see [Model Methodology](#model-methodology). |
 | Run inference / checkpoint sweeps / artifact inference | `src/inference/infer.py` — see [docs/INFERENCE_GUIDE.md](INFERENCE_GUIDE.md). |
-| Tune hyperparameters (fair cross-model comparison) | `scripts/hpo/sweep.sh <baseline\|sngp> <dataset>` — see [docs/HPO_GUIDE.md](HPO_GUIDE.md). |
+| Tune hyperparameters (fair cross-model comparison) | `scripts/hpo/sweep.sh <baseline\|sngp> <dataset>` (W&B sweep + SLURM agents) — see [docs/HPO_GUIDE.md](HPO_GUIDE.md). |
+| Fit a trained checkpoint's post-hoc calibration knob (temperature / mean-field factor) | `scripts/checkpoints/calibrate_checkpoint.py --ckpt ... --experiment ... --split val` — writes `best.calibrated.ckpt`; see [docs/HPO_GUIDE.md](HPO_GUIDE.md#after-the-retrain-fit-the-post-hoc-knob-then-report). |
 | Take one model family from untuned config to reported results | Stage-by-stage guides in [docs/models/](models/): [Baseline](models/BASELINE_GUIDE.md), [SNGP](models/SNGP_GUIDE.md), [Deep Ensemble](models/DEEP_ENSEMBLES_GUIDE.md). |
 | Offline/research metrics | `src/metrics/` — see [Metrics & Visualization](#metrics--visualization). |
 | Publication figures | `src/visualization/` — see [Metrics & Visualization](#metrics--visualization). |

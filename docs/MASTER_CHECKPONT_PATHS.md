@@ -5,6 +5,14 @@
 > tag, or the `isbi2026` branch, to use them; they remain the ISBI 2026 paper's
 > checkpoints. Baseline and Deep-Ensemble checkpoints are unaffected.
 
+> **Convention for new entries.** Each final run has two checkpoints in the same
+> `checkpoints/` directory: `best.ckpt` (straight out of training) and
+> `best.calibrated.ckpt` (written by `scripts/checkpoints/calibrate_checkpoint.py` with the
+> post-hoc knob -- `temperature` or `mean_field_factor` -- fit on the validation split).
+> Record both; **report inference from `best.calibrated.ckpt`**. Every checkpoint listed
+> below predates this protocol (focal loss, hard spectral norm, AUPRC selection) -- see
+> docs/KNOWN_ISSUES.md.
+
 baseline_acevedo:
 ```bash
 /data1/maheswararao/experiments/uncertaity-aware-ml/train/baseline_classifier_acevedo/runs/2026-08-25_14-31-36/checkpoints/best.ckpt

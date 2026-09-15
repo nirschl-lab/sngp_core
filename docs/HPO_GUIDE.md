@@ -1,251 +1,265 @@
 # Hyperparameter Search Guide
 
 How to tune each model family fairly before comparing Baseline, SNGP, and Deep
-Ensemble against each other. The protocol here exists because every
-`configs/experiment/*.yaml` previously hardcoded the same `lr`/`weight_decay`/
-`batch_size` across all three families -- any observed difference between methods was
-confounded with "this arbitrary config happened to suit this method better."
+Ensemble against each other. The protocol exists because a comparison is only as fair
+as the tuning behind it: every family gets the same backbone, optimizer family,
+schedule, loss, budget, objective, and the same one-scalar post-hoc calibration freedom.
+It follows Liu et al. (2022, JMLR, *A Simple Approach to Improve Single-Model Deep
+Uncertainty via Distance-Awareness*) for what is fixed and what is swept.
 
 ## Guiding principle
 
-**Calibration and uncertainty are the evaluation axis for this project, never the
-training-time selection axis.** Every model here is trained as a general classifier
-and *then* evaluated for calibration/uncertainty quality -- tuning hyperparameters
-against ECE, NLL, or predictive variance would bake calibration behavior into the
-training methodology itself and defeat the point of measuring it independently. This
-is why selection uses macro-AUPRC (a purely discriminative metric) while NLL/ECE are
-logged every epoch as **read-only diagnostics** that never feed early stopping,
-checkpointing, or the Optuna objective.
+**Select on calibrated validation NLL, then calibrate post-hoc, then report.**
 
-The same principle decides which SNGP knobs are tunable. `length_scale` and `rff_dim`
-are in the search space because they define the random feature map `phi` that the
-learned classifier sits on top of -- kernel width and capacity respectively -- so they
-genuinely shape the *fit*.
+The objective is `val/nll_cal_best`: the running minimum, across epochs, of validation
+NLL *after* fitting the family's single post-hoc calibration knob on that epoch's
+validation outputs (`LitModuleBase`, `src/metrics/posthoc_calibration.py`). Each family
+has exactly one such knob, and it is inference-only -- it cannot move the training fit,
+accuracy, or macro-F1 (it divides every logit of an example by one positive scalar):
 
-`ridge_penalty` is **not** searched. Under canonical SNGP the CE loss is computed on raw
-logits (the mean-field correction is inference-only), and `ridge_penalty` only seeds the
-precision matrix `P = ridge*I + sum_i phi_i phi_i^T`. It therefore has zero effect on the
-training fit, hence zero effect on macro-AUPRC -- sweeping it against that objective
-would be fitting noise. It is an uncertainty/calibration knob, and by the rule above
-calibration is an evaluation axis, never a training-time selection axis. `mean_field` and
-`cov_momentum` stay fixed for the same reason.
+| Family | Knob | Applied as | Origin |
+|---|---|---|---|
+| Baseline, Deep Ensemble | `temperature` | `logits / T` | temperature scaling (Guo et al. 2017) |
+| SNGP | `mean_field_factor` | `raw_logits / sqrt(1 + factor * variance)` | the paper's kernel amplitude sigma; the reference implementation collapses it into `gp_mean_field_factor`, and the paper estimates it on held-out data by minimizing the log score |
 
-> Before the canonical-SNGP correction the training loss *was* computed on
-> mean-field-corrected logits, which is why `ridge_penalty` used to be in this space.
-> Any sweep result for it from before that change is off-regime -- see the
-> `sngp-pre-correction` tag and
-> [DEVELOPMENT.md](DEVELOPMENT.md#sngp-precision-matrix-and-mean-field).
+Why the *calibrated* NLL rather than the raw one: it is the quantity a post-hoc-calibrated
+final model actually reports, and raw NLL rises with late-training overconfidence in a
+way that differs between families (SNGP carries a partial correction at factor 1.0,
+Baseline none), so selecting on raw NLL would not compare like with like. NLL is a
+strictly proper scoring rule; ECE is not (it has a bin-count artifact and a trivial
+minimizer), which is why NLL is the objective and ECE is reported. `val/nll` /
+`val/nll_best` (raw), the fitted knob (`val/temperature_fit` /
+`val/mean_field_factor_fit`), `val/auprc*` and `val/ece` are logged alongside as
+diagnostics. Report accuracy, macro-F1 and macro-AUPRC next to NLL/ECE: if NLL
+selection costs discriminative performance, that is a finding to show, not hide.
 
-`mean_field_factor` is excluded for the same reason, and it is the more important of the
-two to get right. It divides every logit of an example by one positive scalar, so
-**accuracy and macro-F1 are exactly invariant** to it and macro-AUPRC/AUROC move only by
-a few tenths of a percent -- an Optuna run selecting on macro-AUPRC would be choosing at
-random. Only NLL and ECE respond, and they have an interior optimum.
+This replaces the earlier rule that calibration must never be a selection axis. The
+consequence for the paper's narrative: the claim becomes "with equal tuning budget and
+one post-hoc knob each, family X reaches lower NLL/ECE", not "family X is better
+calibrated out of the box".
 
-Tune both post-hoc instead:
+## Loss: plain cross-entropy, everywhere
 
-```bash
-uv run python scripts/checkpoints/tune_sngp_mean_field.py \
-    --ckpt <best.ckpt> --experiment sngp_acevedo --split val
-```
+Every family and dataset trains with unweighted `CrossEntropyLoss`
+(`configs/model/*_classifier.yaml`: `class_freq: null`, `class_weights: null`,
+`label_smoothing: 0.0`). Focal / class-balanced reweighting reshapes calibration
+(Mukhoti et al. 2020, *Calibrating Deep Neural Networks using Focal Loss*), so tuning
+`cb_beta` / `focal_gamma` per family would confound the very comparison this project
+makes. Imbalance is handled at **reporting** time (macro metrics, per-class recall),
+never in the loss:
 
-Because `precision_accum` is stored in the checkpoint, this is one forward pass, not a
-training run. **Select on validation NLL** -- a proper scoring rule, and unlike ECE it
-has no bin-count artifact -- then report ECE on test. Selecting and reporting on the same
-split would make the calibration numbers circular, which is exactly what the protocol
-note at the top of this file guards against. The containment is that this knob cannot
-move accuracy, F1, or OOD separation, so it cannot inflate discriminative or OOD claims
-either way.
+| Dataset | Train-split `class_freq` | Max : min |
+|---|---|---|
+| tang | 1909, 2428, 47702, 9331 | ~25 : 1 |
+| acevedo | 860, 2176, 1086, 2032, 842, 987, 2339, 1642 | ~2.8 : 1 |
+| kather2018 | 10039, 9464, 7274, 8126, 8100, 6109, 7281, 7398, 6209 | ~1.6 : 1 |
+| wong | 12301, 12288, 12223, 12218 | balanced |
 
-Dropout (`model.net.dropout_p`) is fixed at `0.2` for Baseline/Deep-Ensemble members,
-never tuned: MC-Dropout at inference depends on it being nonzero, and tuning it
-against a *deterministic* validation forward pass would push it toward 0, silently
-breaking MC-Dropout without any test ever catching it. SNGP has no dropout parameter
-at all, so it was never a shared knob to begin with.
-
-## Prerequisites
-
-- `.env` must set `EXPERIMENTS_HOME` and `PROJECT_NAME` (see `env_example`) --
-  `configs/paths/default.yaml` resolves `log_dir` (and everything under it: Hydra
-  multirun output, checkpoints, the Optuna sqlite study) as
-  `${EXPERIMENTS_HOME}/${PROJECT_NAME}`. Hydra creates this directory itself if it
-  doesn't exist yet -- **except** the `optuna/` subdirectory the sqlite storage lives
-  in, which sqlite does not create on its own (`scripts/hpo/sweep.sh` handles this with
-  `mkdir -p`; a bare local `-m hparams_search=...` invocation must do the same first).
-- `sqlalchemy<2.0` is pinned in `pyproject.toml`: `optuna==2.10.1` (pinned transitively
-  by `hydra-optuna-sweeper==1.2.0`) asserts on sqlalchemy 1.x engine internals and
-  crashes with `AssertionError` in `get_current_version()` against sqlalchemy 2.x. Run
-  `uv sync` after pulling this change.
+Watch Tang's minority classes (`caa`, 1909 samples) on the first Tang sweep: a recall
+collapse under plain CE is a finding, not a bug. `class_weights` remains as the documented
+fallback (weighted CE), but weighting breaks NLL's proper-scoring-rule property; if it is
+ever used it must be identical across families for that dataset --
+`tests/test_configs.py::TestExperimentProtocolConsistency` enforces this, and the
+`class_freq` values stay in `configs/data/*.yaml` as provenance only.
 
 ## Selection metric
 
-`val/auprc_best` -- the running max, across epochs, of macro-averaged
-`MulticlassAveragePrecision` on the validation set (`LitModuleBase.val_auprc`/
-`val_auprc_best`, computed in `on_validation_epoch_end`). Threshold-free and
-imbalance-robust, which matters here: Tang is ~25:1 class imbalance
-(`class_freq: [1909, 2428, 47702, 9331]`).
+`val/nll_cal_best` -- a `torchmetrics.MinMetric` over `val/nll_cal`, computed in
+`LitModuleBase.on_validation_epoch_end`. The knob choice is structural, not by family
+name: if the net reports `raw_logits` and `variance` (SNGP in eval mode) the mean-field
+factor is fit, otherwise a temperature. `model.calibration_knob=temperature` forces a
+temperature fit on SNGP for a like-for-like ablation.
 
-This exists specifically because `train()`'s `metric_dict` (`src/train.py`) is a
-snapshot of `trainer.callback_metrics` -- the *last* epoch, not the best one. With
-`EarlyStopping(patience=8)`, that's up to 8 epochs past the peak. Before this fix, an
-Optuna objective reading any plain epoch-level metric would have ranked trials on
-essentially random post-peak noise. `val/auprc_best` fixes this by tracking its own
-max internally (a `torchmetrics.MaxMetric`), independent of when the run happens to
-stop.
-
-`val/nll` (plain, unweighted cross-entropy -- *not* the same as `val/loss`, which is
-the class-balanced focal loss) and `val/ece` are logged alongside every epoch as
-diagnostics. Check these after a sweep completes: if the AUPRC-optimal config comes
-with a materially worse ECE/NLL than the untuned default, that's a real finding worth
-reporting, not a bug to fix by adding calibration to the objective.
+Why a running best: `train()`'s `metric_dict` (`src/train.py`) is a snapshot of the
+*last* epoch, and W&B's sweep controller reads the run **summary**, which is also the last
+logged value. A running minimum makes "last" equal "best" for both readers. The
+epoch-level `val/nll_cal` is what `EarlyStopping` and `ModelCheckpoint` monitor -- in
+sweeps (`configs/hparams_search/<family>.yaml`) **and** in final runs
+(`configs/callbacks/default.yaml`), so `best.ckpt` is the epoch the objective picked.
 
 ## Search space
 
-Shared by all families (log-uniform where scale-free -- `tag(log, interval(...))` in
-Optuna's override grammar):
+Single source of truth: `configs/hparams_search/wandb/<family>.yaml` (native W&B sweep
+YAML). The Hydra side, `configs/hparams_search/<family>.yaml`, is a *run preset* (proxy
+budget, objective, monitors, logger) with no search space of its own;
+`tests/test_sweeps.py::TestWandbSweepConfigDrift` asserts every swept key resolves in
+the composed config and that `metric.name` equals the preset's `optimized_metric`.
 
-| Param | Range | Current default |
+Shared by both swept families:
+
+| Param | Distribution | Protocol default |
 |---|---|---|
-| `model.optimizer.lr` | `tag(log, interval(1e-5, 1e-2))` | 1e-3 |
-| `model.optimizer.weight_decay` | `tag(log, interval(1e-6, 1e-2))` | 1e-3 |
-| `data.datamodule.batch_size` | `choice(64, 128, 256)` | 128 |
-| `model.cb_beta` | `choice(0.9, 0.99, 0.999, 0.9999)` | 0.999 |
-| `model.focal_gamma` | `interval(0.0, 5.0)` | 2.0 |
+| `model.optimizer.lr` | log-uniform 1e-5 .. 1e-2 | 1e-3 |
+| `model.optimizer.weight_decay` | log-uniform 1e-6 .. 1e-2 | 1e-4 |
+| `data.datamodule.batch_size` | {64, 128, 256} | 128 |
 
-`cb_beta`/`focal_gamma` parameterize `ClassBalancedFocalLoss`
-(`src/models/components/losses.py`), which every `configs/experiment/*.yaml` used with
-these sweeps enables via `class_freq: ${data.class_freq}` -- so both genuinely shape
-the *fit* (same rationale as the SNGP knobs below), not just calibration. `cb_beta` is
-swept over the discrete set from Cui et al.'s effective-number-of-samples formulation
-(`0` = uniform reweighting, `→1` = increasingly aggressive) rather than a continuous
-range, matching how the original paper reports it.
+SNGP only:
 
-SNGP additionally (`configs/hparams_search/sngp.yaml` only):
-
-| Param | Range | Current default |
+| Param | Values | Protocol default |
 |---|---|---|
-| `model.net.length_scale` | `tag(log, interval(0.25, 16.0))` | 1.0 |
-| `model.net.rff_dim` | `choice(512, 1024, 2048)` | 1024 |
+| `model.net.spectral_norm_bound` | {1, 2, 4, 6, 8} | 6.0 |
 
-(`ridge_penalty` was removed from this space by the canonical-SNGP correction -- see
-above. Its default is 1e-3.)
+`spectral_norm_bound` is the paper's `c` (eq. 15: `W <- c * W / sigma` only when
+`sigma > c`). It trades the residual blocks' expressiveness against their distance
+preservation and *changes the trained function*, which is why it is the one SNGP knob in
+the sweep. Two cautions when reading it off: (1) an NLL-minimizing sweep has no reason to
+prefer a small `c`, but small `c` is what buys distance-awareness -- the paper's rule is
+"the smallest `c` that keeps accuracy", so read the parallel-coordinates plot for `c` and
+apply that rule if NLL is flat across the grid; (2) `c` is measured on torch's
+reshaped-matrix spectral norm, not the conv operator norm edward2 estimates, so the
+paper's `c = 6` is a hint, not a transferable value -- extend the grid if the optimum sits
+on an edge.
 
-`rff_dim` costs O(d³) for the covariance inverse, but that now runs lazily -- once per
-epoch, on the first eval-mode forward after the precision matrix moves -- rather than on
-every batch. 2048 is no longer the wall-clock hazard it was under the old per-batch
-Cholesky, though it still costs 4x the memory of 1024 for the precision/covariance
-buffers (2048² floats each).
-
-Deep Ensemble is **not swept independently** -- it inherits the tuned Baseline config,
-since ensemble members are baseline models differing only in init seed
-(Lakshminarayanan et al.). Sweeping it separately would cost N× a baseline trial for
-a search that would likely land near the baseline optimum anyway.
+Deep Ensemble is **not swept**: members are baseline nets differing only in init seed,
+so it inherits the tuned Baseline config (`tests/test_configs.py` checks the two agree).
 
 ## Fixed protocol constants
 
-Identical across every sweep, never in the search space: `net.arch: resnet18`,
-`pretrained: false`, `img_augmentations: light_augmentations`, `class_freq` (from the
-dataset's own config), the
-`CosineAnnealingLR` family (`CosineAnnealingWarmRestarts` for Deep Ensemble, which
-resets per member -- see `configs/experiment/deep_ensemble_*.yaml`), `seed: 12345`,
-`test: False`.
+Never in the search space; live once in `configs/model/*_classifier.yaml` (experiments
+set only `arch` / `num_classes` / `pretrained`, and the config tests reject overrides):
+
+| Constant | Value | Source |
+|---|---|---|
+| backbone | `resnet18`, `pretrained: false` | shared |
+| loss | plain CE, `label_smoothing: 0.0` | above |
+| schedule | `CosineAnnealingLR(T_max=max_epochs)` (`CosineAnnealingWarmRestarts` per member for DE) | shared |
+| `seed` | 12345 | shared |
+| `dropout_p` (Baseline / DE members) | 0.2 | MC-Dropout at inference needs it nonzero; tuning it against a deterministic val pass would push it to 0 |
+| `temperature` (Baseline / DE) | 1.0 at train time | post-hoc knob |
+| SNGP `rff_dim` | 1024 | Liu et al. Table 9 |
+| SNGP `length_scale` | 1.4142 | Table 9 says 2.0 = edward2 `gp_kernel_scale`, which scales the GP input by `1/sqrt(2)`; this code divides `W` by `length_scale`, so `sqrt(2)` is the same kernel width |
+| SNGP `mean_field_factor` | 1.0 at train time | post-hoc knob (= sigma) |
+| SNGP `ridge_penalty` | 1e-3 | inference-only; `calibrate_checkpoint.py --ridge` can revisit it |
+| SNGP `cov_momentum` | -1 (exact per-epoch sum) | reference |
+| SNGP `normalize_input` / `likelihood` / `output_bias` / `random_feature_type` / `n_power_iterations_sn` | true / gaussian / false / orf / 1 | reference |
+
+`SNGPClassifier`'s constructor defaults equal these (so `deep_ensemble_sngp_*` members,
+built from the spec, get them too), except `spectral_norm_bound`, whose ctor default stays
+`None` (stock hard normalization) so checkpoints written before the bound existed rebuild
+bit-identically; the config states `6.0`.
 
 ## Budget
 
-- **Search runs at a shortened proxy budget**: `max_epochs: 50`, `min_epochs: 10`.
-  Every experiment config wires `model.scheduler.T_max: ${trainer.max_epochs}`, so
-  `CosineAnnealingLR` rescales to the proxy budget automatically -- no separate
-  schedule override is needed here (unlike the old `MultiStepLR` setup, which required
-  hand-rescaling `milestones` to match fractions of the budget). This is a real
-  advantage of the cosine schedule over a milestone-based one for this protocol.
-- Early stopping is the pruner: `monitor: val/auprc`, `mode: max`, `patience: 8`,
-  `min_delta: 0.0`. (`hydra-optuna-sweeper==1.2.0` pins optuna 2.x, which exposes no
-  Optuna-native pruner -- early stopping is the only mechanism available to kill bad
-  trials early.)
-- `n_trials: 48`, `n_jobs: 8`, `TPESampler(seed=1234, n_startup_trials=10,
-  multivariate=True)`. `n_startup_trials` tracks `n_jobs` (trials per batch), not
-  `n_trials` -- setting it equal to `n_trials` (as the old, now-deleted
-  `baseline_tang.yaml`/`sngp_tang.yaml` sweep configs did) means TPE never actually
-  engages and every trial is pure random search. `multivariate=True` because LR and
-  batch size are coupled (the linear/sqrt LR-scaling rule) and, at fixed
-  `max_epochs`, a larger batch means fewer gradient updates -- don't read a tuned LR
-  in isolation from the batch size it was tuned alongside.
+- **Proxy budget**: `max_epochs: 50`, `min_epochs: 10`. `model.scheduler.T_max` is wired
+  to `${trainer.max_epochs}` in every experiment config, so the cosine schedule rescales
+  itself.
+- **Trials**: `run_cap: 48`, up to 8 concurrent (`sbatch --array=0-47%8`, one trial per
+  array task by default: a 3 h limit and a SLURM log per trial, crash isolation).
+  `method: bayes`.
+- **Pruning**: W&B hyperband (`min_iter: 10`, `eta: 3`) counts one iteration per logged
+  value of the objective, and `LitModuleBase` logs it once per epoch, so brackets are at
+  10 and 30 epochs; Lightning's own `EarlyStopping(monitor=val/nll_cal, patience=8,
+  min_delta=0.0)` runs underneath. Delete the `early_terminate` block to rely on early
+  stopping alone.
 - **Retrain the top-3 trials, not just the winner**, at the experiment's full
-  `max_epochs=150`, and pick the final config by full-budget `val/auprc_best`.
+  `max_epochs=150`, and pick the final config by full-budget `val/nll_cal_best`.
   Proxy-budget rankings are noisy; three extra runs per sweep is cheap insurance.
-- **Final models**: the winning config x 5 seeds, reported mean +/- std.
+- **Final models**: the winning config x 5 seeds, reported mean +/- std, each
+  post-hoc calibrated (next section).
 
 ## Before trusting any result: measure the noise floor
 
-Run the current default config 5x with different seeds and record the spread of
-`val/auprc_best`. If the gap between a sweep's best and 10th-best trial falls inside
+Run the protocol-default config 5x with different seeds and record the spread of
+`val/nll_cal_best`. If the gap between a sweep's best and 10th-best trial falls inside
 that spread, the sweep found nothing distinguishable from seed noise -- report that
-plainly rather than picking a spurious winner. Rare-class AUPRC (e.g. Tang's `caa`
-class, 1909 samples) will likely dominate this variance.
+plainly rather than picking a spurious winner.
+
+## Prerequisites
+
+- `wandb login` once on the machine that creates sweeps and on the cluster login node.
+- `.env` (see `env_example`) must set `EXPERIMENTS_HOME` and `PROJECT_NAME`; the W&B
+  project **is** `PROJECT_NAME`, the same one every experiment logs to. `WANDB_ENTITY` is
+  optional (defaults to your W&B default entity).
+- Nothing else: there is no sqlite study directory and no sqlalchemy pin any more --
+  `hydra-optuna-sweeper` is gone.
 
 ## Running a sweep
 
 ```bash
-# One family x one dataset. Family must have a configs/hparams_search/<family>.yaml
-# (baseline | sngp); dataset must have a configs/experiment/<family>_<dataset>.yaml.
+# One family x one dataset: creates the sweep, appends it to docs/MASTER_SWEEPS.md,
+# and submits a SLURM array of `wandb agent`s (scripts/slurm/wandb_agent.sbatch).
 scripts/hpo/sweep.sh baseline tang
-scripts/hpo/sweep.sh sngp     acevedo
+scripts/hpo/sweep.sh sngp     acevedo --trials 48 --parallel 8
+
+# Pilot first: two tiny trials, not registered.
+scripts/hpo/sweep.sh baseline tang --trials 2 --parallel 2 --no-register \
+    --override trainer.max_epochs=2 --override +trainer.limit_train_batches=0.05
+
+# Create only, run an agent by hand (e.g. on a workstation GPU):
+scripts/hpo/sweep.sh sngp acevedo --no-submit
+uv run wandb agent --count 1 <entity>/<project>/<sweep_id>
+
+# Show the final sweep YAML without touching W&B:
+scripts/hpo/sweep.sh sngp acevedo --dry-run
 ```
 
-This submits to SLURM via `hydra/launcher=submitit_slurm`
-(`configs/hydra/launcher/submitit_slurm.yaml`), fanning out `n_jobs` concurrent trials
-per Optuna batch. Recommended order: run `baseline tang` first as a pilot, inspect its
-W&B group's parallel-coordinates plot, and only launch the remaining 7 sweeps
-(`{baseline, sngp} x {tang, acevedo, wong, kather2018}`) once that looks sane.
+Recommended order: pilot `baseline tang`, check in the W&B UI that the trials sit
+*inside* the sweep (grouped `tang_baseline_resnet18_hpo`, named by W&B) and that
+`val/nll_cal_best` shows up in the sweep's parallel-coordinates panel, then launch the
+remaining `{baseline, sngp} x {tang, acevedo, wong, kather2018}`.
 
-Ad hoc / local (no SLURM), e.g. for a quick smoke test:
-
-```bash
-mkdir -p "${EXPERIMENTS_HOME}/${PROJECT_NAME}/optuna"   # sqlite needs this to pre-exist
-uv run src/train.py -m hparams_search=baseline experiment=baseline_tang \
-  hydra.sweeper.n_trials=2 hydra.sweeper.n_jobs=1
-```
-
-Every trial logs to W&B individually, grouped under `group: "${name}_hpo"` /
-`job_type: "sweep"` (`log_model: False` -- a 48-trial sweep must not upload 48
-checkpoints as W&B artifacts). This gives the same parallel-coordinates and
-hyperparameter-importance panels a dedicated W&B Sweep would, without a second
-search-space definition living outside the Hydra config tree.
+Each trial is an ordinary single run: `src/train.py hparams_search=<family>
+experiment=<family>_<dataset> <overrides>`. Trial outputs land under
+`train/<model.name>_<data.name>/sweeps/<name>_hpo/<timestamp>_<wandb_run_id>/`
+(docs/OUTPUT_LAYOUT.md); `log_model: False` keeps 48 checkpoints out of W&B artifacts.
+A crashed trial is just a crashed W&B run that the Bayesian search ignores -- there is
+deliberately no fail-safe that swallows exceptions and returns a floor value (under a
+minimized objective such a floor would rank as the *best* trial).
 
 ## Reading results
 
 ```bash
-uv run scripts/hpo/summarize_study.py --study tang_baseline_resnet18_hpo --top-k 3
+uv run scripts/hpo/summarize_sweep.py --sweep <entity>/<project>/<sweep_id> --top-k 3
 ```
 
-Prints the top-K trials ranked by `val/auprc_best`, each with its parameter overrides
-as a ready-to-paste CLI string for the full-budget retrain:
+Prints the top-K finished trials ranked by `val/nll_cal_best`, each with the fitted knob
+and raw NLL, and its swept parameters as a ready-to-paste CLI string:
 
 ```bash
-uv run src/train.py experiment=baseline_tang \
+uv run src/train.py experiment=sngp_acevedo \
   model.optimizer.lr=0.00034 model.optimizer.weight_decay=0.0021 \
-  data.datamodule.batch_size=64 \
+  data.datamodule.batch_size=64 model.net.spectral_norm_bound=4.0 \
   test=True
 ```
 
-That retrain is stage 2 of a longer sequence. For the stages either side of it -- and,
-for SNGP, the post-hoc `mean_field_factor` step that has to happen before the final
-runs -- see the per-family guides in [docs/models/](models/):
-[Baseline](models/BASELINE_GUIDE.md), [SNGP](models/SNGP_GUIDE.md),
-[Deep Ensemble](models/DEEP_ENSEMBLES_GUIDE.md).
+Sweep paths are recorded in [MASTER_SWEEPS.md](MASTER_SWEEPS.md) by `sweep.py`.
 
-## Sweep-only safety nets
+## After the retrain: fit the post-hoc knob, then report
 
-Two behaviors in `src/train.py` are active only when a composed config sets
-`sweep_fail_safe: true` (all `hparams_search/*.yaml` do; a normal single run never
-does):
+```bash
+uv run scripts/checkpoints/calibrate_checkpoint.py \
+    --ckpt <final>/checkpoints/best.ckpt --experiment <family>_<dataset> --split val
+# -> <final>/checkpoints/best.calibrated.ckpt
+```
 
-- **One bad trial can't abort the study.** `task_wrapper` (`src/utils/utils.py`)
-  re-raises on any exception by design, which would otherwise kill an entire Optuna
-  study on the first OOM or divergent hyperparameter combination partway through a
-  48-trial sweep. `main()` catches that and returns `0.0` (a natural floor for
-  AUPRC ∈ [0, 1]) instead, so the sweep continues.
+One forward pass over the validation split fits the family's knob (temperature, or the
+mean-field factor -- and `--ridge 1e-3 1.0` also revisits `ridge_penalty` for SNGP) by
+minimizing NLL, checks that the argmax is untouched, and writes a **sibling checkpoint**
+whose `net_spec` carries the fitted value plus a `sngp_core.calibration` provenance
+block (`src/checkpointing/io.py::write_checkpoint_with_net_spec`). No retraining, no
+config edit: inference is checkpoint-authoritative, so `src/inference/infer.py
+ckpt_path=<...>/best.calibrated.ckpt` uses it, `read_meta` shows it, and the default
+inference folder gets a `_calibrated` suffix so it cannot overwrite the uncalibrated run.
+Fit on `val`, report on `test` -- the script refuses to fit on the test split
+(`--split test` is allowed only with `--report-only`).
+
+Stage-by-stage: [models/BASELINE_GUIDE.md](models/BASELINE_GUIDE.md),
+[models/SNGP_GUIDE.md](models/SNGP_GUIDE.md),
+[models/DEEP_ENSEMBLES_GUIDE.md](models/DEEP_ENSEMBLES_GUIDE.md).
+
+## Safety nets
+
 - **A `test/*` metric can never be the objective.** `train()`'s `metric_dict` merges
   train and test metrics into one dict, so `optimized_metric: "test/..."` is one typo
-  away from selecting hyperparameters using the test set. `main()` refuses outright if
-  `optimized_metric` starts with `test/`.
+  away from selecting hyperparameters on the test set. `src/train.py` refuses outright,
+  and the drift test requires `metric.name` to start with `val/` and end in `_best`.
+- **The two sweep files cannot drift apart.** `tests/test_sweeps.py` composes each
+  preset and checks every swept key resolves, the objective matches, both monitors are
+  the epoch-level objective with `mode: min`, the preset is a plain single run (no
+  `MULTIRUN`, no fail-safe, `logger.wandb.name: null`), and hyperband cannot kill a trial
+  before Lightning's `min_epochs`.
+- **Experiments cannot silently re-tune a constant.**
+  `tests/test_configs.py::TestExperimentProtocolConsistency` checks the loss config is
+  identical across families per dataset and plain CE, SNGP experiments do not override
+  the fixed constants, ctor defaults match the model config, both callbacks monitor
+  `val/nll_cal`, and Deep Ensemble tracks its partner's optimizer.
