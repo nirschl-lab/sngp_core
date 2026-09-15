@@ -116,9 +116,15 @@ def derive_default_run_name(
     data_name: str,
     use_mc_dropout: bool = False,
     is_deep_ensemble: bool = False,
+    is_calibrated: bool = False,
 ) -> str:
     """Default `infer.save.run_name` when left blank:
-    '[deep_ensemble_|mc_]<netname_dataset>/<ckpt_run_id>/<dataset>'.
+    '[deep_ensemble_|mc_]<netname_dataset>[_calibrated]/<ckpt_run_id>/<dataset>'.
+
+    `is_calibrated` (from `CheckpointMeta.calibration is not None`) appends
+    `_calibrated`: a post-hoc-calibrated `best.calibrated.ckpt` sits in the same
+    directory as its source `best.ckpt`, so without the suffix the two would share one
+    default output folder and the second run would overwrite the first.
 
     `netname_dataset` is parsed straight out of `ckpt_path` by `_extract_netname_dataset`
     -- this project's own `<model.name>_<data.name>` training-output segment -- rather
@@ -142,7 +148,8 @@ def derive_default_run_name(
         prefix = "mc_"
     else:
         prefix = ""
-    return f"{prefix}{netname_dataset}/{_extract_ckpt_run_id(ckpt_path)}/{data_name}"
+    suffix = "_calibrated" if is_calibrated else ""
+    return f"{prefix}{netname_dataset}{suffix}/{_extract_ckpt_run_id(ckpt_path)}/{data_name}"
 
 
 def _resolve_output_root(cfg: DictConfig, default_run_name: str) -> Path:
@@ -445,6 +452,7 @@ def run_inference(cfg: DictConfig) -> Dict[str, Any]:
         data_name=effective_data_name,
         use_mc_dropout=bool(cfg.infer.runtime.use_mc_dropout),
         is_deep_ensemble=is_deep_ensemble,
+        is_calibrated=ckpt_meta.calibration is not None,
     )
 
     expected_num_classes = None
@@ -470,6 +478,8 @@ def run_inference(cfg: DictConfig) -> Dict[str, Any]:
         "lit_module": ckpt_meta.lit_module,
         "num_classes": ckpt_meta.num_classes,
         "idx_to_class": ckpt_meta.idx_to_class,
+        # Post-hoc calibration provenance (None for a checkpoint straight out of training).
+        "calibration": ckpt_meta.calibration,
         "dataset_name": effective_data_name,
         "fold": fold,
         "run_name": default_run_name,

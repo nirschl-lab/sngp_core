@@ -87,6 +87,19 @@ def test_derive_default_run_name_tags_mc_dropout():
     assert run_name == "mc_sngp_classifier_acevedo/2026-08-20_14-03-11/acevedo"
 
 
+def test_derive_default_run_name_marks_calibrated_checkpoints():
+    """`best.calibrated.ckpt` sits next to its source `best.ckpt`; without the suffix the two
+    would share one default output folder."""
+    ckpt_path = (
+        "/data1/experiments/uncertaity-aware-ml/train/baseline_classifier_acevedo/"
+        "runs/2026-08-20_14-03-11/checkpoints/best.calibrated.ckpt"
+    )
+    run_name = infer.derive_default_run_name(
+        ckpt_path, net_name="baseline_classifier", data_name="acevedo", is_calibrated=True
+    )
+    assert run_name == "baseline_classifier_acevedo_calibrated/2026-08-20_14-03-11/acevedo"
+
+
 def test_extract_netname_dataset_parses_runs_segment():
     ckpt_path = (
         "/data1/maheswararao/experiments/uncertaity-aware-ml/train/baseline_classifier_acevedo/"

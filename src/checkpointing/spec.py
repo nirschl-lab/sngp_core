@@ -19,6 +19,14 @@ class CheckpointMeta:
     num_classes: int
     idx_to_class: Optional[Dict[int, str]] = None
     dataset_name: Optional[str] = None
+    # Provenance of a post-hoc calibration written by
+    # `scripts/checkpoints/calibrate_checkpoint.py` (via `io.write_checkpoint_with_net_spec`):
+    # which knob (`temperature` / `mean_field_factor`) was fit, on which split of which
+    # dataset, from which source checkpoint, with metrics before/after. The fitted value
+    # itself lives in `net_spec` -- this block only records where it came from. `None`
+    # for a checkpoint straight out of training. Additive, so pre-existing checkpoints
+    # (no key) still read.
+    calibration: Optional[Dict[str, Any]] = None
 
 
 def build_meta(
@@ -27,6 +35,7 @@ def build_meta(
     num_classes: int,
     idx_to_class: Optional[Dict[int, str]] = None,
     dataset_name: Optional[str] = None,
+    calibration: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     cls = type(lit_module)
     return {
@@ -36,4 +45,5 @@ def build_meta(
         "num_classes": num_classes,
         "idx_to_class": idx_to_class,
         "dataset_name": dataset_name,
+        "calibration": calibration,
     }
