@@ -30,16 +30,23 @@ model:
   train_strategy: sequential  # Train one member at a time
 
   optimizer:
+    # Inherits baseline_tang.yaml by design: members are baseline nets differing only by
+    # init seed, so Deep Ensemble is never swept on its own. Update TOGETHER with the
+    # partner after its W&B re-sweep -- tests/test_configs.py enforces the match.
     lr: 1e-3
-    weight_decay: 1e-3
+    weight_decay: 1e-4  # was 1e-3
 
   net:
     base_model_spec:
+      # Members are built by build_net() from this spec, i.e. from BaselineClassifier's
+      # ctor defaults -- not from configs/model/baseline_classifier.yaml. The ctor
+      # defaults are the protocol constants, so only keys whose ctor default differs
+      # from the protocol are stated here.
       name: baseline_classifier
       arch: resnet18
       num_classes: ${num_classes}
-      dropout_p: 0.2
       pretrained: false
+      dropout_p: 0.2 # fixed, never swept: MC-Dropout at inference needs it nonzero
     num_estimators: ${num_estimators}
     task: classification
 
@@ -53,7 +60,7 @@ model:
     # and repeats -- exactly the fresh-start-per-member behavior each new (randomly
     # initialized) member needs. T_0 must equal trainer.max_epochs // num_estimators
     # (150 here); Hydra has no arithmetic resolver, so keep these in sync by hand if
-    # either changes.
+    # either changes (tests/test_configs.py checks the equality).
     _target_: torch.optim.lr_scheduler.CosineAnnealingWarmRestarts
     _partial_: true
     T_0: 150
@@ -61,7 +68,10 @@ model:
     eta_min: 0.0
 
   num_classes: ${num_classes}
-  class_freq: ${data.class_freq}
+  # Loss: plain cross-entropy, inherited from the model config. `class_freq` is
+  # deliberately NOT interpolated from ${data.class_freq} -- imbalance is handled at
+  # reporting time (macro metrics), never in the loss. Was ClassBalancedFocalLoss(cb_beta=0.999, focal_gamma=2.0) via the
+  # model-config defaults.
 
 data:
   datamodule:
@@ -79,17 +89,17 @@ logger:
 
 callbacks:
   early_stopping:
-    # Disabled: validation runs the FULL ensemble, so val/f1 dips every time a fresh,
+    # Disabled: validation runs the FULL ensemble, so val NLL spikes every time a fresh,
     # untrained member becomes active (see DeepEnsembleLitModule.on_train_epoch_start).
     # A patience-based monitor would kill the run mid-cycle. The per-member epoch
     # budget is fixed by design instead (trainer.max_epochs / num_estimators).
     _target_: lightning.pytorch.callbacks.EarlyStopping
-    monitor: "val/f1"
+    monitor: "val/nll_cal"
     patience: 999999
-    mode: "max"
+    mode: "min"
   model_checkpoint:
-    monitor: "val/f1"
-    mode: "max"
+    monitor: "val/nll_cal"
+    mode: "min"
     save_top_k: 1
     save_last: True
     verbose: True

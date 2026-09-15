@@ -1,7 +1,7 @@
 # @package _global_
 
 # to execute this experiment run:
-# python train.py experiment=example
+# python train.py experiment=sngp_wong
 
 defaults:
   - override /data: wong
@@ -14,6 +14,7 @@ defaults:
 name: "wong_sngp_resnet18"
 WANDB_PROJECT: ${oc.env:PROJECT_NAME}
 tags: ["sngp", "wong", "resnet18", "training"]
+
 seed: 12345
 
 num_classes: 4
@@ -25,10 +26,17 @@ trainer:
 
 model:
   optimizer:
-    lr: 1e-3
-    weight_decay: 1e-3
+    # Shared protocol defaults pending the W&B re-sweep (calibrated val-NLL objective,
+    # plain CE, canonical SNGP head) -- docs/HPO_GUIDE.md. Previous values (Optuna,
+    # macro-AUPRC objective, class-balanced focal loss) kept for the record.
+    lr: 1e-3  # was 0.004049320654267075
+    weight_decay: 1e-4  # was 5.555123206843529e-05
   net:
-    arch: "resnet18"
+    # All family constants live in configs/model/sngp_classifier.yaml -- do not
+    # repeat them here (tests/test_configs.py).
+    # Was rff_dim 512. Pre-correction sweep (off-regime, not reused): length_scale
+    # 4.6831779206638595, ridge_penalty 0.0004532901866195531.
+    arch: resnet18
     num_classes: ${num_classes}
     pretrained: false
   compile: false
@@ -38,11 +46,14 @@ model:
     T_max: ${trainer.max_epochs}
     eta_min: 0.0
   num_classes: ${num_classes}
-  class_freq: ${data.class_freq}
+  # Loss: plain cross-entropy, inherited from the model config. `class_freq` is
+  # deliberately NOT interpolated from ${data.class_freq} -- imbalance is handled at
+  # reporting time (macro metrics), never in the loss. Was ClassBalancedFocalLoss(cb_beta=0.999,
+  # focal_gamma=2.9731238996722444).
 
 data:
   datamodule:
-    batch_size: 128
+    batch_size: 128  # was 64
 
 logger:
   wandb:
@@ -55,10 +66,7 @@ logger:
     experiment: ""
 
 callbacks:
-  early_stopping:
-    monitor: "val/f1"
-    patience: 20
-    mode: "max"
-    min_delta: 0.005
+  # model_checkpoint / early_stopping: inherited from configs/callbacks/default.yaml
+  # (val/nll_cal, mode min) -- one place, not one per experiment.
   test_artifacts:
     hist_bins: 10

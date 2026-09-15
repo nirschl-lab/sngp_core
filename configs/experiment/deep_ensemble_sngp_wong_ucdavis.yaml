@@ -30,24 +30,28 @@ model:
   train_strategy: sequential  # Train one member at a time
 
   optimizer:
-    lr: 0.006987025320140652
-    weight_decay: 4.953457867090508e-06
+    # Inherits sngp_wong_ucdavis.yaml by design: members are sngp nets differing only by
+    # init seed, so Deep Ensemble is never swept on its own. Update TOGETHER with the
+    # partner after its W&B re-sweep -- tests/test_configs.py enforces the match.
+    lr: 1e-3  # was 0.006987025320140652
+    weight_decay: 1e-4  # was 4.953457867090508e-06
 
   net:
     base_model_spec:
+      # Members are built by build_net() from this spec, i.e. from SNGPClassifier's
+      # ctor defaults -- not from configs/model/sngp_classifier.yaml. The ctor
+      # defaults are the protocol constants, so only keys whose ctor default differs
+      # from the protocol are stated here.
       name: sngp_classifier
       arch: resnet18
       num_classes: ${num_classes}
       pretrained: false
-      # NOTE: length_scale/ridge_penalty below were tuned under the pre-correction SNGP
-      # head (mean-field applied inside the training loss). Under canonical SNGP the loss
-      # sees raw logits, so ridge_penalty no longer affects the fit at all and the tuned
-      # length_scale is off-regime. Reset to defaults pending a re-sweep; previous values
-      # kept in comments for the record.
-      rff_dim: 1024            # 256–1024 is a good range
-      length_scale: 1.0  # was 3.9470953262218864 (pre-correction sweep)
-      ridge_penalty: 1e-3  # was 0.0030056314601554384 (pre-correction sweep)
-      mean_field: True
+      # SNGPClassifier's ctor default for the bound is None (back-compat for pre-bound
+      # checkpoints), so the protocol value is stated here; must equal
+      # configs/model/sngp_classifier.yaml (tests/test_configs.py). Pre-correction sweep
+      # (off-regime, not reused): length_scale 3.9470953262218864, ridge_penalty
+      # 0.0030056314601554384.
+      spectral_norm_bound: 6.0
     num_estimators: ${num_estimators}
     task: classification
 
@@ -61,7 +65,7 @@ model:
     # and repeats -- exactly the fresh-start-per-member behavior each new (randomly
     # initialized) member needs. T_0 must equal trainer.max_epochs // num_estimators
     # (150 here); Hydra has no arithmetic resolver, so keep these in sync by hand if
-    # either changes.
+    # either changes (tests/test_configs.py checks the equality).
     _target_: torch.optim.lr_scheduler.CosineAnnealingWarmRestarts
     _partial_: true
     T_0: 150
@@ -69,9 +73,10 @@ model:
     eta_min: 0.0
 
   num_classes: ${num_classes}
-  class_freq: ${data.class_freq}
-  cb_beta: 0.9999 # effective-number-of-samples reweighting; 0 = uniform, closer to 1 = more aggressive
-  focal_gamma: 1.5312519191681795 # focal-loss focusing parameter; 0 = plain class-balanced CE
+  # Loss: plain cross-entropy, inherited from the model config. `class_freq` is
+  # deliberately NOT interpolated from ${data.class_freq} -- imbalance is handled at
+  # reporting time (macro metrics), never in the loss. Was ClassBalancedFocalLoss(cb_beta=0.9999,
+  # focal_gamma=1.5312519191681795).
 
 data:
   datamodule:
@@ -90,17 +95,17 @@ logger:
 
 callbacks:
   early_stopping:
-    # Disabled: validation runs the FULL ensemble, so val/f1 dips every time a fresh,
+    # Disabled: validation runs the FULL ensemble, so val NLL spikes every time a fresh,
     # untrained member becomes active (see DeepEnsembleLitModule.on_train_epoch_start).
     # A patience-based monitor would kill the run mid-cycle. The per-member epoch
     # budget is fixed by design instead (trainer.max_epochs / num_estimators).
     _target_: lightning.pytorch.callbacks.EarlyStopping
-    monitor: "val/f1"
+    monitor: "val/nll_cal"
     patience: 999999
-    mode: "max"
+    mode: "min"
   model_checkpoint:
-    monitor: "val/f1"
-    mode: "max"
+    monitor: "val/nll_cal"
+    mode: "min"
     save_top_k: 1
     save_last: True
     verbose: True

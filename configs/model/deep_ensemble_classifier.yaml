@@ -13,17 +13,26 @@ net:
     name: baseline_classifier
     arch: resnet18
     num_classes: 8
-    pretrained: true
+    pretrained: false
+    # Deliberately NO dropout_p / other family-specific keys here: Hydra merges this
+    # subtree per-key and build_net() passes every key as a ctor kwarg, so anything set
+    # here leaks into deep_ensemble_sngp_* experiments (SNGPClassifier has no dropout_p
+    # -> TypeError). Baseline-member experiments set dropout_p: 0.2 in their own
+    # base_model_spec; SNGP-member experiments set spectral_norm_bound there.
   num_estimators: 5
   task: classification
-
-class_weights: null
+  # Ensemble-level post-hoc calibration knob on the pooled logits: fit on validation NLL
+  # by scripts/checkpoints/calibrate_checkpoint.py, never trained or swept. Members keep
+  # their own (1.0) temperature.
+  temperature: 1.0
 
 optimizer:
   _target_: torch.optim.AdamW
   _partial_: true
-  lr: 0.001
-  weight_decay: 0.0
+  # Must track the Baseline's re-swept values: Deep Ensemble is never swept on its own
+  # (members are baseline nets differing only by init seed).
+  lr: 1e-3
+  weight_decay: 1e-4
 
 scheduler:
   # Fallback only for a bare `model=deep_ensemble_classifier` composition (one restart
@@ -43,7 +52,16 @@ scheduler:
 # --- Training setup ---
 compile: false
 num_classes: 8
-class_freq: null
-cb_beta: 0.999 # effective-number-of-samples reweighting; 0 = uniform, closer to 1 = more aggressive
-focal_gamma: 2.0 # focal-loss focusing parameter; 0 = plain class-balanced CE
+
+# --- Loss: plain cross-entropy, identical for every family and dataset ---
+# Selection is on calibrated validation NLL; focal / class-balanced reweighting reshapes
+# calibration (Mukhoti et al. 2020) and would confound the SNGP-vs-Baseline comparison.
+# Imbalance is handled at REPORTING time (macro metrics), not in the loss. Experiments
+# must leave these null; the dataset's class_freq stays in configs/data/<name>.yaml as
+# provenance only. Non-null values are an escape hatch, not protocol -- and if ever used
+# they must be identical across families for that dataset (tests/test_configs.py).
+class_freq: null # non-null -> ClassBalancedFocalLoss(cb_beta, focal_gamma)
+class_weights: null # non-null -> weighted CrossEntropyLoss (documented fallback)
+cb_beta: 0.999 # inert unless class_freq is set
+focal_gamma: 2.0 # inert unless class_freq is set
 label_smoothing: 0.0

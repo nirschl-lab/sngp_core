@@ -1,7 +1,7 @@
 # @package _global_
 
 # to execute this experiment run:
-# python train.py experiment=example
+# python train.py experiment=sngp_acevedo
 
 defaults:
   - override /data: acevedo
@@ -14,6 +14,7 @@ defaults:
 name: "acevedo_sngp_resnet18"
 WANDB_PROJECT: ${oc.env:PROJECT_NAME}
 tags: ["sngp", "acevedo", "resnet18", "training"]
+
 seed: 12345
 
 num_classes: 8
@@ -25,22 +26,19 @@ trainer:
 
 model:
   optimizer:
-    lr: 0.0008075409385471564
-    weight_decay: 0.00010301760471884074
+    # Shared protocol defaults pending the W&B re-sweep (calibrated val-NLL objective,
+    # plain CE, canonical SNGP head) -- docs/HPO_GUIDE.md. Previous values (Optuna,
+    # macro-AUPRC objective, class-balanced focal loss) kept for the record.
+    lr: 1e-3  # was 0.0008075409385471564
+    weight_decay: 1e-4  # was 0.00010301760471884074
   net:
-    arch: "resnet18"
+    # All family constants live in configs/model/sngp_classifier.yaml -- do not
+    # repeat them here (tests/test_configs.py).
+    # Pre-correction sweep (off-regime, not reused): length_scale 14.593478563256147,
+    # ridge_penalty 0.0014365309998562027, cov_momentum 0.999.
+    arch: resnet18
     num_classes: ${num_classes}
     pretrained: false
-    # NOTE: length_scale/ridge_penalty below were tuned under the pre-correction SNGP
-    # head (mean-field applied inside the training loss). Under canonical SNGP the loss
-    # sees raw logits, so ridge_penalty no longer affects the fit at all and the tuned
-    # length_scale is off-regime. Reset to defaults pending a re-sweep; previous values
-    # kept in comments for the record.
-    rff_dim: 1024            # 256–1024 is a good range
-    length_scale: 1.0  # was 14.593478563256147 (pre-correction sweep)
-    ridge_penalty: 1e-3  # was 0.0014365309998562027 (pre-correction sweep)
-    cov_momentum: -1.0  # was 0.999 (pre-correction sweep)
-
   compile: false
   scheduler:
     _target_: torch.optim.lr_scheduler.CosineAnnealingLR
@@ -48,7 +46,10 @@ model:
     T_max: ${trainer.max_epochs}
     eta_min: 0.0
   num_classes: ${num_classes}
-  class_freq: ${data.class_freq}
+  # Loss: plain cross-entropy, inherited from the model config. `class_freq` is
+  # deliberately NOT interpolated from ${data.class_freq} -- imbalance is handled at
+  # reporting time (macro metrics), never in the loss. Was ClassBalancedFocalLoss(cb_beta=0.999, focal_gamma=2.0) via the
+  # model-config defaults.
 
 data:
   datamodule:
@@ -65,10 +66,7 @@ logger:
     experiment: ""
 
 callbacks:
-  early_stopping:
-    monitor: "val/f1"
-    patience: 20
-    mode: "max"
-    min_delta: 0.005
+  # model_checkpoint / early_stopping: inherited from configs/callbacks/default.yaml
+  # (val/nll_cal, mode min) -- one place, not one per experiment.
   test_artifacts:
     hist_bins: 10

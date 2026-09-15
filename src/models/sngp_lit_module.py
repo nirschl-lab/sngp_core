@@ -22,10 +22,14 @@ class SNGPLitModule(LitModuleBase):
     epoch's is the one kept. The reset is what makes it final-epoch-only.
 
     That also happens to be what makes this project's checkpointing self-consistent.
-    With `ModelCheckpoint(monitor="val/f1", save_top_k=1)` and early stopping, the best
-    epoch is usually not the last one; a per-epoch reset means whichever epoch gets
+    With `ModelCheckpoint(monitor="val/nll_cal", save_top_k=1)` and early stopping, the
+    best epoch is usually not the last one; a per-epoch reset means whichever epoch gets
     checkpointed carries its own complete precision matrix. Accumulating only during
     the final epoch would write a `best.ckpt` from, say, epoch 12 with an empty one.
+
+    The selection metric itself depends on this too: `val/nll_cal` refits the mean-field
+    factor on each epoch's validation outputs, and those outputs use the covariance
+    derived from this epoch's (complete) precision matrix.
 
     Ordering is safe: `val_check_interval` defaults to 1.0 and is not overridden
     anywhere in `configs/`, so validation runs after all training batches and the

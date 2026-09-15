@@ -1,26 +1,33 @@
 # @package _global_
 
-# Hyperparameter search for the Baseline family, dataset-agnostic -- compose with
-# `experiment=` to pick the dataset:
-#   uv run src/train.py -m hparams_search=baseline experiment=baseline_tang
+# Baseline hyperparameter-search RUN PRESET -- the half of an HPO run that lives in
+# Hydra: proxy budget, objective, monitors, logger settings. The SEARCH SPACE lives in
+# the sibling W&B sweep definition configs/hparams_search/wandb/baseline.yaml, which
+# hands each trial its `model.optimizer.lr=...` overrides. One trial == one ordinary
+# single-run invocation launched by a `wandb agent` (scripts/hpo/sweep.py):
+#   uv run --no-sync python src/train.py hparams_search=baseline experiment=baseline_tang <overrides>
 #
-# Selects on macro-AUPRC (threshold-free, imbalance-robust -- see docs/HPO_GUIDE.md for
-# the full protocol). val/nll and val/ece are logged every epoch as read-only
-# calibration diagnostics; they never feed selection, early stopping, or checkpointing
-# here -- calibration/uncertainty stay the evaluation axis, never the training-time
-# selection axis, so a tuned model's generalization claim isn't compromised.
+# Deliberately NO hydra.mode/MULTIRUN, NO sweeper override, NO fail-safe: the W&B
+# controller owns the loop, and a crashed trial is just a crashed W&B run that the
+# Bayesian search ignores (a fail-safe returning a floor value would rank as the *best*
+# trial under a minimized NLL).
 #
-# Runs at a shortened proxy budget (max_epochs=50). model.scheduler.T_max is wired to
-# ${trainer.max_epochs} in every experiment config, so CosineAnnealingLR rescales to
-# the proxy budget automatically -- no manual schedule rescaling needed here. Retrain
-# the top-3 trials (not just the winner -- proxy-budget rankings are noisy) at the
-# experiment's full max_epochs=150 before picking a final config.
+# Objective: validation NLL after post-hoc calibration, minimized (docs/HPO_GUIDE.md).
+# For the baseline the knob is a temperature, refit each epoch on the val set as
+# logits / T -- i.e. the selection sees what scripts/checkpoints/calibrate_checkpoint.py
+# will report. hparams_search/sngp.yaml uses the mean-field factor the same way, so
+# families are compared on equal footing.
+#
+# Search space (configs/hparams_search/wandb/baseline.yaml): lr, weight_decay,
+# batch_size. dropout_p is fixed at 0.2 (MC-Dropout at inference needs it nonzero, and
+# tuning it against a deterministic validation pass would push it to 0). Deep Ensemble
+# is never swept: it inherits the tuned Baseline config.
+#
+# Proxy budget max_epochs=50; model.scheduler.T_max is wired to ${trainer.max_epochs} in
+# every experiment config, so CosineAnnealingLR rescales itself. Retrain the top-3 at the
+# experiment's full max_epochs before choosing a final config.
 
-defaults:
-  - override /hydra/sweeper: optuna
-
-optimized_metric: "val/auprc_best"
-sweep_fail_safe: true
+optimized_metric: "val/nll_cal_best" # must equal metric.name in wandb/baseline.yaml (tests/test_sweeps.py)
 
 trainer:
   min_epochs: 10
@@ -28,53 +35,34 @@ trainer:
 
 data:
   datamodule:
-    num_workers: 8 # keep <= hydra.launcher.cpus_per_task when using submitit_slurm
+    num_workers: 8 # keep <= --cpus-per-task in scripts/slurm/wandb_agent.sbatch
 
 callbacks:
   early_stopping:
-    monitor: "val/auprc"
-    mode: "max"
+    monitor: "val/nll_cal" # epoch-level twin of the objective -- a running-min *_best never "fails to improve"
+    mode: "min"
     patience: 8
     min_delta: 0.0
   model_checkpoint:
-    monitor: "val/auprc"
-    mode: "max"
+    monitor: "val/nll_cal"
+    mode: "min"
     save_top_k: 1
 
 logger:
   wandb:
+    # Inside a sweep agent, wandb.init() ignores project / entity / id (with a warning)
+    # and keeps the run on the sweep. `name` IS honoured, so leave it to W&B -- otherwise
+    # every trial shares one name. The group already carries the experiment.
+    name: null
     log_model: False # a 48-trial sweep must not upload 48 checkpoints as W&B artifacts
     group: "${name}_hpo"
     job_type: "sweep"
     tags: "${tags_with:${tags},${data.datamodule.institution},hpo}"
 
 hydra:
-  mode: "MULTIRUN"
-  sweeper:
-    _target_: hydra_plugins.hydra_optuna_sweeper.optuna_sweeper.OptunaSweeper
-    # sqlite persistence: gives the study resume + a durable record of every trial.
-    # Safe under a submitit_slurm fan-out because only the single sweeper process
-    # (not the worker jobs) opens the study for writing.
-    storage: sqlite:///${paths.log_dir}/optuna/${name}_hpo.db
-    study_name: "${name}_hpo"
-    n_jobs: 8
-    direction: maximize
-    n_trials: 48
-    sampler:
-      _target_: optuna.samplers.TPESampler
-      seed: 1234
-      # n_startup_trials should track n_jobs (how many trials run per batch), not
-      # n_trials -- the old baseline_tang/sngp_tang configs set this equal to n_trials,
-      # so TPE never actually engaged and every trial was pure random search.
-      n_startup_trials: 10
-      multivariate: true # lr and batch_size are coupled (LR scaling rule); model that
-    params:
-      model.optimizer.lr: tag(log, interval(0.00001, 0.01))
-      model.optimizer.weight_decay: tag(log, interval(0.000001, 0.01))
-      data.datamodule.batch_size: choice(64, 128, 256)
-      # ClassBalancedFocalLoss params (see docs/HPO_GUIDE.md#search-space) -- these
-      # shape the fit, not just calibration, since every experiment config used here
-      # sets class_freq. cb_beta stays a discrete choice (Cui et al.'s
-      # effective-number-of-samples formulation is conventionally reported this way).
-      model.cb_beta: choice(0.9, 0.99, 0.999, 0.9999)
-      model.focal_gamma: interval(0.0, 5.0)
+  run:
+    # Several agents can start trials within the same wall-clock second, so the
+    # timestamp-only default (configs/hydra/default.yaml) could collide. Suffix the W&B
+    # run id (exported by `wandb agent` before train.py starts; "local" for a by-hand
+    # run) and keep trials under sweeps/ so runs/ stays reserved for real training runs.
+    dir: ${paths.log_dir}/${task_name}/sweeps/${name}_hpo/${now:%Y-%m-%d}_${now:%H-%M-%S}_${oc.env:WANDB_RUN_ID,local}

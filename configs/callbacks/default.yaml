@@ -7,19 +7,28 @@ defaults:
   - test_artifacts
   - _self_
 
+# Both monitors track the SAME metric the hyperparameter search selects on:
+# `val/nll_cal`, validation NLL after fitting the family's post-hoc calibration knob
+# (see LitModuleBase / docs/HPO_GUIDE.md), minimized. Selecting the checkpoint on a
+# different metric than the hyperparameters were chosen with would make `best.ckpt` and
+# the sweep optimize different things. Experiments inherit this block -- one place, not
+# one per experiment.
 model_checkpoint:
   dirpath: ${paths.output_dir}/checkpoints
   filename: "best" # Lightning appends its own .ckpt extension -- don't include it here
-  monitor: "val/loss"
+  monitor: "val/nll_cal"
   mode: "min"
   save_last: True
   save_top_k: 1 # a static filename can't distinguish multiple "best" checkpoints; would collide into best-v1.ckpt otherwise
   auto_insert_metric_name: False
 
 early_stopping:
-  monitor: "val/f1"
+  monitor: "val/nll_cal"
+  mode: "min"
   patience: 20
-  mode: "max"
+  # 0.0, not the old 0.005: that value was in F1 units. Late-cosine NLL gains are a few
+  # 1e-3 nats per epoch but real, and a 0.005-nat floor would stop on genuine progress.
+  min_delta: 0.0
 
 model_summary:
   max_depth: -1

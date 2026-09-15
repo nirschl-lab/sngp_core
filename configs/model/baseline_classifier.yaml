@@ -1,40 +1,48 @@
 _target_: src.models.baseline_lit_module.BaselineLitModule
 
-name: timm_mc_baseline
-# backbone
+name: baseline_classifier
+
+# Family constants live here, once; experiment configs set just arch / num_classes /
+# pretrained (tests/test_configs.py). `temperature` is this family's single post-hoc
+# calibration knob: fit on validation NLL by scripts/checkpoints/calibrate_checkpoint.py,
+# which writes it into the checkpoint's net_spec -- never trained, swept, or hand-edited.
+# It is the counterpart of SNGP's mean_field_factor.
 net:
   _target_: src.models.baseline.baseline_models.BaselineClassifier
   arch: resnet18
-  num_classes: 8
-  dropout_p: 0.2
-  pretrained: true
-
-class_weights: null
+  num_classes: 8 # experiments override via ${num_classes}
+  pretrained: false # protocol constant (docs/HPO_GUIDE.md)
+  dropout_p: 0.2 # fixed, never swept: MC-Dropout at inference needs it nonzero
+  temperature: 1.0 # POST-HOC fitted on val NLL; 1.0 until fit
 
 optimizer:
   _target_: torch.optim.AdamW
   _partial_: true
-  lr: 0.001
-  weight_decay: 0.0
-
-# scheduler:
-#   _target_: torch.optim.lr_scheduler.ReduceLROnPlateau
-#   _partial_: true
-#   mode: min
-#   factor: 0.1
-#   patience: 10
+  lr: 1e-3 # shared protocol default; per-dataset values come from the W&B re-sweep
+  weight_decay: 1e-4
 
 scheduler:
-    _target_: torch.optim.lr_scheduler.CosineAnnealingLR
-    _partial_: true
-    T_max: ${trainer.max_epochs}
-    eta_min: 0.0
+  _target_: torch.optim.lr_scheduler.CosineAnnealingLR
+  _partial_: true
+  T_max: ${trainer.max_epochs}
+  eta_min: 0.0
 
 # --- Training setup ---
 compile: false # compile model for faster training with pytorch 2.0
 num_classes: 8
-class_freq: null
-cb_beta: 0.999 # effective-number-of-samples reweighting; 0 = uniform, closer to 1 = more aggressive
-focal_gamma: 2.0 # focal-loss focusing parameter; 0 = plain class-balanced CE
+
+# --- Loss: plain cross-entropy, identical for every family and dataset ---
+# Selection is on calibrated validation NLL; focal / class-balanced reweighting reshapes
+# calibration (Mukhoti et al. 2020) and would confound the SNGP-vs-Baseline comparison.
+# Imbalance is handled at REPORTING time (macro metrics), not in the loss. Experiments
+# must leave these null; the dataset's class_freq stays in configs/data/<name>.yaml as
+# provenance only. Non-null values are an escape hatch, not protocol -- and if ever used
+# they must be identical across families for that dataset (tests/test_configs.py).
+class_freq: null # non-null -> ClassBalancedFocalLoss(cb_beta, focal_gamma)
+class_weights: null # non-null -> weighted CrossEntropyLoss (documented fallback)
+cb_beta: 0.999 # inert unless class_freq is set
+focal_gamma: 2.0 # inert unless class_freq is set
+label_smoothing: 0.0
+
 use_mc: false # MC-Dropout at test/predict time only
 mc_passes: 10

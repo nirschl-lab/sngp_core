@@ -1,39 +1,48 @@
 _target_: src.models.sngp_lit_module.SNGPLitModule
 
 name: sngp_classifier
-# backbone
+
+# SNGP constants -- fixed to Liu et al. (2022, JMLR) Table 9 / the edward2 reference
+# implementation and NOT swept. This block is the ONLY place they live: experiment
+# configs set just arch / num_classes / pretrained, and tests/test_configs.py checks
+# both that experiments do not override these and that SNGPClassifier's ctor defaults
+# agree with them. Two knobs here are deliberately not constants:
+#   spectral_norm_bound -- the paper's c (eq. 15); the only SNGP-specific SWEPT knob.
+#   mean_field_factor   -- the paper's kernel amplitude sigma; fit POST-HOC on validation
+#                          NLL (scripts/checkpoints/calibrate_checkpoint.py), never trained
+#                          or swept. Counterpart of Baseline/DE `temperature`.
 net:
   _target_: src.models.sngp.sngp_classifier.SNGPClassifier
-  num_classes: 8         # <-- change to your dataset
-  arch: "resnet18"
-  pretrained: True         # ok to start from ImageNet
-  rff_dim: 1024            # 256–1024 is a good range
-  length_scale: 1.0
-  # Seeds the precision matrix (P = ridge*I + sum_i phi_i phi_i^T). Inference-time only:
-  # it has no effect on the training fit -- see docs/HPO_GUIDE.md.
-  ridge_penalty: 1e-3
-  # -1 = exact sum over one epoch, with a per-epoch reset. This is the paper's scheme
-  # and the reference default. A value in [0, 1) switches to an EMA instead.
-  cov_momentum: -1.0
-  mean_field: True         # applied at INFERENCE only, never in the training loss
-  # Tunable multiplicative factor, NOT a fixed constant: the reference uses 1.0 for
-  # ImageNet and 20.0 for CIFAR. Inference-only, so tune it post-hoc on a trained
-  # checkpoint (scripts/checkpoints/tune_sngp_mean_field.py) rather than in the sweep --
-  # it cannot move accuracy or F1 at all. pi/8 is the textbook probit value but is
+  arch: resnet18
+  num_classes: 8 # experiments override via ${num_classes}
+  pretrained: false # protocol constant (docs/HPO_GUIDE.md)
+  # Spectral-norm upper bound c: W <- c*W/sigma only when sigma > c. Changes the trained
+  # function, so it is swept ({1, 2, 4, 6, 8}; smallest c that keeps accuracy is the
+  # paper's rule). 6.0 = the reference CIFAR value. null = stock hard normalization
+  # (sigma == 1) -- only for reproducing checkpoints written before the bound existed.
+  spectral_norm_bound: 6.0
+  # Mean-field factor = kernel amplitude sigma. 1.0 (ImageNet reference) until fit
+  # post-hoc; the CIFAR reference uses 20. pi/8 is the textbook probit constant but is
   # nearly inert at realistic dataset sizes.
   mean_field_factor: 1.0
-  normalize_input: True    # LayerNorm on the GP input ("similar to ARD")
-  likelihood: "gaussian"   # reference default for image classification (unit Laplace
-                           # weight); "binary_logistic" uses the paper's p(1-p) instead
-  output_bias: False       # reference uses a fixed zero GP output bias
-  random_feature_type: "orf"  # orthogonal random features (Yu et al. 2016), the default
-                              # in both reference baselines; "rff" for plain i.i.d. Gaussian
+  rff_dim: 1024
+  # sqrt(2): W is divided by length_scale here, giving kernel exp(-|x-y|^2 / (2 ls^2));
+  # edward2's gp_kernel_scale=2.0 scales the GP input by 1/sqrt(2), i.e. the same width.
+  length_scale: 1.4142
+  ridge_penalty: 1e-3 # seeds P = ridge*I + sum phi phi^T; inference-only
+  cov_momentum: -1.0 # exact per-epoch sum with a per-epoch reset (paper scheme)
+  mean_field: true # inference-only correction; training sees raw logits
+  normalize_input: true # LayerNorm on the GP input ("similar to ARD")
+  likelihood: gaussian # unit Laplace weight (reference default for image classification)
+  output_bias: false # reference uses a fixed zero GP output bias
+  random_feature_type: orf # orthogonal random features (Yu et al. 2016)
+  n_power_iterations_sn: 1
 
 # optimizer and scheduler
 optimizer:
   _target_: torch.optim.AdamW
   _partial_: true
-  lr: 2e-4
+  lr: 1e-3 # shared protocol default; per-dataset values come from the W&B re-sweep
   weight_decay: 1e-4
 
 scheduler:
@@ -46,7 +55,15 @@ scheduler:
 compile: false # compile model for faster training with pytorch 2.0
 num_classes: 8
 
-class_weights: null
-class_freq: null
-cb_beta: 0.999 # effective-number-of-samples reweighting; 0 = uniform, closer to 1 = more aggressive
-focal_gamma: 2.0 # focal-loss focusing parameter; 0 = plain class-balanced CE
+# --- Loss: plain cross-entropy, identical for every family and dataset ---
+# Selection is on calibrated validation NLL; focal / class-balanced reweighting reshapes
+# calibration (Mukhoti et al. 2020) and would confound the SNGP-vs-Baseline comparison.
+# Imbalance is handled at REPORTING time (macro metrics), not in the loss. Experiments
+# must leave these null; the dataset's class_freq stays in configs/data/<name>.yaml as
+# provenance only. Non-null values are an escape hatch, not protocol -- and if ever used
+# they must be identical across families for that dataset (tests/test_configs.py).
+class_freq: null # non-null -> ClassBalancedFocalLoss(cb_beta, focal_gamma)
+class_weights: null # non-null -> weighted CrossEntropyLoss (documented fallback)
+cb_beta: 0.999 # inert unless class_freq is set
+focal_gamma: 2.0 # inert unless class_freq is set
+label_smoothing: 0.0

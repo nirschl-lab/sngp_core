@@ -1,7 +1,7 @@
 # @package _global_
 
 # to execute this experiment run:
-# python train.py experiment=example
+# python train.py experiment=sngp_wong_ucdavis
 
 defaults:
   - override /data: wong
@@ -14,6 +14,7 @@ defaults:
 name: "wong_ucdavis_sngp_resnet18"
 WANDB_PROJECT: ${oc.env:PROJECT_NAME}
 tags: ["sngp", "wong", "resnet18", "training"]
+
 seed: 12345
 
 num_classes: 4
@@ -25,16 +26,19 @@ trainer:
 
 model:
   optimizer:
-    lr: 0.004049320654267075
-    weight_decay: 5.555123206843529e-05
+    # Shared protocol defaults pending the W&B re-sweep (calibrated val-NLL objective,
+    # plain CE, canonical SNGP head) -- docs/HPO_GUIDE.md. Previous values (Optuna,
+    # macro-AUPRC objective, class-balanced focal loss) kept for the record.
+    lr: 1e-3  # was 0.006987025320140652
+    weight_decay: 1e-4  # was 4.953457867090508e-06
   net:
-    arch: "resnet18"
+    # All family constants live in configs/model/sngp_classifier.yaml -- do not
+    # repeat them here (tests/test_configs.py).
+    # Pre-correction sweep (off-regime, not reused): length_scale 3.9470953262218864,
+    # ridge_penalty 0.0030056314601554384.
+    arch: resnet18
     num_classes: ${num_classes}
     pretrained: false
-    rff_dim: 512            # 256–1024 is a good range
-    length_scale: 4.6831779206638595
-    ridge_penalty: 0.0004532901866195531
-    mean_field: True
   compile: false
   scheduler:
     _target_: torch.optim.lr_scheduler.CosineAnnealingLR
@@ -42,13 +46,14 @@ model:
     T_max: ${trainer.max_epochs}
     eta_min: 0.0
   num_classes: ${num_classes}
-  class_freq: ${data.class_freq}
-  cb_beta: 0.999 # effective-number-of-samples reweighting; 0 = uniform, closer to 1 = more aggressive
-  focal_gamma: 2.9731238996722444 # focal-loss focusing parameter; 0 = plain class-balanced CE
+  # Loss: plain cross-entropy, inherited from the model config. `class_freq` is
+  # deliberately NOT interpolated from ${data.class_freq} -- imbalance is handled at
+  # reporting time (macro metrics), never in the loss. Was ClassBalancedFocalLoss(cb_beta=0.9999,
+  # focal_gamma=1.5312519191681795).
 
 data:
   datamodule:
-    batch_size: 64
+    batch_size: 128  # was 64
     institution: ucdavis
 
 logger:
@@ -62,10 +67,7 @@ logger:
     experiment: ""
 
 callbacks:
-  early_stopping:
-    monitor: "val/f1"
-    patience: 20
-    mode: "max"
-    min_delta: 0.005
+  # model_checkpoint / early_stopping: inherited from configs/callbacks/default.yaml
+  # (val/nll_cal, mode min) -- one place, not one per experiment.
   test_artifacts:
     hist_bins: 10

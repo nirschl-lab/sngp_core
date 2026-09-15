@@ -19,20 +19,20 @@ considering a task done.
 | `src/models/backbones.py`, `src/models/components/spectral_norm.py` | `pytest tests/models/test_backbone_factory.py tests/models/baseline/test_backbones.py tests/models/sngp/test_spectral_norm.py` |
 | `src/models/baseline/**`, `src/models/baseline_lit_module.py` | `pytest tests/models/baseline/ tests/models/test_output_contract.py` |
 | `src/models/sngp/**`, `src/models/sngp_lit_module.py` | `pytest tests/models/sngp/` |
-| `src/models/ensemble/**`, `src/models/deep_ensemble_lit_module.py` | `pytest tests/checkpointing/test_ensemble_assembly.py tests/models/test_output_contract.py` |
-| `src/checkpointing/legacy.py`, `src/checkpointing/resolve.py` | `pytest tests/checkpointing/` |
+| `src/models/ensemble/**`, `src/models/deep_ensemble_lit_module.py` | `pytest tests/checkpointing/test_ensemble_assembly.py tests/models/test_output_contract.py tests/models/ensemble/` |
+| `src/checkpointing/legacy.py`, `src/checkpointing/resolve.py`, `scripts/checkpoints/**` | `pytest tests/checkpointing/` |
 | `src/data/classification_image_datamodule.py`, `artifact_image_datamodule.py`, `mnist_datamodule.py` | `pytest tests/test_datamodules.py` |
 | `src/callbacks/**` | `pytest tests/callbacks/` |
 | `src/inference/**` | `pytest tests/test_infer.py` |
 | `src/train.py` | `pytest tests/test_train.py` |
-| `src/eval.py` | `pytest tests/test_eval.py` |
+| `src/eval.py` | `pytest tests/test_eval.py tests/test_eval_spec_check.py` |
 | `src/paper_helpers/**` | `pytest tests/paper_helpers/` |
 | `src/visualization/**` | untested by policy — no dedicated suite; smoke-test manually |
 | `scripts/hf/export_to_hub.py` | `pytest tests/hf/` |
 | `configs/data/*.yaml` | `pytest tests/test_configs.py::TestDatasetConfigDrift tests/test_datamodules.py` |
 | `configs/model/*.yaml` | `pytest tests/test_configs.py::TestModelConfigs` |
-| `configs/experiment/*.yaml` | `pytest tests/test_configs.py::TestExperimentClassFreqConsistency` |
-| `configs/hparams_search/**` | `pytest tests/test_sweeps.py` |
+| `configs/experiment/*.yaml` | `pytest tests/test_configs.py::TestExperimentProtocolConsistency` |
+| `configs/hparams_search/**`, `scripts/hpo/*.py` | `pytest tests/test_sweeps.py` |
 | any other `configs/**` | `pytest tests/test_configs.py` |
 
 **Core files — no safe scoped subset, run `make test` instead:** these are the
