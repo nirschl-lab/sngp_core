@@ -154,6 +154,10 @@ bit-identically; the config states `6.0`.
 - **Retrain the top-3 trials, not just the winner**, at the experiment's full
   `max_epochs=150`, and pick the final config by full-budget `val/nll_cal_best`.
   Proxy-budget rankings are noisy; three extra runs per sweep is cheap insurance.
+  This is a *separate manual step*, not something the sweep or `summarize_sweep.py`
+  does -- the trials themselves only ever ran at 50 epochs, and they leave no
+  checkpoint behind (`save_top_k: 0`), so retraining is mandatory rather than an
+  optimization. See [Reading results](#reading-results) for the exact command.
 - **Final models**: the winning config x 5 seeds, reported mean +/- std, each
   post-hoc calibrated (next section).
 
@@ -201,7 +205,9 @@ remaining `{baseline, sngp} x {tang, acevedo, wong, kather2018}`.
 Each trial is an ordinary single run: `src/train.py hparams_search=<family>
 experiment=<family>_<dataset> <overrides>`. Trial outputs land under
 `train/<model.name>_<data.name>/sweeps/<name>_hpo/<timestamp>_<wandb_run_id>/`
-(docs/OUTPUT_LAYOUT.md); `log_model: False` keeps 48 checkpoints out of W&B artifacts.
+(docs/OUTPUT_LAYOUT.md); `log_model: False` keeps 48 checkpoints out of W&B artifacts, and
+`save_top_k: 0` / `save_last: False` keeps them off local disk too -- a trial dir is ~200 KB
+of logs and config, not 278 MB of weights nothing ever loads.
 A crashed trial is just a crashed W&B run that the Bayesian search ignores -- there is
 deliberately no fail-safe that swallows exceptions and returns a floor value (under a
 minimized objective such a floor would rank as the *best* trial).
@@ -212,8 +218,21 @@ minimized objective such a floor would rank as the *best* trial).
 uv run scripts/hpo/summarize_sweep.py --sweep <entity>/<project>/<sweep_id> --top-k 3
 ```
 
-Prints the top-K finished trials ranked by `val/nll_cal_best`, each with the fitted knob
-and raw NLL, and its swept parameters as a ready-to-paste CLI string:
+`summarize_sweep.py` is a read-only W&B API consumer: it ranks trials that already ran
+and launches nothing. **The top-3 it prints are the proxy-budget trials themselves --
+50 epochs, not retrained.** Every one of them ran with `hparams_search=<family>` in the
+command, which pins `trainer.max_epochs: 50` over the experiment's 150.
+
+It prints each trial with its fitted knob and raw NLL, plus its swept parameters alone
+(no `experiment=`, no `hparams_search=`) as a ready-to-paste string:
+
+```
+#1  run=lively-sweep-12  id=cq95tpch  val/nll_cal_best=0.4131  (val/nll_best=0.5522, ...)
+    data.datamodule.batch_size=64 model.net.spectral_norm_bound=4.0 model.optimizer.lr=0.00034 model.optimizer.weight_decay=0.0021
+```
+
+Paste that onto a plain training run -- **once per top-3 config** -- to do the full-budget
+retrain:
 
 ```bash
 uv run src/train.py experiment=sngp_acevedo \
@@ -221,6 +240,12 @@ uv run src/train.py experiment=sngp_acevedo \
   data.datamodule.batch_size=64 model.net.spectral_norm_bound=4.0 \
   test=True
 ```
+
+Leaving `hparams_search=` off is the whole mechanism: `trainer.max_epochs` falls back to
+the experiment's 150, `model.scheduler.T_max` rescales with it, `EarlyStopping.patience`
+returns to 20, and the run lands in `runs/` with a real `best.ckpt` instead of in
+`sweeps/` with none. Then compare the three full-budget `val/nll_cal_best` values and
+pick the winner -- that is the config you run x 5 seeds.
 
 Sweep paths are recorded in [MASTER_SWEEPS.md](MASTER_SWEEPS.md) by `sweep.py`.
 

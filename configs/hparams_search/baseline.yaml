@@ -46,7 +46,14 @@ callbacks:
   model_checkpoint:
     monitor: "val/nll_cal"
     mode: "min"
-    save_top_k: 1
+    # A trial writes no checkpoint at all. Its weights are never loaded: the objective
+    # reaches W&B through the logged val/nll_cal_best, and the protocol retrains the
+    # top-3 from scratch at the experiment's full max_epochs (docs/HPO_GUIDE.md), so a
+    # 50-epoch proxy checkpoint is never the model you keep -- it just cost 278 MB
+    # (best + last) x run_cap. monitor/mode stay for the drift guards in
+    # tests/test_sweeps.py; with save_top_k: 0 the monitor is inert.
+    save_top_k: 0
+    save_last: False
 
 logger:
   wandb:

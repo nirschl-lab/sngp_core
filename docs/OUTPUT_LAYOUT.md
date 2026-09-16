@@ -331,10 +331,20 @@ is added on top from `net_spec["name"]` alone.
 - **`ensemble_members/<run_id>/` is a sibling of `runs/<run_id>/`, but each member's own run dir
   is built by an explicit `hydra.run.dir=` override, not `task_name`** -- described in
   [§6](#6-ensemble-member-parallel-training-outputs); deliberate, not an oversight.
-- **HPO trial dirs sit under `train/<model.name>_<data.name>/sweeps/<name>_hpo/`.**
-  `configs/hparams_search/*.yaml` override `hydra.run.dir` to
+- **HPO trial dirs sit under `train/<model.name>_<data.name>/sweeps/<name>_hpo/`, and contain no
+  `checkpoints/` at all.** `configs/hparams_search/*.yaml` override `hydra.run.dir` to
   `${paths.log_dir}/${task_name}/sweeps/${name}_hpo/${now:...}_${oc.env:WANDB_RUN_ID,local}`
-  -- the same `${task_name}` prefix as `runs/`, a `sweeps/` segment so proxy-budget trial
-  checkpoints are never mistaken for real training runs, and the W&B run id (exported by
-  `wandb agent`; `local` for a by-hand run) so several agents starting in the same second
-  cannot collide.
+  -- the same `${task_name}` prefix as `runs/`, a `sweeps/` segment so proxy-budget trials are
+  never mistaken for real training runs, and the W&B run id (exported by `wandb agent`; `local`
+  for a by-hand run) so several agents starting in the same second cannot collide. The same
+  presets set `model_checkpoint.save_top_k: 0` / `save_last: False`, so a trial dir is ~200 KB
+  of `.hydra/` + `run.log` + `config_tree.log` + `wandb/` instead of ~278 MB: a trial's weights
+  are never loaded, because the protocol retrains the top-3 from scratch at full `max_epochs`
+  ([HPO_GUIDE.md](HPO_GUIDE.md)). Lightning creates no empty `checkpoints/` dir either -- the
+  dirpath is made lazily inside the save path, which is never reached.
+- **That `sweeps/` segment depends on the ORDER of `configs/train.yaml`'s defaults list.**
+  `- hydra: default` must appear *before* `- experiment` / `- hparams_search`; Hydra merges the
+  defaults list last-wins, so moving it back to the end makes `configs/hydra/default.yaml`'s
+  `runs/<timestamp>` template silently clobber the preset's and every trial lands in the
+  real-training tree with no error. Guarded by
+  `tests/test_sweeps.py::test_trials_land_under_sweeps_and_write_no_checkpoints`.

@@ -159,6 +159,19 @@ class TestWandbSweepConfigDrift:
             assert cfg.callbacks[name].mode == "min", f"{family}: callbacks.{name}.mode"
 
     @pytest.mark.parametrize("family", _wandb_sweep_families())
+    def test_trials_land_under_sweeps_and_write_no_checkpoints(self, family: str):
+        cfg = _compose_preset(family)
+        # Guards the defaults-list ORDER in configs/train.yaml: `- hydra: default` must come
+        # before `- hparams_search`, or configs/hydra/default.yaml's runs/<timestamp> template
+        # wins (last-in-defaults-list) and every trial pollutes the real-training tree.
+        assert "/sweeps/" in cfg.hydra.run.dir, f"{family}: trial dir is not under sweeps/ -- {cfg.hydra.run.dir}"
+        # A trial's weights are never loaded: the protocol retrains the top-3 from scratch at
+        # the experiment's full max_epochs (docs/HPO_GUIDE.md), so writing best+last per trial
+        # is 278 MB x run_cap of pure waste.
+        assert cfg.callbacks.model_checkpoint.save_top_k == 0, f"{family}: sweep trials must not save checkpoints"
+        assert cfg.callbacks.model_checkpoint.save_last is False, f"{family}: sweep trials must not save last.ckpt"
+
+    @pytest.mark.parametrize("family", _wandb_sweep_families())
     def test_preset_is_a_plain_single_run(self, family: str):
         cfg = _compose_preset(family)
         assert "sweep_fail_safe" not in cfg, "a fail-safe floor would rank as the best trial under a minimized objective"

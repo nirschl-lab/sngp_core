@@ -11,6 +11,15 @@ defaults:
   - paths: default
   - extras: default
 
+  # `hydra: default` must come BEFORE experiment/hparams_search. Hydra merges the
+  # defaults list in order, last-wins, so with it at the END of the list
+  # configs/hydra/default.yaml's `run.dir: .../runs/<timestamp>` silently clobbered the
+  # `.../sweeps/<name>_hpo/...` run dir that configs/hparams_search/*.yaml sets, and
+  # every sweep trial landed in the real-training tree. Guarded by
+  # tests/test_sweeps.py::test_trials_land_under_sweeps_and_write_no_checkpoints.
+  # (configs/eval.yaml already orders it this way.)
+  - hydra: default
+
   # _self_ here (rather than at the end) makes this file's own values below (tags,
   # seed, ...) the BASE that experiment/hparams_search override -- not the other way
   # around. With _self_ last, this file's tags/seed silently clobbered whatever
@@ -33,9 +42,9 @@ defaults:
   # debugging config (enable through command line, e.g. `python train.py debug=default)
   - debug: null
 
-  - hydra: default
-
-  # if using submitit_slurm, set override after others but before _self_
+  # if using submitit_slurm, this must stay the LAST entry in the defaults list --
+  # Hydra rejects an `override` that is followed by any other entry
+  # ("Overrides must be at the end of the defaults list").
   # - override /hydra/launcher: submitit_slurm
 
 # task name, determines output directory path -- includes model family + dataset so
