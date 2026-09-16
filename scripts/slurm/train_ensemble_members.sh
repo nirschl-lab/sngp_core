@@ -43,7 +43,13 @@ set -euo pipefail
 EXPERIMENT="${1:?Usage: sbatch $0 <baseline_experiment> <num_estimators>}"
 NUM_ESTIMATORS="${2:?Usage: sbatch $0 <baseline_experiment> <num_estimators>}"
 
-cd "$(dirname "$0")/../.."  # repo root
+# Repo root -- NOT derivable from $0 here: sbatch copies this script to a node-local
+# spool dir, so under SLURM $0 is /var/spool/slurmd/job<id>/slurm_script and
+# "$(dirname "$0")/../.." is /var/spool. sbatch starts the job in the submission
+# directory and exports it as SLURM_SUBMIT_DIR; the $0 fallback covers direct execution.
+REPO_ROOT="${SLURM_SUBMIT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
+cd "${REPO_ROOT}"
+[[ -f .project-root ]] || { echo "not the repo root: ${REPO_ROOT} -- sbatch this script from the repo root" >&2; exit 1; }
 mkdir -p slurm_logs
 
 echo "Starting job ${SLURM_JOB_ID:-<no-slurm>} on $(date)"

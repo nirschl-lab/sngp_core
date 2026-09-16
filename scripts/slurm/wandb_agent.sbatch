@@ -21,7 +21,14 @@ set -euo pipefail
 SWEEP_PATH="${1:?Usage: sbatch --array=0-N%P $0 <entity/project/sweep_id> [count]}"
 COUNT="${2:-1}"
 
-cd "$(dirname "$0")/../.."  # repo root: the sweep command runs `src/train.py` relative to it
+# Repo root: the sweep command runs `src/train.py` relative to it. NOT derivable from
+# $0 here -- sbatch copies this script to a node-local spool dir, so under SLURM $0 is
+# /var/spool/slurmd/job<id>/slurm_script and "$(dirname "$0")/../.." is /var/spool.
+# sbatch starts the job in the submission directory and exports it as SLURM_SUBMIT_DIR;
+# the $0 fallback is for running this script directly, outside SLURM.
+REPO_ROOT="${SLURM_SUBMIT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
+cd "${REPO_ROOT}"
+[[ -f .project-root ]] || { echo "not the repo root: ${REPO_ROOT} -- sbatch this script from the repo root" >&2; exit 1; }
 mkdir -p slurm_logs
 
 if [[ -f .env ]]; then
