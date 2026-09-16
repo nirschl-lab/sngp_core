@@ -165,6 +165,11 @@ class TestWandbSweepConfigDrift:
         # before `- hparams_search`, or configs/hydra/default.yaml's runs/<timestamp> template
         # wins (last-in-defaults-list) and every trial pollutes the real-training tree.
         assert "/sweeps/" in cfg.hydra.run.dir, f"{family}: trial dir is not under sweeps/ -- {cfg.hydra.run.dir}"
+        # sweeps/<sweep id>/<timestamp>_<run id>: the per-sweep parent keeps a pilot, a re-sweep
+        # and a different backbone in separate folders. Resolves to "local/<ts>_local" here,
+        # since hydra.compose sees none of the env vars `wandb agent` exports.
+        tail = cfg.hydra.run.dir.split("/sweeps/", 1)[1]
+        assert tail.count("/") == 1, f"{family}: expected sweeps/<sweep id>/<trial>, got {tail!r}"
         # A trial's weights are never loaded: the protocol retrains the top-3 from scratch at
         # the experiment's full max_epochs (docs/HPO_GUIDE.md), so writing best+last per trial
         # is 278 MB x run_cap of pure waste.

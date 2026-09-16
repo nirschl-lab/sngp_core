@@ -14,7 +14,7 @@ defaults:
   # `hydra: default` must come BEFORE experiment/hparams_search. Hydra merges the
   # defaults list in order, last-wins, so with it at the END of the list
   # configs/hydra/default.yaml's `run.dir: .../runs/<timestamp>` silently clobbered the
-  # `.../sweeps/<name>_hpo/...` run dir that configs/hparams_search/*.yaml sets, and
+  # `.../sweeps/<sweep id>/...` run dir that configs/hparams_search/*.yaml sets, and
   # every sweep trial landed in the real-training tree. Guarded by
   # tests/test_sweeps.py::test_trials_land_under_sweeps_and_write_no_checkpoints.
   # (configs/eval.yaml already orders it this way.)

@@ -204,8 +204,10 @@ remaining `{baseline, sngp} x {tang, acevedo, wong, kather2018}`.
 
 Each trial is an ordinary single run: `src/train.py hparams_search=<family>
 experiment=<family>_<dataset> <overrides>`. Trial outputs land under
-`train/<model.name>_<data.name>/sweeps/<name>_hpo/<timestamp>_<wandb_run_id>/`
-(docs/OUTPUT_LAYOUT.md); `log_model: False` keeps 48 checkpoints out of W&B artifacts, and
+`train/<model.name>_<data.name>/sweeps/<wandb_sweep_id>/<timestamp>_<wandb_run_id>/`
+(docs/OUTPUT_LAYOUT.md) -- the sweep id is the grouping level, so a pilot and the real run stay
+apart; look it up in [MASTER_SWEEPS.md](MASTER_SWEEPS.md). `log_model: False` keeps 48
+checkpoints out of W&B artifacts, and
 `save_top_k: 0` / `save_last: False` keeps them off local disk too -- a trial dir is ~200 KB
 of logs and config, not 278 MB of weights nothing ever loads.
 A crashed trial is just a crashed W&B run that the Bayesian search ignores -- there is

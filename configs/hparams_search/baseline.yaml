@@ -68,8 +68,16 @@ logger:
 
 hydra:
   run:
-    # Several agents can start trials within the same wall-clock second, so the
-    # timestamp-only default (configs/hydra/default.yaml) could collide. Suffix the W&B
-    # run id (exported by `wandb agent` before train.py starts; "local" for a by-hand
-    # run) and keep trials under sweeps/ so runs/ stays reserved for real training runs.
-    dir: ${paths.log_dir}/${task_name}/sweeps/${name}_hpo/${now:%Y-%m-%d}_${now:%H-%M-%S}_${oc.env:WANDB_RUN_ID,local}
+    # sweeps/<sweep id>/<timestamp>_<run id>, keeping runs/ reserved for real training runs.
+    #
+    # The SWEEP ID -- not the experiment name -- is the grouping level: the parent
+    # ${task_name} already says model+dataset, whereas a pilot, a re-sweep and a different
+    # backbone are different *sweeps* that deserve separate folders. Look an id up in
+    # docs/MASTER_SWEEPS.md. The run id suffix keeps several agents starting in the same
+    # wall-clock second from colliding on the timestamp.
+    #
+    # Both env vars come from `wandb agent`: it sets WANDB_SWEEP_ID once per agent (to the
+    # BARE id, not entity/project/id) and WANDB_RUN_ID per trial, then snapshots os.environ
+    # into the trial subprocess. Keep the ",local" default on both -- a by-hand run and
+    # `hydra.compose` in tests have neither, and a bare ${oc.env:...} would raise.
+    dir: ${paths.log_dir}/${task_name}/sweeps/${oc.env:WANDB_SWEEP_ID,local}/${now:%Y-%m-%d}_${now:%H-%M-%S}_${oc.env:WANDB_RUN_ID,local}

@@ -33,6 +33,11 @@ $EXPERIMENTS_HOME/$PROJECT_NAME/
 │   │   └── checkpoints/
 │   │       ├── best.ckpt
 │   │       └── last.ckpt
+│   ├── sweeps/<wandb_sweep_id>/             # W&B HPO trials, grouped per sweep, see §1
+│   │   └── <run_id>_<wandb_run_id>/         # one trial -- logs only, never checkpoints
+│   │       ├── run.log
+│   │       ├── .hydra/
+│   │       └── wandb/
 │   └── ensemble_members/<run_id>/           # a parallel batch of N members, see §6
 │       ├── member_0/
 │       │   ├── run.log
@@ -57,9 +62,14 @@ $EXPERIMENTS_HOME/$PROJECT_NAME/
 `${task_name}` as `hydra.run.dir`, so no separate configuration was needed for that.
 Hyperparameter-search trials (`scripts/hpo/sweep.sh`, W&B sweeps) are ordinary single runs
 whose preset overrides `hydra.run.dir` to
-`train/<model.name>_<data.name>/sweeps/<experiment name>_hpo/<run_id>_<wandb_run_id>/`
-(`configs/hparams_search/<family>.yaml`): the W&B run id suffix keeps concurrent agents
-from colliding on a same-second timestamp, and `sweeps/` keeps `runs/` for real training runs.
+`train/<model.name>_<data.name>/sweeps/<wandb_sweep_id>/<run_id>_<wandb_run_id>/`
+(`configs/hparams_search/<family>.yaml`): `sweeps/` keeps `runs/` for real training runs, the
+per-sweep parent dir keeps a pilot, a re-sweep and a different backbone apart (the parent
+`<model.name>_<data.name>` already carries model and dataset, so repeating them there would say
+nothing new), and the W&B run id suffix keeps concurrent agents from colliding on a same-second
+timestamp. Both ids come from the environment `wandb agent` hands the trial
+(`WANDB_SWEEP_ID` / `WANDB_RUN_ID`), and both read `local` for a by-hand run. Map a sweep id back
+to its name and objective in [MASTER_SWEEPS.md](MASTER_SWEEPS.md).
 `train/<model.name>_<data.name>/ensemble_members/` is a sibling of `runs/` under the same
 model+dataset root, but is constructed directly by a bash script rather than driven by
 `task_name` -- see [§6](#6-ensemble-member-parallel-training-outputs).
@@ -331,12 +341,15 @@ is added on top from `net_spec["name"]` alone.
 - **`ensemble_members/<run_id>/` is a sibling of `runs/<run_id>/`, but each member's own run dir
   is built by an explicit `hydra.run.dir=` override, not `task_name`** -- described in
   [§6](#6-ensemble-member-parallel-training-outputs); deliberate, not an oversight.
-- **HPO trial dirs sit under `train/<model.name>_<data.name>/sweeps/<name>_hpo/`, and contain no
-  `checkpoints/` at all.** `configs/hparams_search/*.yaml` override `hydra.run.dir` to
-  `${paths.log_dir}/${task_name}/sweeps/${name}_hpo/${now:...}_${oc.env:WANDB_RUN_ID,local}`
+- **HPO trial dirs sit under `train/<model.name>_<data.name>/sweeps/<wandb_sweep_id>/`, and contain
+  no `checkpoints/` at all.** `configs/hparams_search/*.yaml` override `hydra.run.dir` to
+  `${paths.log_dir}/${task_name}/sweeps/${oc.env:WANDB_SWEEP_ID,local}/${now:...}_${oc.env:WANDB_RUN_ID,local}`
   -- the same `${task_name}` prefix as `runs/`, a `sweeps/` segment so proxy-budget trials are
-  never mistaken for real training runs, and the W&B run id (exported by `wandb agent`; `local`
-  for a by-hand run) so several agents starting in the same second cannot collide. The same
+  never mistaken for real training runs, a per-sweep parent dir so separate sweeps over the same
+  model+dataset don't interleave, and the W&B run id so several agents starting in the same second
+  cannot collide. Both ids are read from the environment `wandb agent` hands the trial and default
+  to `local` for a by-hand run -- **keep the `,local` defaults**, or `hydra.compose` in
+  `tests/test_sweeps.py`, which sees neither variable, raises at interpolation time. The same
   presets set `model_checkpoint.save_top_k: 0` / `save_last: False`, so a trial dir is ~200 KB
   of `.hydra/` + `run.log` + `config_tree.log` + `wandb/` instead of ~278 MB: a trial's weights
   are never loaded, because the protocol retrains the top-3 from scratch at full `max_epochs`
