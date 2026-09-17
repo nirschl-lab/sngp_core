@@ -64,9 +64,9 @@ def migrate_one(ckpt_path: Path, out_dir: Path, arch_hint: str, dry_run: bool) -
     # Infer which LightningModule class this checkpoint belongs to from the net type,
     # since legacy checkpoints don't record it explicitly the way v2 checkpoints do.
     lit_module_path = {
-        "baseline_classifier": "src.models.baseline_classification_lit_module.BaselineClassificationLitModule",
-        "sngp_classifier": "src.models.sngp_classification_lit_module.SNGPClassificationLitModule",
-        "deep_ensemble": "src.models.ensemble.deep_ensemble_lit_module.DeepEnsembleLitModule",
+        "baseline_classifier": "src.models.baseline_lit_module.BaselineLitModule",
+        "sngp_classifier": "src.models.sngp_lit_module.SNGPLitModule",
+        "deep_ensemble": "src.models.deep_ensemble_lit_module.DeepEnsembleLitModule",
     }.get(net_spec["name"])
     if lit_module_path is None:
         row["status"] = "error"

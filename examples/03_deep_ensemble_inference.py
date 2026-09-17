@@ -25,7 +25,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.checkpointing.io import load_lit_module
-from src.models.ensemble import DeepEnsembleLitModule
+from src.models.deep_ensemble_lit_module import DeepEnsembleLitModule
 
 
 def load_ensemble_model(checkpoint_path: str, device: str = "cuda") -> DeepEnsembleLitModule:

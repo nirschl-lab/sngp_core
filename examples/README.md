@@ -5,7 +5,6 @@ these use the project's real, currently-maintained API:
 
 - `src/checkpointing/io.py::load_net` -- the single canonical checkpoint loader
 - `src/inference/predict_image.py` -- a thin single/batch-image wrapper around it
-- `src/models/hf_loader.py::HFModelLoader` -- loading a published HF Hub model
 
 For dataset-wide inference with metrics (accuracy/ECE/precision/recall/...) against
 labeled data, use the Hydra entrypoint `src/inference/infer.py` instead of anything
@@ -29,10 +28,9 @@ print(result["predicted_class"], result["confidence"])
 
 ### `02_advanced_inference.py`
 
-Loading a published HF Hub model, config-driven inference, averaging predictions
-across multiple independently-trained checkpoints, and dataset-wide inference with
-saved JSON output (unlabeled images; use `infer.py` if you have labels and want
-metrics).
+Config-driven inference, averaging predictions across multiple independently-trained
+checkpoints, and dataset-wide inference with saved JSON output (unlabeled images; use
+`infer.py` if you have labels and want metrics).
 
 ### `03_deep_ensemble_inference.py`
 

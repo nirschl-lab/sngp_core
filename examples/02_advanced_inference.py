@@ -1,6 +1,6 @@
 """
-Advanced inference examples: HuggingFace Hub models, config-driven inference,
-multi-checkpoint ensembling, and dataset-wide inference with saved results.
+Advanced inference examples: config-driven inference, multi-checkpoint ensembling,
+and dataset-wide inference with saved results.
 
 Update the placeholder paths/IDs in each function before running:
 
@@ -16,31 +16,9 @@ import torch
 
 from src.checkpointing.io import load_net
 from src.inference.predict_image import load_image_as_tensor, predict_batch
-from src.models.hf_loader import HFModelLoader
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-
-def example_huggingface_model():
-    """Load a published model straight from the HF Hub (no local checkpoint needed)."""
-    logger.info("=== HuggingFace Hub Model Inference ===")
-
-    repo_id = "nirschl-lab/sngp-models"
-    model_name = "wong_sngp_resnet18"  # see README.md for the full published-models list
-    image_path = "path/to/image.jpg"
-
-    loader = HFModelLoader(repo_id=repo_id)
-    model, config = loader.load_model(model_name)
-    model.eval()
-
-    x = load_image_as_tensor(image_path)
-    with torch.no_grad():
-        probs = torch.softmax(model(x).logits, dim=1)
-
-    logger.info(f"Predicted class: {probs.argmax(dim=1).item()}")
-    logger.info(f"Confidence: {probs.max().item():.4f}")
-    return probs
 
 
 def example_config_based_inference():
@@ -125,7 +103,6 @@ def example_inference_on_dataset():
 if __name__ == "__main__":
     # Update the placeholder paths/IDs in each function above, then uncomment:
 
-    # example_huggingface_model()
     # example_config_based_inference()
     # example_multi_checkpoint_ensemble()
     # example_inference_on_dataset()
