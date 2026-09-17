@@ -33,8 +33,8 @@ model:
     # Inherits baseline_acevedo.yaml by design: members are baseline nets differing only by
     # init seed, so Deep Ensemble is never swept on its own. Update TOGETHER with the
     # partner after its W&B re-sweep -- tests/test_configs.py enforces the match.
-    lr: 1e-3  # was 0.00027713338312567603
-    weight_decay: 1e-4  # was 0.00013908633873458044
+    lr: 0.0008564893547541577  # was 0.00027713338312567603
+    weight_decay: 6.532070659658382e-05  # was 0.00013908633873458044
 
   net:
     base_model_spec:
@@ -75,7 +75,7 @@ model:
 
 data:
   datamodule:
-    batch_size: 128
+    batch_size: 64
 
 logger:
   wandb:
