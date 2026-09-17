@@ -14,17 +14,20 @@ CKPT_PATH="$1"
 
 DATASETS=(
     acevedo
-    wong
-    tang
-    kather2018
-    kather2016
-    jung
-    nirschl2018
+    # wong
+    # tang
+    # kather2018
+    # kather2016
+    # jung
+    # nirschl2018
 )
 
 for DATA in "${DATASETS[@]}"; do
     echo "=== Running inference on ${DATA} ==="
     uv run src/inference/infer.py \
         ckpt_path="${CKPT_PATH}" \
-        data="${DATA}"
+        data="${DATA}" \
+        # infer.runtime.use_mc_dropout=true \
+        # infer.runtime.mc_passes=20 \
+        
 done

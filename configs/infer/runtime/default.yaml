@@ -7,7 +7,7 @@
 infer:
   runtime:
     device: cuda
-    batch_size_override: null
+    batch_size_override: 1024
     # Checkpoint-authoritative loading should match exactly. With strict: false a
     # missing GP buffer would leave the SNGP covariance at its init, silently producing
     # near-uniform probabilities instead of raising.
