@@ -29,8 +29,8 @@ model:
     # Shared protocol defaults pending the W&B re-sweep (calibrated val-NLL objective,
     # plain CE, canonical SNGP head) -- docs/HPO_GUIDE.md. Previous values (Optuna,
     # macro-AUPRC objective, class-balanced focal loss) kept for the record.
-    lr: 1e-3  # was 0.0008075409385471564
-    weight_decay: 1e-4  # was 0.00010301760471884074
+    lr: 0.009157924694202957  # was 0.0008075409385471564
+    weight_decay: 3.746886442236255e-05  # was 0.00010301760471884074
   net:
     # All family constants live in configs/model/sngp_classifier.yaml -- do not
     # repeat them here (tests/test_configs.py).
@@ -39,6 +39,7 @@ model:
     arch: resnet18
     num_classes: ${num_classes}
     pretrained: false
+    mean_field_factor: 1.0
   compile: false
   scheduler:
     _target_: torch.optim.lr_scheduler.CosineAnnealingLR
@@ -53,7 +54,7 @@ model:
 
 data:
   datamodule:
-    batch_size: 128
+    batch_size: 64
 
 logger:
   wandb:

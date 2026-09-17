@@ -24,13 +24,14 @@ trainer:
   max_epochs: 150
   accelerator: "gpu"
 
+#best hyperparms from sweep nirschl-lab/uncertainty-aware-ml/ogw7zwgt
 model:
   optimizer:
     # Shared protocol defaults pending the W&B re-sweep (calibrated val-NLL objective,
     # plain CE, canonical SNGP head) -- docs/HPO_GUIDE.md. Previous values (Optuna,
     # macro-AUPRC objective, class-balanced focal loss) kept for the record.
-    lr: 1e-3  # was 0.00027713338312567603
-    weight_decay: 1e-4  # was 0.00013908633873458044
+    lr: 0.0008564893547541577  # was 0.00027713338312567603
+    weight_decay: 6.532070659658382e-05  # was 0.00013908633873458044
   net:
     # All family constants live in configs/model/baseline_classifier.yaml -- do not
     # repeat them here (tests/test_configs.py).
@@ -51,7 +52,7 @@ model:
 
 data:
   datamodule:
-    batch_size: 128  # was 64
+    batch_size: 64
 
 logger:
   wandb:
