@@ -5,7 +5,7 @@ set -e
 # Parameters
 LOGGER="wandb"
 
-DATA="image_classifier"
+DATA="wong"
 
 
 CKPT_PATH="nirschl-lab/final_experiments/model-x4tmsdey:v2"

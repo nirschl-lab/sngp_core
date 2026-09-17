@@ -5,7 +5,7 @@ set -e
 # Parameters
 LOGGER="wandb"
 
-DATA="image_classifier"
+DATA="acevedo"
 
 # CKPT_PATH="nirschl-lab/final_experiments/model-g6mugqgb:v2"
 CKPT_PATH="nirschl-lab/sorted_experiments/model-4nqwl10h:v2" #no class weights

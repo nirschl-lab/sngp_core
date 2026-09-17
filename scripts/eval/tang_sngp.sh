@@ -5,7 +5,7 @@ set -e
 # Parameters
 LOGGER="wandb"
 
-DATA="image_classifier"
+DATA="tang"
 
 
 # wong baseline model path
@@ -50,6 +50,7 @@ uv run src/eval.py \
 	data.datamodule.batch_size=${BATCH_SIZE} \
 	data.datamodule.dataset_name=${DATASET_NAME} \
     data.datamodule.num_classes=$N_CLASSES \
+    data.datamodule.class_to_idx=null \
 	model=${MODEL} \
     model.net.num_classes=$N_CLASSES \
 	logger.wandb.group="${WANDB_GROUP}" \

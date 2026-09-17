@@ -5,7 +5,7 @@ set -e
 # Parameters
 LOGGER="wandb"
 
-DATA="image_classifier"
+DATA="acevedo"
 
 # wong baseline model path
 CKPT_PATH="nirschl-lab/sorted_experiments/model-24jcyblu:v2" # no class weights

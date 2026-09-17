@@ -5,7 +5,7 @@ set -e
 # Parameters
 LOGGER="wandb"
 
-DATA="image_classifier"
+DATA="acevedo"
 
 # CKPT_PATH="nirschl-lab/sorted_experiments/model-4xerenbd:v2"
 CKPT_PATH="nirschl-lab/sorted_experiments/model-b6idzep0:v2"
@@ -50,6 +50,7 @@ uv run src/eval.py \
 	data.datamodule.batch_size=${BATCH_SIZE} \
 	data.datamodule.dataset_name=${DATASET_NAME} \
     data.datamodule.num_classes=$N_CLASSES \
+    data.datamodule.class_to_idx=null \
 	model=${MODEL} \
     model.net.arch=${arch} \
     model.net.num_classes=$N_CLASSES \
