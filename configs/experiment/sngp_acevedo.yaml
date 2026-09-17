@@ -39,7 +39,6 @@ model:
     arch: resnet18
     num_classes: ${num_classes}
     pretrained: false
-    mean_field_factor: 1.0
   compile: false
   scheduler:
     _target_: torch.optim.lr_scheduler.CosineAnnealingLR
