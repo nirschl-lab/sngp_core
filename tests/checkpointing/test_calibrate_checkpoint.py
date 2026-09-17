@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 
+import scripts.checkpoints.calibrate_checkpoint as calibrate_checkpoint
 from scripts.checkpoints.calibrate_checkpoint import calibrate, default_calibrated_path, knob_for, main
 from src.checkpointing.io import load_net, read_meta
 from tests.checkpointing.tiny_checkpoints import (
@@ -104,3 +105,50 @@ def test_deep_ensemble_writes_ensemble_level_temperature(tmp_path):
     net = load_net(out, device="cpu")
     assert net.temperature == value
     assert all(member.temperature == 1.0 for member in net.ensemble_members)
+
+
+@pytest.mark.parametrize(
+    "split,expected_kwarg,expected_stage",
+    [("val", "val_augmentations", "fit"), ("test", "test_augmentations", "test")],
+)
+def test_build_loader_passes_the_splits_own_augmentations(monkeypatch, split, expected_kwarg, expected_stage):
+    """Regression: `--split val` asked for `val_dataloader()` but only ever passed
+    `test_augmentations`, so `val_augmentations` stayed unset and BaseImageDataModule
+    substituted `_default_transform` -- a bare ToTensor+Normalize with no Resize or
+    CenterCrop. Nothing raises; the net just sees full-resolution images, accuracy
+    collapses, and the fitted knob is meaningless. Config composition is real here; the
+    datamodule and the Compose are faked so no dataset is downloaded."""
+
+    class FakeDataModule:
+        dataset_name = "fake/dataset"
+
+        def setup(self, stage):
+            seen["stage"] = stage
+
+        def val_dataloader(self):
+            return "val-loader"
+
+        def test_dataloader(self):
+            return "test-loader"
+
+    seen = {"augmentations": []}
+
+    def fake_instantiate(cfg, **kwargs):
+        target = str(cfg.get("_target_", "")) if hasattr(cfg, "get") else ""
+        if "datamodule" in target:
+            seen["dm_kwargs"] = kwargs
+            return FakeDataModule()
+        seen["augmentations"].append(target)
+        return f"compose:{target}"
+
+    monkeypatch.setattr(calibrate_checkpoint.hydra.utils, "instantiate", fake_instantiate)
+
+    loader, dataset_name = calibrate_checkpoint._build_loader("baseline_acevedo", split, None)
+
+    assert loader == f"{split}-loader"
+    assert dataset_name == "fake/dataset"
+    assert seen["stage"] == expected_stage
+    # Exactly one pipeline built, and handed over under the kwarg the requested loader reads.
+    assert seen["augmentations"] == ["albumentations.Compose"]
+    assert list(seen["dm_kwargs"]) == [expected_kwarg]
+    assert seen["dm_kwargs"][expected_kwarg] == "compose:albumentations.Compose"

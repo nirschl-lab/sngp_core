@@ -274,11 +274,23 @@ def calibrate(
 
 
 def _build_loader(experiment: str, split: str, batch_size: Optional[int]):
+    """The dataloader for `split`, preprocessed exactly as training preprocessed it.
+
+    The augmentation pipeline must be passed under the kwarg matching the loader we then
+    ask for: `BaseImageDataModule` falls back to `_default_transform` (a bare
+    ToTensor+Normalize, no Resize/CenterCrop) for any pipeline it isn't given, and that
+    fallback is silent apart from a log line. Feeding the net full-resolution images
+    instead of 224x224 centre crops does not raise -- it just collapses accuracy and
+    makes the fitted knob meaningless, so `--split val` must get `val_augmentations`,
+    not `test_augmentations`.
+    """
     with initialize(version_base="1.3", config_path="../../configs"):
         cfg = compose(config_name="train.yaml", overrides=[f"experiment={experiment}"])
-    test_aug = hydra.utils.instantiate(cfg.data.img_augmentations.test) if cfg.data.get("img_augmentations") else None
+    key = "val" if split == "val" else "test"
+    augmentations = cfg.data.get("img_augmentations")
+    aug = hydra.utils.instantiate(augmentations[key]) if augmentations and augmentations.get(key) else None
     overrides = {"batch_size": batch_size} if batch_size else {}
-    dm = hydra.utils.instantiate(cfg.data.datamodule, test_augmentations=test_aug, **overrides)
+    dm = hydra.utils.instantiate(cfg.data.datamodule, **{f"{key}_augmentations": aug}, **overrides)
     dm.setup("fit" if split == "val" else "test")
     loader = dm.val_dataloader() if split == "val" else dm.test_dataloader()
     return loader, getattr(dm, "dataset_name", None)
