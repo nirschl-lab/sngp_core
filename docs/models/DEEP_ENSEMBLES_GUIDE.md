@@ -88,8 +88,11 @@ net:
 passes every key to the member's constructor, so anything set here would leak into
 `deep_ensemble_sngp_*` experiments (`SNGPClassifier` has no `dropout_p`). Baseline-member
 experiments set `dropout_p: 0.2` in their own `base_model_spec`; SNGP-member experiments
-set `spectral_norm_bound: 6.0` there (the members are built from `SNGPClassifier`'s ctor
-defaults, whose bound default is `None` for back-compat).
+set `spectral_norm_bound` there (the members are built from `SNGPClassifier`'s ctor
+defaults, whose bound default is `None` for back-compat). The bound is swept per dataset,
+so the value must equal the partner single-model experiment's -- `sngp_wong_ucdavis` pins
+nothing and so inherits the family default `6.0`, which is what
+`deep_ensemble_sngp_wong_ucdavis` states. `tests/test_configs.py` checks the two agree.
 
 `temperature` is the ensemble's post-hoc calibration knob, applied to the pooled (mean)
 logits only -- `member_logits` / `variance` stay in raw member-logit units. Fit it on

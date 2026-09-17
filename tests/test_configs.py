@@ -272,8 +272,11 @@ class TestExperimentProtocolConsistency:
     _LOSS_KEYS = ("class_freq", "class_weights", "cb_beta", "focal_gamma", "label_smoothing")
 
     # Fixed to Liu et al. (2022) Table 9 in configs/model/sngp_classifier.yaml; never
-    # overridden per experiment. `spectral_norm_bound` is swept, but its *default* is
-    # protocol too, so an experiment may not silently pin a different one.
+    # overridden per experiment. `spectral_norm_bound` is deliberately NOT here: it is the
+    # one SNGP-specific SWEPT knob (docs/HPO_GUIDE.md's search space, {1, 2, 4, 6, 8}, not
+    # its "Fixed protocol constants" table), so each dataset pins its own winner in
+    # configs/experiment/sngp_<dataset>.yaml the same way `lr`/`weight_decay` do -- the
+    # model config's 6.0 is the family default for datasets that have not re-swept.
     _SNGP_FIXED_KEYS = (
         "rff_dim",
         "length_scale",
@@ -286,7 +289,6 @@ class TestExperimentProtocolConsistency:
         "output_bias",
         "random_feature_type",
         "n_power_iterations_sn",
-        "spectral_norm_bound",
     )
 
     @classmethod
@@ -332,25 +334,36 @@ class TestExperimentProtocolConsistency:
 
     def test_sngp_ctor_defaults_match_model_config(self):
         """deep_ensemble_sngp_* members are built by build_net() from SNGPClassifier's ctor
-        defaults, not from configs/model/sngp_classifier.yaml -- so the two must agree.
-        `spectral_norm_bound` is the one deliberate exception (ctor default None keeps
-        pre-bound checkpoints reproducible); see the next test for how it is covered."""
+        defaults, not from configs/model/sngp_classifier.yaml -- so the two must agree."""
         from src.models.sngp.sngp_classifier import SNGPClassifier
 
         params = inspect.signature(SNGPClassifier.__init__).parameters
         net = OmegaConf.load(os.path.join(_MODEL_CONFIG_DIR, "sngp_classifier.yaml")).net
         for key in self._SNGP_FIXED_KEYS:
-            if key == "spectral_norm_bound":
-                assert params[key].default is None
-                continue
             assert params[key].default == net[key], (
                 f"SNGPClassifier.__init__ default {key}={params[key].default!r} != configs/model/sngp_classifier.yaml {net[key]!r}"
             )
+        # `spectral_norm_bound` is the one key whose ctor default deliberately does NOT
+        # match the config: `None` is stock hard normalization, so a checkpoint written
+        # before the bound existed (its spec lacks the key) rebuilds bit-identically.
+        assert params["spectral_norm_bound"].default is None
 
-    def test_deep_ensemble_sngp_members_get_the_protocol_bound(self):
-        cfg = _compose_experiment("deep_ensemble_sngp_wong_ucdavis")
-        expected = _compose_bare_model("sngp_classifier").model.net.spectral_norm_bound
-        assert cfg.model.net.base_model_spec.spectral_norm_bound == expected
+    def test_deep_ensemble_sngp_members_match_partner_bound(self):
+        """An SNGP ensemble's members must be built with the same bound as the single SNGP
+        model it ensembles -- `spectral_norm_bound` changes the trained function, so a
+        mismatch would make the ensemble a different architecture than its partner. The
+        reference is the partner *experiment* (which may pin its own swept winner), not
+        the family default in configs/model/sngp_classifier.yaml."""
+        for de_experiment, base_experiment in self._DE_INHERITS:
+            cfg = _compose_experiment(de_experiment)
+            spec = cfg.model.net.get("base_model_spec")
+            if spec is None or spec.get("name") != "sngp_classifier":
+                continue  # baseline-member ensemble; no bound involved
+            expected = _compose_experiment(base_experiment).model.net.spectral_norm_bound
+            assert spec.spectral_norm_bound == expected, (
+                f"{de_experiment}: base_model_spec.spectral_norm_bound={spec.spectral_norm_bound!r} "
+                f"!= {base_experiment}'s {expected!r}"
+            )
 
     @pytest.mark.parametrize("experiment", _ALL_EXPERIMENTS)
     def test_checkpoint_and_early_stopping_track_selection_metric(self, experiment: str):

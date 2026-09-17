@@ -47,8 +47,9 @@ model:
       num_classes: ${num_classes}
       pretrained: false
       # SNGPClassifier's ctor default for the bound is None (back-compat for pre-bound
-      # checkpoints), so the protocol value is stated here; must equal
-      # configs/model/sngp_classifier.yaml (tests/test_configs.py). Pre-correction sweep
+      # checkpoints), so the value is stated here; the bound is swept per dataset, so it
+      # must equal the partner experiment sngp_wong_ucdavis's (which pins nothing and so
+      # inherits the family default 6.0) -- tests/test_configs.py. Pre-correction sweep
       # (off-regime, not reused): length_scale 3.9470953262218864, ridge_penalty
       # 0.0030056314601554384.
       spectral_norm_bound: 6.0

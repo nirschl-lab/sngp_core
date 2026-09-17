@@ -136,7 +136,12 @@ set only `arch` / `num_classes` / `pretrained`, and the config tests reject over
 `SNGPClassifier`'s constructor defaults equal these (so `deep_ensemble_sngp_*` members,
 built from the spec, get them too), except `spectral_norm_bound`, whose ctor default stays
 `None` (stock hard normalization) so checkpoints written before the bound existed rebuild
-bit-identically; the config states `6.0`.
+bit-identically. `spectral_norm_bound` is swept, not fixed, so it is absent from the table
+above: `configs/model/sngp_classifier.yaml` states `6.0` as the family default, and a
+dataset whose sweep picked something else pins that winner in
+`configs/experiment/sngp_<dataset>.yaml` alongside its `lr`/`weight_decay` (e.g.
+`sngp_acevedo` pins `4.0`). An SNGP ensemble's `base_model_spec.spectral_norm_bound` must
+match its partner SNGP experiment's value (`tests/test_configs.py`).
 
 ## Budget
 

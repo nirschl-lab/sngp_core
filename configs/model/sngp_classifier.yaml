@@ -6,8 +6,12 @@ name: sngp_classifier
 # implementation and NOT swept. This block is the ONLY place they live: experiment
 # configs set just arch / num_classes / pretrained, and tests/test_configs.py checks
 # both that experiments do not override these and that SNGPClassifier's ctor defaults
-# agree with them. Two knobs here are deliberately not constants:
-#   spectral_norm_bound -- the paper's c (eq. 15); the only SNGP-specific SWEPT knob.
+# agree with them. Two knobs here are deliberately not constants, and are excluded from
+# that check:
+#   spectral_norm_bound -- the paper's c (eq. 15); the only SNGP-specific SWEPT knob. The
+#                          value below is the family default for datasets that have not
+#                          been re-swept; a dataset with a swept winner pins it in
+#                          configs/experiment/sngp_<dataset>.yaml (see sngp_acevedo).
 #   mean_field_factor   -- the paper's kernel amplitude sigma; fit POST-HOC on validation
 #                          NLL (scripts/checkpoints/calibrate_checkpoint.py), never trained
 #                          or swept. Counterpart of Baseline/DE `temperature`.
@@ -18,7 +22,8 @@ net:
   pretrained: false # protocol constant (docs/HPO_GUIDE.md)
   # Spectral-norm upper bound c: W <- c*W/sigma only when sigma > c. Changes the trained
   # function, so it is swept ({1, 2, 4, 6, 8}; smallest c that keeps accuracy is the
-  # paper's rule). 6.0 = the reference CIFAR value. null = stock hard normalization
+  # paper's rule) and a swept winner is pinned per experiment. 6.0 = the reference CIFAR
+  # value, used by any experiment that pins nothing. null = stock hard normalization
   # (sigma == 1) -- only for reproducing checkpoints written before the bound existed.
   spectral_norm_bound: 6.0
   # Mean-field factor = kernel amplitude sigma. 1.0 (ImageNet reference) until fit

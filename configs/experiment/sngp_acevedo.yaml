@@ -33,12 +33,18 @@ model:
     weight_decay: 3.746886442236255e-05  # was 0.00010301760471884074
   net:
     # All family constants live in configs/model/sngp_classifier.yaml -- do not
-    # repeat them here (tests/test_configs.py).
+    # repeat them here (tests/test_configs.py). `spectral_norm_bound` is the exception:
+    # it is the one swept SNGP knob (docs/HPO_GUIDE.md), so this dataset's winner belongs
+    # here alongside lr/weight_decay, not in the shared family config.
     # Pre-correction sweep (off-regime, not reused): length_scale 14.593478563256147,
     # ridge_penalty 0.0014365309998562027, cov_momentum 0.999.
     arch: resnet18
     num_classes: ${num_classes}
     pretrained: false
+    # Winner of the W&B re-sweep; this is what
+    # train/sngp_classifier_acevedo/runs/2026-09-17_14-10-14 was trained with, so the
+    # experiment reproduces that checkpoint. The family default is 6.0.
+    spectral_norm_bound: 4.0
   compile: false
   scheduler:
     _target_: torch.optim.lr_scheduler.CosineAnnealingLR

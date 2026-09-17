@@ -14,8 +14,11 @@ Every SNGP constant (`rff_dim: 1024`, `length_scale: 1.4142`, `ridge_penalty`,
 `cov_momentum`, ...) is fixed to Liu et al. (2022) Table 9 in
 `configs/model/sngp_classifier.yaml`; the experiment configs set only `arch` /
 `num_classes` / `pretrained`, and `tests/test_configs.py` rejects anything else. Two
-knobs are not constants: `spectral_norm_bound` (the paper's `c`, swept in stage 1) and
-`mean_field_factor` (the paper's kernel amplitude sigma, fit in stage 3).
+knobs are not constants and are exempt from that check: `spectral_norm_bound` (the
+paper's `c`, swept in stage 1 -- each dataset pins its own winner in its experiment
+config, and `configs/model/sngp_classifier.yaml`'s `6.0` is the default for datasets
+that have not been re-swept) and `mean_field_factor` (the paper's kernel amplitude
+sigma, fit in stage 3).
 
 ## 1. Sweep
 
