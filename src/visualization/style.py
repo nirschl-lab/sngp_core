@@ -17,16 +17,31 @@ DATASET_COLORS: dict[str, str] = {
     "nirschl2018": "#949494",
 }
 
-# Canonical display order for this project's 5 model variants, shared by every figure
-# that compares them (artifact_ablation_curves.py, artifact_severity_curves.py) so
-# panel/row order stays identical across figures.
+# Canonical display order for this project's model variants, shared by every figure
+# that compares them (artifact_ablation_curves.py, artifact_severity_curves.py,
+# render_artifact_results_tables.py) so panel/row order stays identical across figures.
 MODEL_ROW_ORDER: list[str] = [
     "Baseline Classifier",
     "Deep Ensemble",
     "Monte Carlo Dropout",
     "SNGP",
     "SNGP Ensemble",
+    "SNGP + Spectral Reg",
 ]
+
+
+def order_models(names) -> list[str]:
+    """Canonical display order for whatever subset of models a figure or table actually
+    has: `MODEL_ROW_ORDER`'s order for the known names, then any unknown names sorted.
+
+    Every consumer used to index the fixed list directly, which raised on any sidecar
+    that lacked one of the five original models or added a sixth -- a one-model results
+    write-up (e.g. a new training variant on its own) must still render.
+    """
+    present = list(dict.fromkeys(names))
+    known = [m for m in MODEL_ROW_ORDER if m in present]
+    extra = sorted(m for m in present if m not in MODEL_ROW_ORDER)
+    return known + extra
 
 
 def set_default_style(use_tex: bool = False) -> None:

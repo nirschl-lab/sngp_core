@@ -39,10 +39,26 @@ import yaml
 
 ROOT = rootutils.setup_root(__file__, indicator=".project-root", pythonpath=True)
 
-from src.visualization.style import MODEL_ROW_ORDER, set_default_style  # noqa: E402
+from src.visualization.style import MODEL_ROW_ORDER, order_models, set_default_style  # noqa: E402
 
+# One fixed color per canonical model, so the same model reads as the same color in every
+# figure regardless of which subset a given sidecar contains.
 MODEL_COLORS = dict(zip(MODEL_ROW_ORDER, sns.color_palette("colorblind", len(MODEL_ROW_ORDER))))
 N_VALUES = [1, 2, 3, 4, 5]
+
+
+def _models_in(nll_df: pd.DataFrame) -> list[str]:
+    """The models this sidecar actually has, in canonical order."""
+    return order_models(nll_df["model"].unique())
+
+
+def _color_for(model: str, models: list[str]):
+    if model in MODEL_COLORS:
+        return MODEL_COLORS[model]
+    # A model outside the canonical list: a stable extra palette entry, by position.
+    extras = [m for m in models if m not in MODEL_COLORS]
+    palette = sns.color_palette("colorblind", len(MODEL_COLORS) + len(extras))
+    return palette[len(MODEL_COLORS) + extras.index(model)]
 
 
 def _axis_key(axis: str, n: int) -> str:
@@ -82,7 +98,7 @@ def load_pixel_coverage(axis_paths: dict) -> pd.DataFrame:
     a given count). `n=0` (real images) is 0 by definition -- the real stream never runs
     the simulator, so `real_baseline/predictions.csv` has no `percent_pixels_affected`
     column at all."""
-    reference_model = MODEL_ROW_ORDER[0]
+    reference_model = order_models(axis_paths["config_axis"]["models"])[0]
     rows = [{"n": 0, "mean_pct": 0.0, "std_pct": 0.0}]
     for n in N_VALUES:
         artifact_csv = axis_paths[_axis_key("config", n)]["models"][reference_model]["artifact"]
@@ -99,9 +115,10 @@ def plot_config_axis(nll_df: pd.DataFrame, coverage_df: pd.DataFrame, save_dir: 
     fig, ax = plt.subplots(figsize=(8, 6.5))
     ax2 = ax.twinx()
 
-    for model in MODEL_ROW_ORDER:
+    models = _models_in(nll_df)
+    for model in models:
         sub = nll_df[nll_df["model"] == model].sort_values("n")
-        ax.plot(sub["n"], sub["artifact_nll"], marker="o", label=model, color=MODEL_COLORS[model])
+        ax.plot(sub["n"], sub["artifact_nll"], marker="o", label=model, color=_color_for(model, models))
     ax.set_xlabel("count (0 = real image, 1-5 = pasted artifact overlays)")
     ax.set_ylabel("NLL (artifact stream)")
     ax.set_xticks(ALL_N)
@@ -135,9 +152,10 @@ def plot_config_axis(nll_df: pd.DataFrame, coverage_df: pd.DataFrame, save_dir: 
 def plot_procedural_axis(nll_df: pd.DataFrame, save_dir: Path) -> None:
     set_default_style()
     fig, ax = plt.subplots(figsize=(8, 6.5))
-    for model in MODEL_ROW_ORDER:
+    models = _models_in(nll_df)
+    for model in models:
         sub = nll_df[nll_df["model"] == model].sort_values("n")
-        ax.plot(sub["n"], sub["artifact_nll"], marker="o", label=model, color=MODEL_COLORS[model])
+        ax.plot(sub["n"], sub["artifact_nll"], marker="o", label=model, color=_color_for(model, models))
     ax.set_xlabel("severity (0 = real image, 1-5 = graded acquisition degradation)")
     ax.set_ylabel("NLL (artifact stream)")
     ax.set_xticks(ALL_N)

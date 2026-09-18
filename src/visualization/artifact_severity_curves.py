@@ -53,7 +53,7 @@ ROOT = rootutils.setup_root(__file__, indicator=".project-root", pythonpath=True
 
 from src.metrics.io import load_predictions, probs_array  # noqa: E402
 from src.visualization.artifact_ablation_curves import N_VALUES, _axis_key  # noqa: E402
-from src.visualization.style import MODEL_ROW_ORDER, set_default_style  # noqa: E402
+from src.visualization.style import order_models, set_default_style  # noqa: E402
 
 Axis = Literal["config", "procedural"]
 Metric = Literal["auroc", "aupr", "aurc"]
@@ -166,23 +166,28 @@ METRIC_TITLE = {
 
 
 def build_figure(axis: Axis, metric: Metric, axis_paths: dict) -> plt.Figure:
+    # One panel per model the sidecar actually has, in canonical order (a single-model
+    # sidecar gives a single panel).
+    models = order_models(axis_paths[_axis_key(axis, 1)]["models"])
     fig, axes = plt.subplots(
         1,
-        len(MODEL_ROW_ORDER),
-        figsize=(4.6 * len(MODEL_ROW_ORDER), 5),
+        len(models),
+        figsize=(4.6 * len(models), 5),
         sharex=(metric != "aurc"),
         sharey=(metric != "aurc"),
+        squeeze=False,
     )
+    axes = axes[0]
     panel_fn = PANEL_FN[metric]
     panel_maxes = []
-    for ax, model in zip(axes, MODEL_ROW_ORDER):
+    for ax, model in zip(axes, models):
         data_by_n = {n: load_artifact_probs_targets(axis_paths, axis, n, model) for n in N_VALUES}
         panel_maxes.append(panel_fn(ax, data_by_n, axis))
         ax.set_title(model, fontsize=12)
 
     if metric == "aurc":
         # AURC.plot() sets its own ylim per call (see plot_rc_panel's docstring), so
-        # give every panel the same, correctly-sized range only after all 5 are drawn.
+        # give every panel the same, correctly-sized range only after all are drawn.
         shared_max = max(panel_maxes) * 1.05
         for ax in axes:
             ax.set_ylim(0, shared_max)

@@ -32,8 +32,7 @@ import yaml
 ROOT = rootutils.setup_root(__file__, indicator=".project-root", pythonpath=True)
 
 from src.metrics.artifact_quantification import quantify_artifact_impact
-
-MODEL_ROW_ORDER = ["Baseline Classifier", "Deep Ensemble", "Monte Carlo Dropout", "SNGP", "SNGP Ensemble"]
+from src.visualization.style import order_models
 
 
 def _fmt_scaled(x: float) -> str:
@@ -114,7 +113,8 @@ def render_artifact_axis_tables(
         real_csv_map=real_csv_map,
         metrics_json_map=metrics_json_map,
     )
-    summary_df = summary_df.set_index("model").loc[MODEL_ROW_ORDER].reset_index()
+    # Rows in the project's canonical model order, for whichever models this sidecar has.
+    summary_df = summary_df.set_index("model").loc[order_models(summary_df["model"])].reset_index()
 
     calibration_rows = []
     ood_rows = []
