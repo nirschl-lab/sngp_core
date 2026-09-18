@@ -129,13 +129,17 @@ def plot_entropy_kde(
         Line2D([0], [0], color="black", linestyle="-", linewidth=2),
         Line2D([0], [0], color="black", linestyle="--", linewidth=2),
     ]
+    # Above the axes, so it can never land on the dataset legend (which matplotlib places
+    # at its "best" free spot) -- the two used to overlap in every published figure.
     ax.legend(
         custom_lines,
         ["In-distribution", "Out-of-distribution"],
         frameon=False,
         fontsize=14,
-        loc="upper right",
-        bbox_to_anchor=(0.70, 1.0),
+        loc="lower left",
+        bbox_to_anchor=(0.0, 1.0),
+        ncol=2,
+        borderaxespad=0.2,
     )
 
     ax.margins(x=0)
