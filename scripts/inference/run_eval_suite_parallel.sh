@@ -28,6 +28,8 @@
 # Env vars:
 #   DATASETS="acevedo jung ..."  -- dataset configs to run (default: the 7 below); "" = none
 #   LEVELS="1 2 3 4 5"           -- count/severity levels for the artifact arms; "" = no arms
+#   AXES="config procedural"     -- which artifact axes to sweep (default both); e.g.
+#                                   AXES=procedural runs real_baseline + severity_N only
 #   ARTIFACT_LEAF=acevedo_artifact -- subfolder for the artifact arms
 #   SAVE_PATH=<dir>              -- inference root (default ${EXPERIMENTS_HOME}/${PROJECT_NAME}/infer)
 #   FORCE=1                      -- re-run jobs that already have a metrics.json (default: skip)
@@ -94,25 +96,36 @@ fi
 
 read -ra DATASET_LIST <<< "${DATASETS-acevedo jung kather2016 kather2018 nirschl2018 tang wong}"
 read -ra LEVEL_LIST <<< "${LEVELS-1 2 3 4 5}"
+read -ra AXIS_LIST <<< "${AXES-config procedural}"
 ARTIFACT_LEAF="${ARTIFACT_LEAF:-acevedo_artifact}"
+for AXIS in "${AXIS_LIST[@]+"${AXIS_LIST[@]}"}"; do
+    if [[ "${AXIS}" != "config" && "${AXIS}" != "procedural" ]]; then
+        echo "AXES may only contain 'config' and/or 'procedural', got '${AXIS}'." >&2
+        exit 1
+    fi
+done
 
 # One job per line: "<run_name leaf>|<infer.py overrides...>". Artifact arms mirror
 # scripts/inference/run_artifact_axes.sh exactly (same policies, same stream narrowing).
 JOBS=()
-if [[ ${#LEVEL_LIST[@]} -gt 0 ]]; then
+if [[ ${#LEVEL_LIST[@]} -gt 0 && ${#AXIS_LIST[@]} -gt 0 ]]; then
     JOBS+=("${ARTIFACT_LEAF}/real_baseline|data=artifact_image_classifier data.datamodule.artifact_config_path=none data.datamodule.artifact_procedural_config=none infer.save.streams=[real]")
-    for LEVEL in "${LEVEL_LIST[@]}"; do
-        JOBS+=("${ARTIFACT_LEAF}/config/count_${LEVEL}|data=artifact_image_classifier data.datamodule.artifact_config_path=artifact_balanced data.datamodule.artifact_procedural_config=none data.datamodule.artifact_count=${LEVEL} infer.save.streams=[artifact]")
-    done
-    for LEVEL in "${LEVEL_LIST[@]}"; do
-        JOBS+=("${ARTIFACT_LEAF}/procedural/severity_${LEVEL}|data=artifact_image_classifier data.datamodule.artifact_config_path=none data.datamodule.artifact_procedural_config=procedural_ood data.datamodule.artifact_severity=${LEVEL} infer.save.streams=[artifact]")
-    done
+    if [[ " ${AXIS_LIST[*]} " == *" config "* ]]; then
+        for LEVEL in "${LEVEL_LIST[@]}"; do
+            JOBS+=("${ARTIFACT_LEAF}/config/count_${LEVEL}|data=artifact_image_classifier data.datamodule.artifact_config_path=artifact_balanced data.datamodule.artifact_procedural_config=none data.datamodule.artifact_count=${LEVEL} infer.save.streams=[artifact]")
+        done
+    fi
+    if [[ " ${AXIS_LIST[*]} " == *" procedural "* ]]; then
+        for LEVEL in "${LEVEL_LIST[@]}"; do
+            JOBS+=("${ARTIFACT_LEAF}/procedural/severity_${LEVEL}|data=artifact_image_classifier data.datamodule.artifact_config_path=none data.datamodule.artifact_procedural_config=procedural_ood data.datamodule.artifact_severity=${LEVEL} infer.save.streams=[artifact]")
+        done
+    fi
 fi
 for DATA in "${DATASET_LIST[@]}"; do
     JOBS+=("${DATA}|data=${DATA}")
 done
 if [[ ${#JOBS[@]} -eq 0 ]]; then
-    echo "Nothing to run: DATASETS and LEVELS are both empty." >&2
+    echo "Nothing to run: DATASETS is empty and LEVELS/AXES select no artifact arm." >&2
     exit 1
 fi
 
