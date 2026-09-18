@@ -66,6 +66,24 @@ uv run src/inference/infer.py ckpt_path=<ckpt> data=artifact_image_classifier \
   infer.save.run_name=baseline_classifier_acevedo/<ckpt_run_id>/acevedo_artifact/procedural/severity_1
 ```
 
+## Whole evaluation suite for one checkpoint, in parallel over GPU lanes
+
+`scripts/inference/run_eval_suite_parallel.sh` runs the 7 datasets of `run_all_datasets.sh`
+(ID + cross-dataset OOD, `fold=test`) **and** the 11 artifact arms of `run_artifact_axes.sh`
+as 18 independent `infer.py` jobs, round-robined over GPU lanes (`CUDA_VISIBLE_DEVICES=<id>`
+per lane, one log per lane under `<run>/lane_logs/`). Pass the checkpoint's auto-derived run
+name as the prefix so the tree is byte-compatible with a sequential sweep:
+
+```bash
+scripts/inference/run_eval_suite_parallel.sh <ckpt> \
+  sngp_specreg_classifier_acevedo/<ckpt_run_id> 0 1 2 3 -- data.datamodule.num_workers=8
+```
+
+`DRY_RUN=1` prints the lane plan, finished jobs (a `metrics.json` exists) are skipped unless
+`FORCE=1`, `DATASETS=`/`LEVELS=` narrow the suite, and anything after `--` goes to `infer.py`.
+Cap `num_workers` per job when several lanes share one node (the compositing arms are
+CPU-bound). First used for the spectral-regularization pilot, 2026-09-18 (~18 jobs, 4 lanes).
+
 Wong (4 classes), baseline / MC-Dropout / SNGP -- same pattern, override the dataset:
 ```bash
 uv run src/inference/infer.py ckpt_path=./checkpoints/wong_sngp_resnet18/model.ckpt \
