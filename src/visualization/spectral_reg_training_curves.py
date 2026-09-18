@@ -109,7 +109,7 @@ def plot_training_curves(history: pd.DataFrame, burnin_epoch: int | None, title:
                 color="0.3",
             )
     ax_sigma.legend(frameon=False, loc="lower left")
-    ax_pen.legend(frameon=False, loc="upper right")
+    ax_pen.legend(frameon=False, loc="lower right")
 
     fig.suptitle(title)
     fig.tight_layout()

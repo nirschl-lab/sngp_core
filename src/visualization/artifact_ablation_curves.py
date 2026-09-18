@@ -70,10 +70,15 @@ def _axis_key(axis: str, n: int) -> str:
 def load_real_nll(axis_paths: dict) -> pd.DataFrame:
     """The `n=0` anchor (real, unperturbed images): `real.nll` from each checkpoint's
     `real_baseline/metrics.json`, one row per model. That file is identical for both axes
-    (same checkpoint, same clean test set), so this is computed once and shared."""
+    (same checkpoint, same clean test set), so this is computed once and shared. Models are
+    gathered from both level-1 axis entries, so a model swept on only one axis still gets
+    its anchor."""
+    seen: dict[str, Path] = {}
+    for axis_key in ("config_axis", "procedural_axis"):
+        for model, paths in axis_paths.get(axis_key, {}).get("models", {}).items():
+            seen.setdefault(model, Path(paths["real_baseline"]).with_name("metrics.json"))
     rows = []
-    for model, paths in axis_paths["config_axis"]["models"].items():
-        metrics_json = Path(paths["real_baseline"]).with_name("metrics.json")
+    for model, metrics_json in seen.items():
         data = json.loads(metrics_json.read_text())
         rows.append({"model": model, "artifact_nll": data["real.nll"], "n": 0})
     return pd.DataFrame(rows)
