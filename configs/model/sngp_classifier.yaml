@@ -26,6 +26,11 @@ net:
   # value, used by any experiment that pins nothing. null = stock hard normalization
   # (sigma == 1) -- only for reproducing checkpoints written before the bound existed.
   spectral_norm_bound: 6.0
+  # Whether the backbone's Conv2d/Linear layers are spectral-normalized at all. true is
+  # SNGP proper. false builds a plain backbone for the spectral-*regularization* variant
+  # (configs/model/sngp_specreg_classifier.yaml), which bounds sigma through a loss term
+  # instead -- never combine the two. spectral_norm_bound is ignored when false.
+  use_spectral_norm: true
   # Mean-field factor = kernel amplitude sigma. 1.0 (ImageNet reference) until fit
   # post-hoc; the CIFAR reference uses 20. pi/8 is the textbook probit constant but is
   # nearly inert at realistic dataset sizes.

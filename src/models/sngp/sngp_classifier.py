@@ -309,6 +309,13 @@ class SNGPClassifier(nn.Module):
     `None` -- stock hard normalization, sigma == 1 -- so that checkpoints written before
     the bound existed (whose `net_spec` lacks the key) rebuild bit-identically. The model
     config sets the paper/reference default of 6.0 explicitly.
+
+    `use_spectral_norm=False` builds the same backbone + GP head with **no** spectral
+    normalization at all (plain `weight` parameters, no hooks). It exists for the
+    spectral-*regularization* variant (`SNGPSpectralRegLitModule`), which bounds the
+    backbone's singular values through a loss term instead of weight rescaling -- the two
+    mechanisms must never be combined. `spectral_norm_bound` is ignored when it is off.
+    Default `True`, so every spec written before the key existed rebuilds unchanged.
     """
 
     def __init__(
@@ -328,6 +335,7 @@ class SNGPClassifier(nn.Module):
         output_bias: bool = False,
         random_feature_type: str = "orf",
         spectral_norm_bound: Optional[float] = None,
+        use_spectral_norm: bool = True,
     ):
         super().__init__()
         self.num_classes = num_classes
@@ -345,10 +353,12 @@ class SNGPClassifier(nn.Module):
         self.output_bias = output_bias
         self.random_feature_type = random_feature_type
         self.spectral_norm_bound = None if spectral_norm_bound is None else float(spectral_norm_bound)
+        self.use_spectral_norm = bool(use_spectral_norm)
 
         if arch not in BACKBONES:
             raise ValueError(f"Unsupported backbone: {arch}. Supported: {sorted(BACKBONES)}")
-        assert_spectral_norm_compatible(arch)
+        if self.use_spectral_norm:
+            assert_spectral_norm_compatible(arch)
 
         # `build_backbone` returns a module whose forward already yields flat [B, feat_dim]
         # features for both resnet and ViT archs.
@@ -356,9 +366,11 @@ class SNGPClassifier(nn.Module):
 
         # Apply spectral norm to all convs/linears in the backbone. `bound=None` is the
         # stock sigma == 1 normalization; a float is the paper's eq. 15 upper bound c.
-        apply_spectral_norm(
-            self.backbone, n_power_iterations=n_power_iterations_sn, bound=self.spectral_norm_bound
-        )
+        # Skipped entirely for the spectral-regularization variant (see class docstring).
+        if self.use_spectral_norm:
+            apply_spectral_norm(
+                self.backbone, n_power_iterations=n_power_iterations_sn, bound=self.spectral_norm_bound
+            )
 
         # --- RFF-GP head ---
         self.gp_head = RandomFeatureGaussianProcess(
@@ -400,6 +412,7 @@ class SNGPClassifier(nn.Module):
             "output_bias": self.output_bias,
             "random_feature_type": self.random_feature_type,
             "spectral_norm_bound": self.spectral_norm_bound,
+            "use_spectral_norm": self.use_spectral_norm,
         }
 
     def forward(self, x: torch.Tensor, update_precision: bool = True) -> ModelOutput:

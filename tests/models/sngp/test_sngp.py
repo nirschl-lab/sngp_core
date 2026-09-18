@@ -131,6 +131,7 @@ class TestSNGPClassifier:
         assert model.random_feature_type == "orf"
         assert model.n_power_iterations_sn == 1
         assert model.spectral_norm_bound is None
+        assert model.use_spectral_norm is True
 
     def test_spec_without_bound_key_rebuilds_with_stock_normalization(self):
         """Back-compat: a pre-bound checkpoint's spec lacks `spectral_norm_bound`."""
@@ -173,6 +174,44 @@ class TestSNGPClassifier:
 
         model = SNGPClassifier(num_classes=6, arch="resnet18", pretrained=False, rff_dim=64)
         assert json.loads(json.dumps(model.spec)) == model.spec
+
+    def test_use_spectral_norm_false_builds_a_plain_backbone(self):
+        """The spectral-regularization variant: same backbone + GP head, no hooks, no
+        `weight_orig`/`weight_u`/`weight_v` -- plain `weight` keys in the state dict."""
+        from src.models.registry import build_net
+
+        model = SNGPClassifier(num_classes=4, arch="resnet18", pretrained=False, rff_dim=64, use_spectral_norm=False)
+        assert model.use_spectral_norm is False
+        assert not any(hasattr(m, "weight_u") for m in model.backbone.modules())
+        assert not any(m._forward_pre_hooks for m in model.backbone.modules())
+        assert not any(k.endswith(("weight_orig", "weight_u", "weight_v")) for k in model.state_dict())
+        assert any(k.endswith("conv1.weight") for k in model.state_dict())
+
+        model.eval()
+        out = model(torch.randn(2, 3, 224, 224))
+        assert torch.isfinite(out.logits).all() and torch.isfinite(out.variance).all()
+
+        assert model.spec["use_spectral_norm"] is False
+        rebuilt = build_net(model.spec)
+        assert rebuilt.spec == model.spec
+        assert not any(hasattr(m, "weight_u") for m in rebuilt.backbone.modules())
+
+    def test_spec_without_use_spectral_norm_key_rebuilds_with_spectral_norm(self):
+        """Back-compat: every spec written before the key existed is a spectral-normed SNGP."""
+        from src.models.registry import build_net
+
+        spec = SNGPClassifier(num_classes=4, arch="resnet18", pretrained=False, rff_dim=64).spec
+        del spec["use_spectral_norm"]
+        rebuilt = build_net(spec)
+        assert rebuilt.use_spectral_norm is True
+        assert any(hasattr(m, "weight_u") for m in rebuilt.backbone.modules())
+
+    def test_use_spectral_norm_false_lifts_the_vit_guard(self):
+        """The ViT rejection exists because *spectral normalization* is unvalidated on ViT
+        internals; with no normalization applied there is nothing to guard."""
+        model = SNGPClassifier(num_classes=4, arch="vit_b_32", pretrained=False, rff_dim=64, use_spectral_norm=False)
+        assert model.arch == "vit_b_32"
+        assert not any(hasattr(m, "weight_u") for m in model.backbone.modules())
 
     def test_output_bias_default_matches_reference(self):
         """The reference uses a fixed zero GP output bias, i.e. no trainable one."""
