@@ -314,3 +314,74 @@ Defaults to one panel each for `acc f1 precision recall`, left to right. `--metr
 any other `metrics.json` keys (`nll`, `ece`, `auroc`, ...) in the panel order wanted; a
 single key gives a one-panel figure named after it rather than `metrics`. Only
 `acc`/`nll`/`brier` carry a `_sem`, so only those panels get error bars.
+
+---
+
+**Acevedo SNGP + spectral regularization pilot (2026-09-18), uncalibrated.** The three
+settings for one checkpoint -- `sngp_specreg_acevedo_v1` in
+[MASTER_CHECKPONT_PATHS.md](MASTER_CHECKPONT_PATHS.md), `best.ckpt` as saved, no post-hoc
+knob -- in one tree: the 7 datasets at `fold=test` (in-distribution + cross-dataset OOD,
+the same sibling layout as `sngp_acevedo_v2` above) and the 11 artifact arms under
+`acevedo_artifact/` (the `real_baseline` / `config/count_N` / `procedural/severity_N` layout
+of [DATASETS.md](DATASETS.md#saving-sweep-results)). Tables and figures:
+[results/ACEVEDO_SPECREG_RESULTS.md](results/ACEVEDO_SPECREG_RESULTS.md). The ID/OOD
+tables reuse that doc's published uncalibrated rows. In the artifact setting the
+procedural (severity) axis is compared against spectral-norm SNGP with `c = 4.0`, read
+from the bound ablation's existing `spectral_norm_bound_4.0` arms (uncalibrated; the same
+configuration as `sngp_acevedo_v2` but a separate training run -- no new inference):
+```bash
+/data1/maheswararao/experiments/uncertainty-aware-ml/infer/sngp_classifier_acevedo_snb_artifact_ablation/2026-09-17_15-06-32/spectral_norm_bound_4.0/{real_baseline,procedural/severity_{1..5}}
+```
+The config (count) axis holds the spectral-reg model alone.
+
+sngp_specreg_acevedo_v1:
+```bash
+/data1/maheswararao/experiments/uncertainty-aware-ml/infer/sngp_specreg_classifier_acevedo/2026-09-18_14-11-49
+/data1/maheswararao/experiments/uncertainty-aware-ml/infer/sngp_specreg_classifier_acevedo/2026-09-18_14-11-49/{acevedo,jung,kather2016,kather2018,nirschl2018,tang,wong}
+/data1/maheswararao/experiments/uncertainty-aware-ml/infer/sngp_specreg_classifier_acevedo/2026-09-18_14-11-49/acevedo_artifact/{real_baseline,config/count_{1..5},procedural/severity_{1..5}}
+```
+`lane_logs/` in the same directory holds one log per GPU lane (`lane_gpu2.run1.log` is the
+first pass of lane 2; `lane_gpu2.log` the `count_5` re-run). `acevedo/metrics.json` equals
+the training-time test stage and `real_baseline/metrics.json`'s `real.*` to all digits
+(same weights, same split); every other dataset's `metrics.json` is `{}` except
+`kather2016`'s, which is populated but meaningless (8 classes, see the v2 block above).
+
+Reproduce -- all 18 jobs as 4 GPU lanes with the parallel driver (one pass; finished jobs
+are skipped on a re-run, which is how the `count_5` arm was redone after a transient
+`/tmp`-full failure):
+```bash
+CKPT=/data1/maheswararao/experiments/uncertainty-aware-ml/train/sngp_specreg_classifier_acevedo/runs/2026-09-18_14-11-49/checkpoints/best.ckpt
+scripts/inference/run_eval_suite_parallel.sh "$CKPT" \
+    sngp_specreg_classifier_acevedo/2026-09-18_14-11-49 0 1 2 3 -- data.datamodule.num_workers=8
+```
+The prefix is the checkpoint's auto-derived run name, so the tree is identical to what
+`run_all_datasets.sh` + `run_artifact_axes.sh` would write sequentially. Wall clock: the
+7 datasets take ~0.5 min each; the `procedural/severity_N` arms ~1 min; the
+`config/count_N` arms grow with the overlay count (8 / 16 / 25 / 33 min for N = 1..4 at 8
+workers with four lanes sharing the node) -- put them first in the queue, as the driver does.
+
+Cross-dataset OOD AUROC (MSP and entropy, mean ± std over the 10 seeds in `src/metrics/auc.py`;
+`csv/` is gitignored, the numbers are in the results doc):
+```bash
+uv run src/metrics/calculate_ood_metrics.py \
+    --run-dir /data1/maheswararao/experiments/uncertainty-aware-ml/infer/sngp_specreg_classifier_acevedo/2026-09-18_14-11-49 \
+    --indist acevedo --outdist jung kather2016 kather2018 nirschl2018 tang wong \
+    --out-dir csv/ood_metrics --name sngp_specreg_acevedo_v1
+```
+
+Artifact tables, curves and the other figures (`figures/acevedo_specreg/`; the sidecar
+`configs/paper_helpers/acevedo_specreg_artifact_axis_paths.yaml` lists the arms above):
+```bash
+SIDECAR=configs/paper_helpers/acevedo_specreg_artifact_axis_paths.yaml
+RUN=/data1/maheswararao/experiments/uncertainty-aware-ml/infer/sngp_specreg_classifier_acevedo/2026-09-18_14-11-49
+uv run src/paper_helpers/ood_metrics/render_artifact_results_tables.py \
+    --config "$SIDECAR" --output-dir csv/artifact_quantification/acevedo_specreg
+uv run src/visualization/artifact_ablation_curves.py \
+    --config "$SIDECAR" --output-dir csv/artifact_quantification/acevedo_specreg --figures-dir figures/acevedo_specreg
+uv run src/visualization/artifact_severity_curves.py --config "$SIDECAR" --figures-dir figures/acevedo_specreg
+uv run src/visualization/predictive_entropy.py --run-dir "$RUN" --indist acevedo \
+    --outdist jung kather2016 kather2018 nirschl2018 tang wong \
+    --name sngp_specreg_acevedo_entropy --figures-dir figures/acevedo_specreg
+uv run src/visualization/spectral_reg_training_curves.py \
+    --run nirschl-lab/uncertainty-aware-ml/5bnnbxdb --burnin-epoch 50 --figures-dir figures/acevedo_specreg
+```

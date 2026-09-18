@@ -168,3 +168,9 @@ multiple seeds per bound.
 - **Fold policy**: `calculate_ood_metrics.py` ran without `--fold`; every run here is
   `fold=test`. This differs from `AUROC_across_dataset`'s `LEGACY_ISBI_FOLD_POLICY`,
   which filters the in-distribution frame only to keep published ISBI numbers reproducible.
+
+---
+
+See also: [ACEVEDO_SPECREG_RESULTS.md](ACEVEDO_SPECREG_RESULTS.md) — the SNGP + spectral
+*regularization* pilot (rep-spectral penalty instead of spectral normalization), evaluated
+uncalibrated in the same three settings, with this document's uncalibrated rows as reference.

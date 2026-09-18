@@ -93,7 +93,11 @@ uv run src/inference/infer.py ckpt_path=<run>/checkpoints/best.calibrated.ckpt \
 ```
 
 `best.ckpt` is guaranteed to be a regularized-phase epoch; `last.ckpt` is epoch 99.
-Record both in `docs/MASTER_CHECKPONT_PATHS.md`. When comparing against the protocol
+Record both in `docs/MASTER_CHECKPONT_PATHS.md`. The whole ID / OOD / artifact suite
+runs in one go over the idle GPUs with
+`scripts/inference/run_eval_suite_parallel.sh <ckpt> sngp_specreg_classifier_acevedo/<run_id> 0 1 2 3 -- data.datamodule.num_workers=8`
+(see the `inference` skill's `references/commands.md`). Results of the first pilot:
+[../results/ACEVEDO_SPECREG_RESULTS.md](../results/ACEVEDO_SPECREG_RESULTS.md). When comparing against the protocol
 SNGP (`sngp_acevedo`, selected on `val/nll_cal`, lr 0.00916, wd 3.7e-5, c = 4), compare
 **post-hoc-calibrated** numbers from `calibrate_checkpoint.py --split test --report-only`
 for both, and remember three things besides the regularizer differ (lr, weight decay,

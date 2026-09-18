@@ -102,3 +102,30 @@ Note that `configs/experiment/sngp_acevedo.yaml` pins `spectral_norm_bound: 4.0`
 W&B re-sweep, but 4.0 is the *worst* bound in this grid on both Acevedo test accuracy and
 the `val/nll_cal_best` selection metric -- see the ablation section in
 [results/ACEVEDO_RESULTS.md](results/ACEVEDO_RESULTS.md) before reusing that pin.
+
+---
+
+**Acevedo SNGP + spectral regularization pilot (2026-09-18).** First run of the
+rep-spectral variant (`experiment=sngp_specreg_acevedo`, branch `sngp-spectral-reg`,
+[models/SNGP_SPECREG_GUIDE.md](models/SNGP_SPECREG_GUIDE.md)): no spectral normalization
+anywhere, `CE + 0.01 * sum sigma_max^2` over the backbone every 24 steps after a 50-epoch
+burn-in, 100 epochs, AdamW lr 1e-3 with weight decay 0, no early stopping, and `best.ckpt`
+= min raw `val/nll` over the regularized epochs only (`ModelCheckpointFromEpoch`). Off the
+fair-comparison protocol in every one of those respects, deliberately; see the results doc.
+**Uncalibrated by decision** -- no `best.calibrated.ckpt` was fit, so this entry departs
+from the "report inference from `best.calibrated.ckpt`" convention above: every number in
+[results/ACEVEDO_SPECREG_RESULTS.md](results/ACEVEDO_SPECREG_RESULTS.md) comes from
+`best.ckpt` as saved (`mean_field_factor 1.0`). W&B run `5bnnbxdb`, group `SpectralReg`.
+
+sngp_specreg_acevedo_v1 (epoch 88 of 0-99, val/nll 0.0732):
+```bash
+/data1/maheswararao/experiments/uncertainty-aware-ml/train/sngp_specreg_classifier_acevedo/runs/2026-09-18_14-11-49/checkpoints/best.ckpt
+```
+
+sngp_specreg_acevedo_v1_last (epoch 99, the paper-style end-of-training model):
+```bash
+/data1/maheswararao/experiments/uncertainty-aware-ml/train/sngp_specreg_classifier_acevedo/runs/2026-09-18_14-11-49/checkpoints/last.ckpt
+```
+
+The sibling run directories `2026-09-18_13-59-*` and `2026-09-18_14-01-*` under the same
+parent are smoke tests (`fast_dev_run`, 3-epoch mini runs), not results.

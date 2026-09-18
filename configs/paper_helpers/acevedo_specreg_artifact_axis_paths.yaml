@@ -1,0 +1,118 @@
+# Predictions.csv / metrics.json locations for the Acevedo artifact-axis sweep of the
+# spectral-REGULARIZATION SNGP pilot (rep-spectral, arXiv 2405.17181; experiment
+# sngp_specreg_acevedo, uncalibrated best.ckpt = epoch 88 of run 2026-09-18_14-11-49),
+# consumed by docs/results/ACEVEDO_SPECREG_RESULTS.md. The config (count) axis holds this
+# variant alone. The procedural (severity) axis also carries "SNGP" = spectral-norm SNGP
+# with c = 4.0, uncalibrated: the `spectral_norm_bound_4.0` run of the bound ablation
+# (`sngp_acevedo_snb_artifact_ablation`, already on disk) -- the same configuration as the
+# protocol `sngp_acevedo_v2` but a separate training run, so read it with the run-to-run
+# variation documented in docs/results/ACEVEDO_RESULTS.md in mind. Same shape as
+# acevedo_artifact_axis_paths.yaml, same consumers (render_artifact_results_tables.py,
+# artifact_ablation_curves.py, artifact_severity_curves.py). Spectral-reg arms produced by
+# scripts/inference/run_eval_suite_parallel.sh; everything recorded in
+# docs/MASTER_INFER_RESULTS_PATH.md. Kept as a plain YAML sidecar so these absolute
+# /data1/... paths stay out of Python source per .claude/rules/conventions.md.
+
+config_axis:
+  label: "Config axis — one pasted artifact overlay (count=1, artifact_balanced, procedural off)"
+  models:
+    SNGP + Spectral Reg:
+      real_baseline: /data1/maheswararao/experiments/uncertainty-aware-ml/infer/sngp_specreg_classifier_acevedo/2026-09-18_14-11-49/acevedo_artifact/real_baseline/predictions.csv
+      artifact: /data1/maheswararao/experiments/uncertainty-aware-ml/infer/sngp_specreg_classifier_acevedo/2026-09-18_14-11-49/acevedo_artifact/config/count_1/predictions.csv
+      metrics_json: /data1/maheswararao/experiments/uncertainty-aware-ml/infer/sngp_specreg_classifier_acevedo/2026-09-18_14-11-49/acevedo_artifact/config/count_1/metrics.json
+
+procedural_axis:
+  label: "Procedural axis — one graded acquisition degradation (severity=1, procedural_ood, config off)"
+  models:
+    SNGP + Spectral Reg:
+      real_baseline: /data1/maheswararao/experiments/uncertainty-aware-ml/infer/sngp_specreg_classifier_acevedo/2026-09-18_14-11-49/acevedo_artifact/real_baseline/predictions.csv
+      artifact: /data1/maheswararao/experiments/uncertainty-aware-ml/infer/sngp_specreg_classifier_acevedo/2026-09-18_14-11-49/acevedo_artifact/procedural/severity_1/predictions.csv
+      metrics_json: /data1/maheswararao/experiments/uncertainty-aware-ml/infer/sngp_specreg_classifier_acevedo/2026-09-18_14-11-49/acevedo_artifact/procedural/severity_1/metrics.json
+    SNGP:
+      real_baseline: /data1/maheswararao/experiments/uncertainty-aware-ml/infer/sngp_classifier_acevedo_snb_artifact_ablation/2026-09-17_15-06-32/spectral_norm_bound_4.0/real_baseline/predictions.csv
+      artifact: /data1/maheswararao/experiments/uncertainty-aware-ml/infer/sngp_classifier_acevedo_snb_artifact_ablation/2026-09-17_15-06-32/spectral_norm_bound_4.0/procedural/severity_1/predictions.csv
+      metrics_json: /data1/maheswararao/experiments/uncertainty-aware-ml/infer/sngp_classifier_acevedo_snb_artifact_ablation/2026-09-17_15-06-32/spectral_norm_bound_4.0/procedural/severity_1/metrics.json
+
+# Ablation legs (count=2..5 / severity=2..5) for the count/severity-vs-NLL curves in
+# src/visualization/artifact_ablation_curves.py and the ROC/PR/RC overlays in
+# src/visualization/artifact_severity_curves.py.
+
+config_axis_count_2:
+  label: "Config axis — count=2 pasted artifact overlays (artifact_balanced, procedural off)"
+  models:
+    SNGP + Spectral Reg:
+      real_baseline: /data1/maheswararao/experiments/uncertainty-aware-ml/infer/sngp_specreg_classifier_acevedo/2026-09-18_14-11-49/acevedo_artifact/real_baseline/predictions.csv
+      artifact: /data1/maheswararao/experiments/uncertainty-aware-ml/infer/sngp_specreg_classifier_acevedo/2026-09-18_14-11-49/acevedo_artifact/config/count_2/predictions.csv
+      metrics_json: /data1/maheswararao/experiments/uncertainty-aware-ml/infer/sngp_specreg_classifier_acevedo/2026-09-18_14-11-49/acevedo_artifact/config/count_2/metrics.json
+
+config_axis_count_3:
+  label: "Config axis — count=3 pasted artifact overlays (artifact_balanced, procedural off)"
+  models:
+    SNGP + Spectral Reg:
+      real_baseline: /data1/maheswararao/experiments/uncertainty-aware-ml/infer/sngp_specreg_classifier_acevedo/2026-09-18_14-11-49/acevedo_artifact/real_baseline/predictions.csv
+      artifact: /data1/maheswararao/experiments/uncertainty-aware-ml/infer/sngp_specreg_classifier_acevedo/2026-09-18_14-11-49/acevedo_artifact/config/count_3/predictions.csv
+      metrics_json: /data1/maheswararao/experiments/uncertainty-aware-ml/infer/sngp_specreg_classifier_acevedo/2026-09-18_14-11-49/acevedo_artifact/config/count_3/metrics.json
+
+config_axis_count_4:
+  label: "Config axis — count=4 pasted artifact overlays (artifact_balanced, procedural off)"
+  models:
+    SNGP + Spectral Reg:
+      real_baseline: /data1/maheswararao/experiments/uncertainty-aware-ml/infer/sngp_specreg_classifier_acevedo/2026-09-18_14-11-49/acevedo_artifact/real_baseline/predictions.csv
+      artifact: /data1/maheswararao/experiments/uncertainty-aware-ml/infer/sngp_specreg_classifier_acevedo/2026-09-18_14-11-49/acevedo_artifact/config/count_4/predictions.csv
+      metrics_json: /data1/maheswararao/experiments/uncertainty-aware-ml/infer/sngp_specreg_classifier_acevedo/2026-09-18_14-11-49/acevedo_artifact/config/count_4/metrics.json
+
+config_axis_count_5:
+  label: "Config axis — count=5 pasted artifact overlays (artifact_balanced, procedural off)"
+  models:
+    SNGP + Spectral Reg:
+      real_baseline: /data1/maheswararao/experiments/uncertainty-aware-ml/infer/sngp_specreg_classifier_acevedo/2026-09-18_14-11-49/acevedo_artifact/real_baseline/predictions.csv
+      artifact: /data1/maheswararao/experiments/uncertainty-aware-ml/infer/sngp_specreg_classifier_acevedo/2026-09-18_14-11-49/acevedo_artifact/config/count_5/predictions.csv
+      metrics_json: /data1/maheswararao/experiments/uncertainty-aware-ml/infer/sngp_specreg_classifier_acevedo/2026-09-18_14-11-49/acevedo_artifact/config/count_5/metrics.json
+
+procedural_axis_severity_2:
+  label: "Procedural axis — severity=2 graded acquisition degradation (procedural_ood, config off)"
+  models:
+    SNGP + Spectral Reg:
+      real_baseline: /data1/maheswararao/experiments/uncertainty-aware-ml/infer/sngp_specreg_classifier_acevedo/2026-09-18_14-11-49/acevedo_artifact/real_baseline/predictions.csv
+      artifact: /data1/maheswararao/experiments/uncertainty-aware-ml/infer/sngp_specreg_classifier_acevedo/2026-09-18_14-11-49/acevedo_artifact/procedural/severity_2/predictions.csv
+      metrics_json: /data1/maheswararao/experiments/uncertainty-aware-ml/infer/sngp_specreg_classifier_acevedo/2026-09-18_14-11-49/acevedo_artifact/procedural/severity_2/metrics.json
+    SNGP:
+      real_baseline: /data1/maheswararao/experiments/uncertainty-aware-ml/infer/sngp_classifier_acevedo_snb_artifact_ablation/2026-09-17_15-06-32/spectral_norm_bound_4.0/real_baseline/predictions.csv
+      artifact: /data1/maheswararao/experiments/uncertainty-aware-ml/infer/sngp_classifier_acevedo_snb_artifact_ablation/2026-09-17_15-06-32/spectral_norm_bound_4.0/procedural/severity_2/predictions.csv
+      metrics_json: /data1/maheswararao/experiments/uncertainty-aware-ml/infer/sngp_classifier_acevedo_snb_artifact_ablation/2026-09-17_15-06-32/spectral_norm_bound_4.0/procedural/severity_2/metrics.json
+
+procedural_axis_severity_3:
+  label: "Procedural axis — severity=3 graded acquisition degradation (procedural_ood, config off)"
+  models:
+    SNGP + Spectral Reg:
+      real_baseline: /data1/maheswararao/experiments/uncertainty-aware-ml/infer/sngp_specreg_classifier_acevedo/2026-09-18_14-11-49/acevedo_artifact/real_baseline/predictions.csv
+      artifact: /data1/maheswararao/experiments/uncertainty-aware-ml/infer/sngp_specreg_classifier_acevedo/2026-09-18_14-11-49/acevedo_artifact/procedural/severity_3/predictions.csv
+      metrics_json: /data1/maheswararao/experiments/uncertainty-aware-ml/infer/sngp_specreg_classifier_acevedo/2026-09-18_14-11-49/acevedo_artifact/procedural/severity_3/metrics.json
+    SNGP:
+      real_baseline: /data1/maheswararao/experiments/uncertainty-aware-ml/infer/sngp_classifier_acevedo_snb_artifact_ablation/2026-09-17_15-06-32/spectral_norm_bound_4.0/real_baseline/predictions.csv
+      artifact: /data1/maheswararao/experiments/uncertainty-aware-ml/infer/sngp_classifier_acevedo_snb_artifact_ablation/2026-09-17_15-06-32/spectral_norm_bound_4.0/procedural/severity_3/predictions.csv
+      metrics_json: /data1/maheswararao/experiments/uncertainty-aware-ml/infer/sngp_classifier_acevedo_snb_artifact_ablation/2026-09-17_15-06-32/spectral_norm_bound_4.0/procedural/severity_3/metrics.json
+
+procedural_axis_severity_4:
+  label: "Procedural axis — severity=4 graded acquisition degradation (procedural_ood, config off)"
+  models:
+    SNGP + Spectral Reg:
+      real_baseline: /data1/maheswararao/experiments/uncertainty-aware-ml/infer/sngp_specreg_classifier_acevedo/2026-09-18_14-11-49/acevedo_artifact/real_baseline/predictions.csv
+      artifact: /data1/maheswararao/experiments/uncertainty-aware-ml/infer/sngp_specreg_classifier_acevedo/2026-09-18_14-11-49/acevedo_artifact/procedural/severity_4/predictions.csv
+      metrics_json: /data1/maheswararao/experiments/uncertainty-aware-ml/infer/sngp_specreg_classifier_acevedo/2026-09-18_14-11-49/acevedo_artifact/procedural/severity_4/metrics.json
+    SNGP:
+      real_baseline: /data1/maheswararao/experiments/uncertainty-aware-ml/infer/sngp_classifier_acevedo_snb_artifact_ablation/2026-09-17_15-06-32/spectral_norm_bound_4.0/real_baseline/predictions.csv
+      artifact: /data1/maheswararao/experiments/uncertainty-aware-ml/infer/sngp_classifier_acevedo_snb_artifact_ablation/2026-09-17_15-06-32/spectral_norm_bound_4.0/procedural/severity_4/predictions.csv
+      metrics_json: /data1/maheswararao/experiments/uncertainty-aware-ml/infer/sngp_classifier_acevedo_snb_artifact_ablation/2026-09-17_15-06-32/spectral_norm_bound_4.0/procedural/severity_4/metrics.json
+
+procedural_axis_severity_5:
+  label: "Procedural axis — severity=5 graded acquisition degradation (procedural_ood, config off)"
+  models:
+    SNGP + Spectral Reg:
+      real_baseline: /data1/maheswararao/experiments/uncertainty-aware-ml/infer/sngp_specreg_classifier_acevedo/2026-09-18_14-11-49/acevedo_artifact/real_baseline/predictions.csv
+      artifact: /data1/maheswararao/experiments/uncertainty-aware-ml/infer/sngp_specreg_classifier_acevedo/2026-09-18_14-11-49/acevedo_artifact/procedural/severity_5/predictions.csv
+      metrics_json: /data1/maheswararao/experiments/uncertainty-aware-ml/infer/sngp_specreg_classifier_acevedo/2026-09-18_14-11-49/acevedo_artifact/procedural/severity_5/metrics.json
+    SNGP:
+      real_baseline: /data1/maheswararao/experiments/uncertainty-aware-ml/infer/sngp_classifier_acevedo_snb_artifact_ablation/2026-09-17_15-06-32/spectral_norm_bound_4.0/real_baseline/predictions.csv
+      artifact: /data1/maheswararao/experiments/uncertainty-aware-ml/infer/sngp_classifier_acevedo_snb_artifact_ablation/2026-09-17_15-06-32/spectral_norm_bound_4.0/procedural/severity_5/predictions.csv
+      metrics_json: /data1/maheswararao/experiments/uncertainty-aware-ml/infer/sngp_classifier_acevedo_snb_artifact_ablation/2026-09-17_15-06-32/spectral_norm_bound_4.0/procedural/severity_5/metrics.json
