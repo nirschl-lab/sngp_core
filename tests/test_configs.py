@@ -114,7 +114,7 @@ class TestModelConfigs:
 
     @pytest.mark.parametrize(
         "model_config_name",
-        ["baseline_classifier", "sngp_classifier", "deep_ensemble_classifier"],
+        ["baseline_classifier", "sngp_classifier", "sngp_specreg_classifier", "deep_ensemble_classifier"],
     )
     def test_each_model_config_instantiates(self, model_config_name: str):
         with hydra.initialize(version_base="1.3", config_path="../configs"):
@@ -247,7 +247,7 @@ class TestExperimentProtocolConsistency:
         "tang": ["baseline_tang", "sngp_tang", "deep_ensemble_tang"],
         "kather2018": ["baseline_kather2018", "sngp_kather2018", "deep_ensemble_kather2018"],
         "wong": ["baseline_wong", "sngp_wong", "deep_ensemble_wong"],
-        "acevedo": ["baseline_acevedo", "sngp_acevedo", "deep_ensemble_acevedo"],
+        "acevedo": ["baseline_acevedo", "sngp_acevedo", "sngp_specreg_acevedo", "deep_ensemble_acevedo"],
         "wong_ucdavis": [
             "baseline_wong_ucdavis",
             "sngp_wong_ucdavis",
@@ -270,6 +270,19 @@ class TestExperimentProtocolConsistency:
     ]
 
     _LOSS_KEYS = ("class_freq", "class_weights", "cb_beta", "focal_gamma", "label_smoothing")
+
+    # Deliberate, documented deviations from the protocol selection metric, per experiment.
+    # `monitor`: what ModelCheckpoint (and EarlyStopping, if present) must track instead
+    # of SELECTION_METRIC. `early_stopping`: None means the experiment must have NO early
+    # stopping callback (fixed budget). Anything not listed here gets the protocol check.
+    #
+    # sngp_specreg_acevedo -- pilot of spectral *regularization* (rep-spectral) in place of
+    # spectral normalization: selects on raw val/nll and trains a fixed 100-epoch budget with
+    # a 50-epoch burn-in (the paper's recipe), so patience-based stopping is disabled. See
+    # configs/experiment/sngp_specreg_acevedo.yaml for the reasoning behind each choice.
+    _SELECTION_OVERRIDES = {
+        "sngp_specreg_acevedo": {"monitor": "val/nll", "early_stopping": None},
+    }
 
     # Fixed to Liu et al. (2022) Table 9 in configs/model/sngp_classifier.yaml; never
     # overridden per experiment. `spectral_norm_bound` is deliberately NOT here: it is the
@@ -347,6 +360,11 @@ class TestExperimentProtocolConsistency:
         # match the config: `None` is stock hard normalization, so a checkpoint written
         # before the bound existed (its spec lacks the key) rebuilds bit-identically.
         assert params["spectral_norm_bound"].default is None
+        # `use_spectral_norm` defaults on for the same back-compat reason: every spec written
+        # before the key existed is a spectral-normed SNGP. Not in _SNGP_FIXED_KEYS because
+        # the spectral-regularization variant (sngp_specreg_*) must switch it off.
+        assert params["use_spectral_norm"].default is True
+        assert net["use_spectral_norm"] is True
 
     def test_deep_ensemble_sngp_members_match_partner_bound(self):
         """An SNGP ensemble's members must be built with the same bound as the single SNGP
@@ -368,9 +386,28 @@ class TestExperimentProtocolConsistency:
     @pytest.mark.parametrize("experiment", _ALL_EXPERIMENTS)
     def test_checkpoint_and_early_stopping_track_selection_metric(self, experiment: str):
         callbacks = _compose_experiment(experiment).callbacks
-        for name in ("model_checkpoint", "early_stopping"):
-            assert callbacks[name].monitor == SELECTION_METRIC, f"{experiment}: callbacks.{name}.monitor"
-            assert callbacks[name].mode == "min", f"{experiment}: callbacks.{name}.mode"
+        override = self._SELECTION_OVERRIDES.get(experiment, {})
+        expected_monitor = override.get("monitor", SELECTION_METRIC)
+        assert callbacks["model_checkpoint"].monitor == expected_monitor, f"{experiment}: callbacks.model_checkpoint.monitor"
+        assert callbacks["model_checkpoint"].mode == "min", f"{experiment}: callbacks.model_checkpoint.mode"
+        if "early_stopping" in override and override["early_stopping"] is None:
+            assert callbacks.get("early_stopping") is None, f"{experiment}: early stopping must be disabled"
+        else:
+            assert callbacks["early_stopping"].monitor == expected_monitor, f"{experiment}: callbacks.early_stopping.monitor"
+            assert callbacks["early_stopping"].mode == "min", f"{experiment}: callbacks.early_stopping.mode"
+
+    @pytest.mark.parametrize("experiment", [e for e in _ALL_EXPERIMENTS if e.startswith("sngp_specreg_")])
+    def test_specreg_experiment_is_internally_consistent(self, experiment: str):
+        """Spectral-regularization runs: no spectral norm anywhere, no weight decay (the
+        penalty is the only weight regularizer), and best.ckpt ranked only over
+        regularized epochs -- the checkpoint's start_epoch must equal the burn-in."""
+        cfg = _compose_experiment(experiment)
+        assert cfg.model.net.use_spectral_norm is False
+        assert cfg.model.net.spectral_norm_bound is None
+        assert float(cfg.model.optimizer.weight_decay) == 0.0
+        assert cfg.callbacks.model_checkpoint._target_.endswith("ModelCheckpointFromEpoch")
+        assert cfg.callbacks.model_checkpoint.start_epoch == cfg.model.spec_reg_burnin_epochs
+        assert 0 < cfg.model.spec_reg_burnin_epochs < cfg.trainer.max_epochs
 
     @pytest.mark.parametrize("de_experiment,base_experiment", _DE_INHERITS)
     def test_deep_ensemble_inherits_partner_optimizer(self, de_experiment: str, base_experiment: str):

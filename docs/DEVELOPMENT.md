@@ -56,15 +56,20 @@ src/
     outputs.py               ModelOutput -- every net's forward() return type
     registry.py               NET_REGISTRY / register_net / build_net -- net identity as data, not code
     components/spectral_norm.py   spectral-norm wrapping + the SNGP/ViT compatibility guard
+    components/spectral_reg.py    spectral-norm *regularization* penalty (rep-spectral) -- the loss-term
+                                   alternative to spectral_norm.py; training-only
     baseline/baseline_models.py   BaselineClassifier (+ MC-Dropout)
     sngp/sngp_classifier.py       SNGPClassifier (spectral-normed backbone + RFF-GP head)
     ensemble/deep_ensemble_model.py  DeepEnsemble net
     lit_module_base.py            shared LightningModule: lean train/val loop only, torchmetrics, checkpoint hooks
     <family>_lit_module.py        thin per-family subclasses (BaselineLitModule / SNGPLitModule /
                                    DeepEnsembleLitModule) -- override forward()/_predict_forward() only
+    sngp_specreg_lit_module.py    SNGPSpectralRegLitModule: SNGPLitModule + the spectral penalty in
+                                   model_step (train mode only) -- the one non-plain-CE training loss
   callbacks/
     test_artifacts_callback.py    ALL test-time analysis: per-class metrics, calibration, uncertainty,
                                    prediction CSV, diagnostic figures -- not in the LightningModule
+    model_checkpoint_from_epoch.py  ModelCheckpoint that ranks epochs only from start_epoch (burn-in schedules)
   checkpointing/
     spec.py     CheckpointMeta / FORMAT_VERSION -- the plain-data checkpoint metadata contract
     io.py       read_meta / load_net / load_lit_module -- the ONLY sanctioned way to read a checkpoint
@@ -177,6 +182,14 @@ each covered by a test in `tests/models/sngp/`:
    changes the trained function. torch estimates a conv kernel's spectral norm on the
    reshaped `[out, in*k*k]` matrix, not the conv operator; the paper's App. A.2 notes SN
    lacks precise control for convs, which is why `c` is swept rather than derived.
+6. **Spectral norm can be replaced by a spectral penalty.** `use_spectral_norm=False`
+   builds the same net with a plain backbone, and `SNGPSpectralRegLitModule` adds
+   `coef * sum sigma_max^2` over the backbone's layers to the training loss instead
+   (rep-spectral, arXiv 2405.17181; the readout is excluded, as in the paper). The two
+   mechanisms are never combined -- the module refuses a spectral-normalized net. The
+   penalty's estimator is the *true* conv-operator norm by default, so its sigmas are
+   not on `c`'s scale. Research pilot, off-protocol in several documented ways:
+   [docs/models/SNGP_SPECREG_GUIDE.md](models/SNGP_SPECREG_GUIDE.md).
 
 The constructor defaults of `SNGPClassifier` are the paper's Table 9 constants
 (`rff_dim=1024`, `length_scale=1.4142` -- edward2's `gp_kernel_scale=2.0` scales the GP

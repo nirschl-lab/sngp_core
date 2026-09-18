@@ -1,0 +1,98 @@
+# @package _global_
+
+# to execute this experiment run:
+# python train.py experiment=sngp_specreg_acevedo
+#
+# SNGP with spectral REGULARIZATION (rep-spectral, arXiv 2405.17181) instead of spectral
+# normalization, on Acevedo. Pilot run of the method, so several protocol choices are
+# deliberately different from sngp_acevedo.yaml -- each is called out below and reflected
+# in tests/test_configs.py's per-experiment exemptions:
+#   * paper-literal burn-in schedule: 100 epochs, the first 50 unregularized;
+#   * NO early stopping (fixed budget, as in the reference recipe);
+#   * checkpoint selected on raw `val/nll`, not the calibrated `val/nll_cal`, and only
+#     among regularized epochs (ModelCheckpointFromEpoch, start_epoch = burn-in);
+#   * weight_decay 0, so the spectral penalty is the only weight regularizer;
+#   * lr = the family default, not Acevedo's SN-co-tuned re-sweep winner.
+
+defaults:
+  - override /data: acevedo
+  - override /model: sngp_specreg_classifier
+  - override /callbacks: default
+  - override /trainer: default
+
+name: "acevedo_sngp_specreg_resnet18"
+WANDB_PROJECT: ${oc.env:PROJECT_NAME}
+tags: ["sngp_specreg", "sngp", "rep-spectral", "acevedo", "resnet18", "training"]
+
+seed: 12345
+
+num_classes: 8
+
+trainer:
+  # Fixed 100-epoch budget, no early stopping: 50 epochs unregularized burn-in, then 50
+  # regularized (the paper trains 80/20 on CIFAR; 50/50 chosen for this pilot).
+  min_epochs: 100
+  max_epochs: 100
+  accelerator: "gpu"
+
+model:
+  optimizer:
+    # Family default lr (configs/model/sngp_classifier.yaml), NOT sngp_acevedo's 0.00916:
+    # that value was co-tuned with the spectral-norm bound and weight decay this run
+    # removes. weight_decay is 0 on purpose -- AdamW's decay is itself a weight-norm
+    # regularizer and would confound what the spectral penalty does on its own.
+    lr: 1e-3
+    weight_decay: 0.0
+  net:
+    # Family constants (incl. use_spectral_norm: false) come from the model config -- do
+    # not repeat them here (tests/test_configs.py). No spectral_norm_bound: nothing is
+    # normalized in this variant.
+    arch: resnet18
+    num_classes: ${num_classes}
+    pretrained: false
+  # Burn-in: epochs [0, 50) train plain SNGP-without-SN; the penalty is added from epoch
+  # index 50 on. spec_reg_coef / every_n_steps / conv_mode stay at the paper-literal
+  # values in configs/model/sngp_specreg_classifier.yaml.
+  spec_reg_burnin_epochs: 50
+  compile: false
+  scheduler:
+    # Protocol scheduler. Note the regularized half therefore runs on the decaying half
+    # of the cosine (the paper used a constant lr) -- see docs/models/SNGP_SPECREG_GUIDE.md.
+    _target_: torch.optim.lr_scheduler.CosineAnnealingLR
+    _partial_: true
+    T_max: ${trainer.max_epochs}
+    eta_min: 0.0
+  num_classes: ${num_classes}
+  # Loss: plain cross-entropy (+ the spectral penalty in train mode), inherited from the
+  # model config. class_freq deliberately NOT interpolated from ${data.class_freq}.
+
+data:
+  datamodule:
+    batch_size: 64
+
+logger:
+  wandb:
+    project: "${WANDB_PROJECT}"
+    tags: "${tags_with:${tags},${data.datamodule.institution}}"
+    group: "SpectralReg" # all spectral-regularization pilots together, apart from the "Training" protocol runs
+    name: ${name}
+    log_model: True
+  aim:
+    experiment: ""
+
+callbacks:
+  model_checkpoint:
+    # Ranks epochs only once regularization is on (start_epoch = burn-in), so best.ckpt is
+    # a spectrally-regularized model; last.ckpt still rolls from epoch 0. Monitor is the
+    # RAW validation NLL (mean-field factor 1.0), a deliberate deviation from the
+    # protocol's val/nll_cal for this pilot; val/nll_cal is still logged for reference.
+    # dirpath / filename / save_last / save_top_k inherited from configs/callbacks/default.yaml.
+    _target_: src.callbacks.model_checkpoint_from_epoch.ModelCheckpointFromEpoch
+    monitor: "val/nll"
+    mode: "min"
+    start_epoch: ${model.spec_reg_burnin_epochs}
+  # No early stopping: the budget is fixed by the burn-in schedule (a patience-based
+  # monitor could also fire on the val/nll jump when the penalty switches on at epoch 50).
+  early_stopping: null
+  test_artifacts:
+    hist_bins: 10
