@@ -72,6 +72,13 @@ uv run src/train.py experiment=sngp_specreg_acevedo trainer.max_epochs=3 trainer
 - Sanity: an untrained resnet18 at 224 px has Σσ² ≈ 130 under the operator norm
   (≈ 70 under the reshape estimate) — `tests/models/test_spectral_reg.py` pins the order
   of magnitude.
+- Reference trajectory from the first pilot (2026-09-18, W&B run `5bnnbxdb`): with no
+  weight decay the burn-in let σ grow freely (BatchNorm makes conv scale free) — Σσ² ≈ 92k,
+  σ_max ≈ 160, σ_mean ≈ 51 by epoch 49, versus ≈ 130 at init. At the onset (epoch 50) the
+  epoch-mean `train/loss` jumped to ≈ 19 (the penalty lands on 1 step in 24), CE stayed
+  ≈ 0.22, `val/acc` dipped 0.95 → 0.92; by epoch 53 Σσ² was ≈ 11k, σ_max ≈ 76, `val/acc`
+  0.94, `val/nll` 0.16. So AdamW does absorb the paper's sparse-cadence penalty without
+  diverging, and σ moves fast once it is on.
 
 ## 3. Calibrate and run inference
 
