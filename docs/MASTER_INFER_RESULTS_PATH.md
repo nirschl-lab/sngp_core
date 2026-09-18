@@ -310,5 +310,7 @@ uv run src/visualization/spectral_norm_bound_curve.py \
     --run-dir /data1/maheswararao/experiments/uncertainty-aware-ml/infer/sngp_classifier_acevedo_snb_ablation/2026-09-17_15-06-32 \
     --dataset acevedo --fold test
 ```
-`--metric`/`--metric-label` plot any other `metrics.json` key (`nll`, `ece`, `f1`, ...);
-only `acc`/`nll`/`brier` carry a `_sem`, so only those three get error bars.
+Defaults to one panel each for `acc f1 precision recall`, left to right. `--metrics` takes
+any other `metrics.json` keys (`nll`, `ece`, `auroc`, ...) in the panel order wanted; a
+single key gives a one-panel figure named after it rather than `metrics`. Only
+`acc`/`nll`/`brier` carry a `_sem`, so only those panels get error bars.
