@@ -59,6 +59,9 @@ def _build_and_train_one_step(tmp_path, model_name: str, overrides):
         # Bounded spectral norm (Liu et al. eq. 15): the bound must persist in the spec
         # and rebuild the *bounded* hook, not the stock one.
         ("sngp_classifier", ["model.net.pretrained=false", "++model.net.spectral_norm_bound=2.0"]),
+        # Spectral *regularization* variant: SN-free backbone (plain `weight` keys) and a
+        # LightningModule whose regularizer must leave no persistent state behind.
+        ("sngp_specreg_classifier", ["model.net.pretrained=false"]),
         ("deep_ensemble_classifier", ["model.net.base_model_spec.pretrained=false"]),
     ],
 )

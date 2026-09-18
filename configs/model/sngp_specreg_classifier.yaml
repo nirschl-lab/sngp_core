@@ -1,0 +1,33 @@
+# SNGP trained with spectral REGULARIZATION (Yang, Zavatone-Veth & Pehlevan 2024,
+# arXiv 2405.17181, "rep-spectral") instead of spectral normalization: the backbone's
+# top singular values are bounded through a loss term, `CE + coef * sum sigma_max^2`,
+# over every Conv2d/Linear of the backbone; the GP head (the readout) is excluded, and no
+# weight is ever rescaled. Everything SNGP -- GP head constants, per-epoch precision
+# reset, plain CE -- is inherited from sngp_classifier.yaml unchanged, so
+# tests/test_configs.py's fixed-constant checks apply to experiments built on this too.
+defaults:
+  - sngp_classifier
+  - _self_
+
+_target_: src.models.sngp_specreg_lit_module.SNGPSpectralRegLitModule
+
+name: sngp_specreg_classifier # -> task_name train/sngp_specreg_classifier_<dataset>
+
+net:
+  # Regularize instead of normalize: plain backbone weights, no spectral-norm hooks. The
+  # LightningModule refuses a spectral-normalized backbone -- the two are never combined.
+  use_spectral_norm: false
+  spectral_norm_bound: null # ignored when use_spectral_norm is false
+
+# rep-spectral constants, paper-literal for its ResNet18 recipe (Appendix E.2):
+spec_reg_coef: 0.01 # gamma in eq. (5): loss = CE + gamma * sum_l sigma_max^2(W_l)
+spec_reg_every_n_steps: 24 # penalty (and its power iteration) every N optimizer steps; reference `--reg-freq-update 24`
+spec_reg_burnin_epochs: 0 # epochs trained WITHOUT the penalty first; a budget knob like max_epochs -> set per experiment
+spec_reg_n_power_iterations: 1 # paper: "N=1 is enough, since the parameter moves slowly"
+# How a conv's sigma_max is estimated. `operator` = spectral norm of the linearized
+# convolution (the paper's K~, App. B.1) via conv/conv-transpose power iteration on the
+# layer's real input shape -- exact for zero padding and stride. `reshape` = Miyato's
+# [out, in*k*k] matrix estimate, the quantity spectral_norm_bound is expressed in (a lower
+# bound on the operator norm, by up to the kernel size); kept for ablation only.
+spec_reg_conv_mode: operator
+spec_reg_warmup_iterations: 20 # power iterations before the first estimate, so step 1 already sees a converged sigma

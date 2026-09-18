@@ -16,6 +16,7 @@ from hydra import compose, initialize
     [
         ("baseline_classifier", ["model.net.pretrained=false"]),
         ("sngp_classifier", ["model.net.pretrained=false"]),
+        ("sngp_specreg_classifier", ["model.net.pretrained=false"]),
         ("deep_ensemble_classifier", ["model.net.base_model_spec.pretrained=false"]),
     ],
 )
