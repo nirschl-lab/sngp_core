@@ -131,17 +131,23 @@ macro precision/recall/F1 are count-based and have no per-sample dispersion.*
 | 8.0 | 0.9827 ± 0.0022 | 0.9819 | 0.9817 | 0.9823 |
 | None (unbounded, σ ≡ 1) | 0.9786 ± 0.0025 | 0.9772 | 0.9760 | 0.9789 |
 
-`None` is a different normalization regime, not the `c → 1` limit: a float `c` rescales a
-weight only when `σ̂ > c`, while `None` divides every wrapped weight by its estimated
-spectral norm (`σ ≡ 1`, scaling up as readily as down). Hence `c = 1.0` ≠ `None`.
+**`c = 1.0` and `None` impose the same constraint on these checkpoints, so their gap is
+the noise floor.** A float `c` rescales a weight only when `σ̂ > c` while `None` always
+divides by `σ̂` — a real difference in general, but every wrapped layer here has `σ̂`
+between 27 and 414, so the `c = 1.0` clamp binds everywhere and both configurations give
+`σ(W_eff) = 1.0000` across all 20 layers. The pair is therefore an accidental duplicate
+run, and its 0.0059 accuracy gap is a direct measurement of run-to-run variation:
+`deterministic: false`, TF32 matmuls and three concurrent GPU lanes mean a shared seed
+does not make two runs of one configuration identical.
 
-All four metrics zig-zag together across the grid, which reads as run-to-run variation
-rather than a response to `c`; this is a **single-seed** sweep and carries no run-to-run
-dispersion to test that against. `c = 4.0`, the value pinned in
-`configs/experiment/sngp_acevedo.yaml`, is last on test accuracy and second-worst on the
-selection metric `val/nll_cal_best` (0.0880 vs 0.0536 at `c = 6.0`). That pin came from
-the W&B re-sweep, which varied other hyperparameters jointly, so this is not on its own
-grounds to re-pin — settling it needs multiple seeds per bound.
+That noise floor is ~2.4× the within-checkpoint SEM and covers a third of the sweep's
+entire 0.0175 spread. All four metrics zig-zag together across the grid, consistent with
+that variation rather than with a response to `c`, and no `c` should be read off this
+grid. `c = 4.0`, the value pinned in `configs/experiment/sngp_acevedo.yaml`, is last on
+test accuracy and second-worst on the selection metric `val/nll_cal_best` (0.0880 vs
+0.0536 at `c = 6.0`). That pin came from the W&B re-sweep, which varied other
+hyperparameters jointly, so this is not on its own grounds to re-pin — settling it needs
+multiple seeds per bound.
 
 ---
 

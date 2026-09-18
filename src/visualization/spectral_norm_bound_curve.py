@@ -14,6 +14,12 @@ spectral norm, so `sigma == 1` exactly, scaling weights *up* as readily as down 
 `src/models/components/spectral_norm.py`). It is a different normalization regime, not
 the `c -> 1` limit, so it is drawn as a horizontal reference line instead.
 
+The two coincide whenever every wrapped layer has `sigma_hat > c`, which is the usual
+case -- the bound then binds everywhere and `c = 1.0` imposes the same `sigma == 1` that
+`None` does. Where that holds, the two runs are one configuration trained twice, and the
+distance between the line and the `c = 1.0` point measures run-to-run variation rather
+than any effect of the bound.
+
 Error bars are +/- 1 SEM and appear only on the metrics that have one. Of the metrics
 plotted here only `acc` does: `acc`/`nll`/`brier` are a mean over per-sample values and
 carry an exact `_sem` in `metrics.json`, while macro precision/recall/F1 are count-based,
