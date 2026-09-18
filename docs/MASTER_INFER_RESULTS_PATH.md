@@ -269,3 +269,46 @@ mc_baseline_wong_ucdavis_tang_ucdavis:
 ```bash
 /data1/maheswararao/experiments/uncertaity-aware-ml/infer/mc_baseline_classifier_wong/2026-09-01_16-56-30/tang_ucdavis
 ```
+
+---
+
+**Acevedo SNGP spectral-norm-bound ablation (2026-09-18).** One Acevedo `fold=test` run
+per swept `model.net.spectral_norm_bound`, against the 8 checkpoints of the
+2026-09-17 ablation multirun. Figure and table in
+[results/ACEVEDO_RESULTS.md](results/ACEVEDO_RESULTS.md).
+
+sngp_acevedo_snb_ablation:
+```bash
+/data1/maheswararao/experiments/uncertainty-aware-ml/infer/sngp_classifier_acevedo_snb_ablation/2026-09-17_15-06-32
+```
+
+Each leaf is one bound (`spectral_norm_bound_{0.9,0.95,1.0,2.0,4.0,6.0,8.0,None}/`),
+named exactly as the training multirun's `hydra.sweep.subdir`, holding `predictions.csv`,
+`metrics.json` and `run.json`. Note that these leaves are bounds, not datasets, so this
+directory is **not** the sibling layout `calculate_ood_metrics.py --run-dir` consumes.
+
+`infer.save.run_name` has to be set explicitly here, unlike every sweep above:
+`derive_default_run_name` parses `<model>_<dataset>/{runs,ensemble_members}/<run_id>/`
+out of `ckpt_path`, and a `multiruns/` path matches neither segment — all 8 runs would
+have fallen back to the same `sngp_classifier/2026-09-17_15-06-32/acevedo` folder and
+overwritten each other.
+
+Reproduce (source checkpoints in [MASTER_CHECKPONT_PATHS.md](MASTER_CHECKPONT_PATHS.md)):
+```bash
+SWEEP=/data1/maheswararao/experiments/uncertainty-aware-ml/train/sngp_classifier_acevedo/multiruns/2026-09-17_15-06-32_spectral_norm_bound_ablation
+for CKPT_DIR in "${SWEEP}"/spectral_norm_bound_*; do
+    uv run src/inference/infer.py \
+        ckpt_path="${CKPT_DIR}/checkpoints/best.ckpt" \
+        data=acevedo fold=test \
+        infer.save.run_name="sngp_classifier_acevedo_snb_ablation/2026-09-17_15-06-32/$(basename "${CKPT_DIR}")"
+done
+```
+
+Figure and tidy CSV (`figures/spectral_norm_bound_ablation/`):
+```bash
+uv run src/visualization/spectral_norm_bound_curve.py \
+    --run-dir /data1/maheswararao/experiments/uncertainty-aware-ml/infer/sngp_classifier_acevedo_snb_ablation/2026-09-17_15-06-32 \
+    --dataset acevedo --fold test
+```
+`--metric`/`--metric-label` plot any other `metrics.json` key (`nll`, `ece`, `f1`, ...);
+only `acc`/`nll`/`brier` carry a `_sem`, so only those three get error bars.

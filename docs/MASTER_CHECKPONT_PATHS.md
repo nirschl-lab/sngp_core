@@ -81,3 +81,24 @@ sngp_wong_ucdavis_ensemble:
 ```bash
 /data1/maheswararao/experiments/uncertaity-aware-ml/train/sngp_classifier_wong/ensemble_members/2026-09-01_17-00-17/checkpoints/ensemble.ckpt
 ```
+
+---
+
+**Acevedo SNGP spectral-norm-bound ablation (2026-09-17).** A one-factor sweep of
+`model.net.spectral_norm_bound` over `{0.9, 0.95, 1.0, 2.0, 4.0, 6.0, 8.0, None}`, with
+everything else at `experiment=sngp_acevedo` and seed 12345 in every run. `None` is the
+unbounded (`σ ≡ 1`) regime, not a bound value. Uncalibrated only -- no
+`best.calibrated.ckpt` was fit for these, since the ablation is read on accuracy, which
+no post-hoc knob can move. Ablation figure and table:
+[results/ACEVEDO_RESULTS.md](results/ACEVEDO_RESULTS.md); inference outputs:
+[MASTER_INFER_RESULTS_PATH.md](MASTER_INFER_RESULTS_PATH.md).
+
+sngp_acevedo_snb_ablation (8 runs, one subdirectory per bound):
+```bash
+/data1/maheswararao/experiments/uncertainty-aware-ml/train/sngp_classifier_acevedo/multiruns/2026-09-17_15-06-32_spectral_norm_bound_ablation/spectral_norm_bound_<c>/checkpoints/best.ckpt
+```
+
+Note that `configs/experiment/sngp_acevedo.yaml` pins `spectral_norm_bound: 4.0` from the
+W&B re-sweep, but 4.0 is the *worst* bound in this grid on both Acevedo test accuracy and
+the `val/nll_cal_best` selection metric -- see the ablation section in
+[results/ACEVEDO_RESULTS.md](results/ACEVEDO_RESULTS.md) before reusing that pin.
