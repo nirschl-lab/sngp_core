@@ -428,6 +428,7 @@ For which command to run for a given code change, see
 | Tune hyperparameters (fair cross-model comparison) | `scripts/hpo/sweep.sh <baseline\|sngp> <dataset>` (W&B sweep + SLURM agents) — see [docs/HPO_GUIDE.md](HPO_GUIDE.md). |
 | Fit a trained checkpoint's post-hoc calibration knob (temperature / mean-field factor) | `scripts/checkpoints/calibrate_checkpoint.py --ckpt ... --experiment ... --split val` — writes `best.calibrated.ckpt`; see [docs/HPO_GUIDE.md](HPO_GUIDE.md#after-the-retrain-fit-the-post-hoc-knob-then-report). |
 | Take one model family from untuned config to reported results | Stage-by-stage guides in [docs/models/](models/): [Baseline](models/BASELINE_GUIDE.md), [SNGP](models/SNGP_GUIDE.md), [Deep Ensemble](models/DEEP_ENSEMBLES_GUIDE.md). |
+| Reproduce a published benchmark (CIFAR-100 / WRN-28-10) | [docs/models/CIFAR100_BENCHMARK.md](models/CIFAR100_BENCHMARK.md) — off-protocol by design; read it before comparing its numbers to the biomedical runs. |
 | Offline/research metrics | `src/metrics/` — see [Metrics & Visualization](#metrics--visualization). |
 | Publication figures | `src/visualization/` — see [Metrics & Visualization](#metrics--visualization). |
 | Publish a trained model to HF Hub | See [Publishing to Hugging Face](#publishing-to-hugging-face). |

@@ -1,0 +1,40 @@
+defaults:
+  - /img_augmentations: cifar32
+
+# Short, path-safe dataset identifier -- drives task_name/output-directory naming
+# (see docs/OUTPUT_LAYOUT.md). Distinct from datamodule.dataset_name below, which is
+# the full HuggingFace repo id and unsafe to use as a directory segment.
+name: svhn
+
+# CIFAR/SVHN are not in the nirschl-lab schema (no image_id, no classes_to_idx, no
+# validation split), so they load through BenchmarkImageDataModule rather than
+# ClassificationImageDataModule. See docs/DATASETS.md.
+# OOD set only -- never trained on. Class-imbalanced, but that is irrelevant here.
+class_freq: null
+
+datamodule:
+  _target_: src.data.benchmark_image_datamodule.BenchmarkImageDataModule
+  dataset_name: ufldl-stanford/svhn
+  dataset_config_name: cropped_digits
+  image_column: image
+  label_column: label
+  val_split_size: 5000
+  val_split_seed: 42
+  num_classes: 10
+  class_to_idx:
+    '0': 0
+    '1': 1
+    '2': 2
+    '3': 3
+    '4': 4
+    '5': 5
+    '6': 6
+    '7': 7
+    '8': 8
+    '9': 9
+  batch_size: 128
+  num_workers: 16
+  pin_memory: True
+  test_all_folds: False
+  sample_rate: 0
+  institution: null

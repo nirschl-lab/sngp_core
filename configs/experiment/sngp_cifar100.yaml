@@ -1,0 +1,112 @@
+# @package _global_
+
+# to execute this experiment run:
+# python train.py experiment=sngp_cifar100
+#
+# SNGP on CIFAR-100 / WideResNet-28-10 -- a reproduction of the benchmark SNGP was
+# published on (Liu et al. 2022, arXiv 2205.00403), so that the spectral-regularization
+# variant can be judged against a reproduced SNGP number rather than only against the
+# Acevedo pilot. Recipe transcribed from google/uncertainty-baselines
+# `baselines/cifar/sngp.py`; full derivation in docs/models/CIFAR100_BENCHMARK.md.
+#
+# This is deliberately OFF several protocol defaults that docs/HPO_GUIDE.md fixes for the
+# biomedical cross-family comparison. Every deviation is listed here and mirrored in
+# tests/test_configs.py::_SELECTION_OVERRIDES:
+#   * SGD+Nesterov and a warmup/piecewise schedule, not AdamW + cosine;
+#   * NO early stopping -- a fixed 250-epoch budget, as in the reference;
+#   * checkpoint selected on raw `val/loss`, not the calibrated `val/nll_cal`;
+#   * GP constants set to the reference's CIFAR values, not the family defaults;
+#   * no post-hoc calibration pass -- `mean_field_factor` is pinned at the reference's
+#     CIFAR-100 value, so `val/nll_cal` is logged for reference but never acted on.
+
+defaults:
+  - override /data: cifar100
+  - override /model: sngp_classifier
+  - override /callbacks: default
+  - override /trainer: default
+
+name: "cifar100_sngp_wrn28x10"
+WANDB_PROJECT: ${oc.env:PROJECT_NAME}
+tags: ["sngp", "cifar100", "wide_resnet28_10", "benchmark", "training"]
+
+seed: 12345
+
+num_classes: 100
+
+trainer:
+  min_epochs: 250
+  max_epochs: 250
+  accelerator: "gpu"
+
+model:
+  optimizer:
+    # `base_learning_rate=0.04` is the CIFAR-100 setting from sngp.py's docstring (0.08 is
+    # the CIFAR-10 one), and the reference scales it as `base_lr * batch_size / 128` -- so
+    # at batch 128 the peak LR is 0.04 exactly.
+    #
+    # weight_decay 6e-4, not the reference's `l2=3e-4`: that flag is a Keras
+    # `l2 * sum(w^2)` penalty added to the loss, whose gradient is `2 * l2 * w`, while
+    # PyTorch's `weight_decay` adds `wd * w`. The equivalent is 2x.
+    _target_: torch.optim.SGD
+    _partial_: true
+    lr: 0.04
+    momentum: 0.9
+    nesterov: true
+    weight_decay: 6e-4
+  net:
+    arch: wide_resnet28_10
+    num_classes: ${num_classes}
+    pretrained: false
+    # The reference's CIFAR GP head. These differ from the family defaults in
+    # configs/model/sngp_classifier.yaml (which follow Liu et al. Table 9 / the ImageNet
+    # baseline): length_scale 1.4142 -> 1.0 (`gp_scale=1.0`; our length_scale is
+    # sqrt(gp_kernel_scale)), ridge_penalty 1e-3 -> 1.0, normalize_input true -> false
+    # (`gp_input_normalization=False`), mean_field_factor 1.0 -> 7.5.
+    #
+    # Caveat on the bound: `spectral_norm_bound` constrains the *reshaped* [out, in*k*k]
+    # Miyato norm, while the reference's SpectralNormalizationConv2D constrains the true
+    # conv operator norm. 6.0 is therefore the reference's number but not the same
+    # quantity -- see docs/models/CIFAR100_BENCHMARK.md for the measured ratio.
+    spectral_norm_bound: 6.0
+    length_scale: 1.0
+    ridge_penalty: 1.0
+    normalize_input: false
+    mean_field_factor: 7.5
+  compile: false
+  scheduler:
+    # Reference schedule: 1 warmup epoch, then x0.2 at `[60, 120, 160] * T_max // 200`
+    # = epochs 75 / 150 / 200 at this budget.
+    _target_: src.models.components.schedulers.warmup_piecewise_lr
+    _partial_: true
+    decay_epochs: [60, 120, 160]
+    reference_epochs: 200
+    gamma: 0.2
+    warmup_epochs: 1
+    warmup_start_factor: 0.1
+  num_classes: ${num_classes}
+
+data:
+  datamodule:
+    batch_size: 128
+
+logger:
+  wandb:
+    project: "${WANDB_PROJECT}"
+    tags: "${tags_with:${tags},${data.datamodule.institution}}"
+    group: "CIFAR100"
+    name: ${name}
+    log_model: True
+  aim:
+    experiment: ""
+
+callbacks:
+  model_checkpoint:
+    # `val/loss` rather than the protocol's `val/nll_cal`: the reference trains a fixed
+    # budget and reports the final epoch, with no calibration-aware selection. Identical
+    # across all four CIFAR arms, so the comparison does not turn on the selection rule.
+    # `save_last: True` (inherited) keeps epoch 249 as the reference reporting point.
+    monitor: "val/loss"
+    mode: "min"
+  early_stopping: null
+  test_artifacts:
+    hist_bins: 10

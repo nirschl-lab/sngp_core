@@ -1,0 +1,63 @@
+# Standard CIFAR augmentation, at native 32x32 -- the SNGP reference's
+# "random crop with 4-pixel padding + horizontal flip" and nothing else.
+#
+# Every other preset in this directory resizes to 224 and normalizes with ImageNet
+# statistics, which is correct for the biomedical datasets on torchvision ResNets and
+# wrong here: `wide_resnet28_10` has a stride-1 3x3 stem and no maxpool, so it expects
+# 32px in and upsampling would both destroy the comparison to published numbers and
+# make a 250-epoch run ~50x more expensive.
+#
+# Normalization uses CIFAR-100 channel statistics. The same preset is reused for the
+# CIFAR-10 and SVHN OOD sets on purpose: an OOD input must be preprocessed exactly the
+# way the in-distribution data was, or the measured OOD score partly reflects a
+# preprocessing shift rather than the model's uncertainty.
+
+train:
+  _target_: albumentations.Compose
+  transforms:
+    # Zero-pad to 40x40 then take a random 32x32 crop == the reference's
+    # `resize_with_crop_or_pad(32+4)` + `random_crop([32, 32, 3])`.
+    - _target_: albumentations.PadIfNeeded
+      min_height: 40
+      min_width: 40
+      border_mode: 0   # cv2.BORDER_CONSTANT
+      fill: 0
+      p: 1.0
+
+    - _target_: albumentations.RandomCrop
+      height: 32
+      width: 32
+      p: 1.0
+
+    - _target_: albumentations.HorizontalFlip
+      p: 0.5
+
+    - _target_: albumentations.Normalize
+      mean: [0.5071, 0.4865, 0.4409]
+      std:  [0.2673, 0.2564, 0.2762]
+      max_pixel_value: 255.0
+
+    - _target_: albumentations.pytorch.transforms.ToTensorV2
+      p: 1.0
+
+val:
+  _target_: albumentations.Compose
+  transforms:
+    - _target_: albumentations.Normalize
+      mean: [0.5071, 0.4865, 0.4409]
+      std:  [0.2673, 0.2564, 0.2762]
+      max_pixel_value: 255.0
+
+    - _target_: albumentations.pytorch.transforms.ToTensorV2
+      p: 1.0
+
+test:
+  _target_: albumentations.Compose
+  transforms:
+    - _target_: albumentations.Normalize
+      mean: [0.5071, 0.4865, 0.4409]
+      std:  [0.2673, 0.2564, 0.2762]
+      max_pixel_value: 255.0
+
+    - _target_: albumentations.pytorch.transforms.ToTensorV2
+      p: 1.0

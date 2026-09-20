@@ -10,6 +10,11 @@ Neither is repeated here.
 `<dataset>` is whichever `configs/experiment/sngp_<dataset>.yaml` exists for: `tang`,
 `acevedo`, `wong`, `kather2018`, `wong_ucdavis`, `wong_upitt`, `wong_utsouthwestern`.
 
+`sngp_cifar100` also exists but is **not** part of this workflow: it reproduces the SNGP
+paper's own CIFAR-100 / WideResNet-28-10 benchmark and is deliberately off-protocol
+(SGD + piecewise schedule, `val/loss` selection, no sweep, no post-hoc calibration). It
+has its own page, [CIFAR100_BENCHMARK.md](CIFAR100_BENCHMARK.md).
+
 Every SNGP constant (`rff_dim: 1024`, `length_scale: 1.4142`, `ridge_penalty`,
 `cov_momentum`, ...) is fixed to Liu et al. (2022) Table 9 in
 `configs/model/sngp_classifier.yaml`; the experiment configs set only `arch` /

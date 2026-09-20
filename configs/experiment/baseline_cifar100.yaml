@@ -1,0 +1,87 @@
+# @package _global_
+
+# to execute this experiment run:
+# python train.py experiment=baseline_cifar100
+#
+# Deterministic WideResNet-28-10 on CIFAR-100 -- the credibility anchor for the CIFAR
+# benchmark. Liu et al. 2022 report ~79.8% accuracy / ~0.875 NLL for the deterministic
+# CIFAR-100 baseline; if this row does not land near that (allowing the 45k-train gap
+# from the validation carve), the SNGP-vs-spectral-reg comparison beside it is not yet
+# worth reading. Same recipe as sngp_cifar100.yaml minus the SNGP head; see
+# docs/models/CIFAR100_BENCHMARK.md.
+#
+# Deviations from the protocol defaults, mirrored in tests/test_configs.py::_SELECTION_OVERRIDES:
+# SGD+Nesterov with a warmup/piecewise schedule, no early stopping, selection on
+# `val/loss`, and no post-hoc temperature fit.
+
+defaults:
+  - override /data: cifar100
+  - override /model: baseline_classifier
+  - override /callbacks: default
+  - override /trainer: default
+
+name: "cifar100_baseline_wrn28x10"
+WANDB_PROJECT: ${oc.env:PROJECT_NAME}
+tags: ["baseline", "cifar100", "wide_resnet28_10", "benchmark", "training"]
+
+seed: 12345
+
+num_classes: 100
+
+trainer:
+  min_epochs: 250
+  max_epochs: 250
+  accelerator: "gpu"
+
+model:
+  optimizer:
+    # See sngp_cifar100.yaml for why lr is 0.04 (CIFAR-100, batch 128) and weight_decay
+    # is 6e-4 rather than the reference's `l2=3e-4`.
+    _target_: torch.optim.SGD
+    _partial_: true
+    lr: 0.04
+    momentum: 0.9
+    nesterov: true
+    weight_decay: 6e-4
+  net:
+    arch: wide_resnet28_10
+    num_classes: ${num_classes}
+    pretrained: false
+    # 0.0, not the family's 0.2: the reference deterministic WRN has no head dropout.
+    # The backbone still carries the reference's filter-wise dropout 0.1 internally, which
+    # every CIFAR arm shares. Consequence: MC-Dropout at inference is not meaningful for
+    # this checkpoint, which is fine -- it is an accuracy/calibration anchor, not an
+    # uncertainty method.
+    dropout_p: 0.0
+  compile: false
+  scheduler:
+    _target_: src.models.components.schedulers.warmup_piecewise_lr
+    _partial_: true
+    decay_epochs: [60, 120, 160]
+    reference_epochs: 200
+    gamma: 0.2
+    warmup_epochs: 1
+    warmup_start_factor: 0.1
+  num_classes: ${num_classes}
+
+data:
+  datamodule:
+    batch_size: 128
+
+logger:
+  wandb:
+    project: "${WANDB_PROJECT}"
+    tags: "${tags_with:${tags},${data.datamodule.institution}}"
+    group: "CIFAR100"
+    name: ${name}
+    log_model: True
+  aim:
+    experiment: ""
+
+callbacks:
+  model_checkpoint:
+    monitor: "val/loss"
+    mode: "min"
+  early_stopping: null
+  test_artifacts:
+    hist_bins: 10

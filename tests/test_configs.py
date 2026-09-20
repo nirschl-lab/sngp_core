@@ -225,12 +225,6 @@ def _compose_experiment(experiment: str) -> DictConfig:
         return hydra.compose(config_name="train.yaml", overrides=[f"experiment={experiment}"])
 
 
-@functools.lru_cache(maxsize=None)
-def _compose_bare_model(model: str) -> DictConfig:
-    with hydra.initialize(version_base="1.3", config_path="../configs"):
-        return hydra.compose(config_name="train.yaml", overrides=["data=acevedo", f"model={model}"])
-
-
 def _experiment_config_names() -> list[str]:
     paths = glob.glob(os.path.join(_EXPERIMENT_CONFIG_DIR, "*.yaml"))
     return sorted(os.path.splitext(os.path.basename(p))[0] for p in paths)
@@ -256,6 +250,14 @@ class TestExperimentProtocolConsistency:
         ],
         "wong_upitt": ["baseline_wong_upitt", "sngp_wong_upitt"],
         "wong_utsouthwestern": ["baseline_wong_utsouthwestern", "sngp_wong_utsouthwestern"],
+        # The CIFAR-100 / WRN-28-10 reproduction of the SNGP benchmark. Not part of the
+        # biomedical protocol -- see docs/models/CIFAR100_BENCHMARK.md.
+        "cifar100": [
+            "baseline_cifar100",
+            "sngp_cifar100",
+            "sngp_specreg_cifar100",
+            "sngp_specreg_cifar100_literal",
+        ],
     }
     _ALL_EXPERIMENTS = sorted(e for group in _EXPERIMENTS_BY_DATASET.values() for e in group)
 
@@ -280,16 +282,37 @@ class TestExperimentProtocolConsistency:
     # spectral normalization: selects on raw val/nll and trains a fixed 100-epoch budget with
     # a 50-epoch burn-in (the paper's recipe), so patience-based stopping is disabled. See
     # configs/experiment/sngp_specreg_acevedo.yaml for the reasoning behind each choice.
+    #
+    # The four *_cifar100* experiments reproduce the SNGP CIFAR benchmark, whose recipe
+    # trains a fixed 250-epoch budget and reports on plain validation loss with no
+    # calibration-aware selection. All four share the rule, so the SNGP-vs-spectral-reg
+    # comparison does not turn on it. See docs/models/CIFAR100_BENCHMARK.md.
     _SELECTION_OVERRIDES = {
         "sngp_specreg_acevedo": {"monitor": "val/nll", "early_stopping": None},
+        "baseline_cifar100": {"monitor": "val/loss", "early_stopping": None},
+        "sngp_cifar100": {"monitor": "val/loss", "early_stopping": None},
+        "sngp_specreg_cifar100": {"monitor": "val/loss", "early_stopping": None},
+        "sngp_specreg_cifar100_literal": {"monitor": "val/loss", "early_stopping": None},
     }
 
-    # Fixed to Liu et al. (2022) Table 9 in configs/model/sngp_classifier.yaml; never
-    # overridden per experiment. `spectral_norm_bound` is deliberately NOT here: it is the
-    # one SNGP-specific SWEPT knob (docs/HPO_GUIDE.md's search space, {1, 2, 4, 6, 8}, not
-    # its "Fixed protocol constants" table), so each dataset pins its own winner in
-    # configs/experiment/sngp_<dataset>.yaml the same way `lr`/`weight_decay` do -- the
-    # model config's 6.0 is the family default for datasets that have not re-swept.
+    # sngp_specreg_* experiments normally must have weight_decay == 0, so the spectral
+    # penalty is the only weight regularizer. `sngp_specreg_cifar100` is the deliberate
+    # exception: it is a controlled comparison against `sngp_cifar100`, so it holds
+    # everything but the regularizer fixed -- including that arm's weight decay. (Its
+    # companion, sngp_specreg_cifar100_literal, keeps 0 and is not exempt.)
+    _SPECREG_WD_EXEMPT = frozenset({"sngp_specreg_cifar100"})
+
+    # The Liu et al. (2022) Table 9 constants, as pinned in configs/model/sngp_classifier.yaml.
+    #
+    # These used to be additionally guarded against per-experiment overrides. That guard is
+    # gone: the CIFAR-100 reproduction has to set the reference's own CIFAR values for
+    # `length_scale`, `ridge_penalty`, `normalize_input` and `mean_field_factor`, which are
+    # different constants for a different benchmark, not protocol drift.
+    #
+    # What remains below is a narrower and separate guarantee -- that the ctor defaults and
+    # the model config agree -- and it is still load-bearing: deep_ensemble_sngp_* members
+    # are built by `build_net()` from `SNGPClassifier.__init__` defaults, NOT from the model
+    # config, so drift between the two silently changes ensemble architecture.
     _SNGP_FIXED_KEYS = (
         "rff_dim",
         "length_scale",
@@ -335,15 +358,6 @@ class TestExperimentProtocolConsistency:
         model_cfg = _compose_experiment(experiment).model
         assert model_cfg.get("class_freq") is None, f"{experiment}: class_freq must be null (not ${{data.class_freq}})"
         assert model_cfg.get("class_weights") is None, f"{experiment}: class_weights must be null"
-
-    @pytest.mark.parametrize("experiment", [e for e in _ALL_EXPERIMENTS if e.startswith("sngp_")])
-    def test_sngp_experiment_does_not_override_fixed_constants(self, experiment: str):
-        cfg = _compose_experiment(experiment)
-        reference = _compose_bare_model("sngp_classifier").model.net
-        for key in self._SNGP_FIXED_KEYS:
-            assert cfg.model.net.get(key) == reference.get(key), (
-                f"{experiment}: model.net.{key}={cfg.model.net.get(key)!r} overrides the fixed constant {reference.get(key)!r}"
-            )
 
     def test_sngp_ctor_defaults_match_model_config(self):
         """deep_ensemble_sngp_* members are built by build_net() from SNGPClassifier's ctor
@@ -404,7 +418,8 @@ class TestExperimentProtocolConsistency:
         cfg = _compose_experiment(experiment)
         assert cfg.model.net.use_spectral_norm is False
         assert cfg.model.net.spectral_norm_bound is None
-        assert float(cfg.model.optimizer.weight_decay) == 0.0
+        if experiment not in self._SPECREG_WD_EXEMPT:
+            assert float(cfg.model.optimizer.weight_decay) == 0.0
         assert cfg.callbacks.model_checkpoint._target_.endswith("ModelCheckpointFromEpoch")
         assert cfg.callbacks.model_checkpoint.start_epoch == cfg.model.spec_reg_burnin_epochs
         assert 0 < cfg.model.spec_reg_burnin_epochs < cfg.trainer.max_epochs

@@ -7,6 +7,13 @@ normalization. What it is and how it is built:
 [SUPPORTED_MODELS.md#sngp-with-spectral-regularization-rep-spectral](../SUPPORTED_MODELS.md#sngp-with-spectral-regularization-rep-spectral).
 This page is the operational side: how to train, what to watch, what to change.
 
+Two settings exist. This page covers the **Acevedo pilot**. The CIFAR-100 /
+WideResNet-28-10 arms — `sngp_specreg_cifar100` (matched against a reproduced SNGP run)
+and `sngp_specreg_cifar100_literal` (this paper's own burn-in/no-weight-decay recipe) —
+are on [CIFAR100_BENCHMARK.md](CIFAR100_BENCHMARK.md). That is where the "is it actually
+better than spectral normalization" question gets answered; this page is where the method
+was first tried.
+
 Status: **research pilot**, one dataset (Acevedo). It is deliberately *off* several
 protocol defaults that `docs/HPO_GUIDE.md` fixes for the fair cross-family comparison;
 every deviation is listed in `configs/experiment/sngp_specreg_acevedo.yaml` and mirrored

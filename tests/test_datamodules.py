@@ -1,5 +1,7 @@
 """test_datamodules.py in tests."""
 
+import collections
+
 import json
 from pathlib import Path
 from types import SimpleNamespace
@@ -550,3 +552,147 @@ def test_read_meta_rejects_pre_v2_checkpoint(monkeypatch: pytest.MonkeyPatch) ->
 
     with pytest.raises(ValueError, match="sngp_core"):
         read_meta("/tmp/fake.ckpt")
+
+
+# ---------------------------------------------------------------------------
+# BenchmarkImageDataModule (CIFAR-100/10, SVHN)
+# ---------------------------------------------------------------------------
+# These build real in-memory `datasets.Dataset` objects rather than the list-of-dicts
+# fakes above, because the whole point of this subclass is the Arrow-level surgery it
+# does -- rename_column / remove_columns / add_column / stratified train_test_split.
+# A dict fake would exercise none of it. Still no network: nothing is downloaded.
+
+
+def _fake_cifar_like(num_classes: int = 4, per_class: int = 10, with_coarse: bool = True):
+    """A miniature `uoft-cs/cifar100`: `img` / `fine_label` / `coarse_label`, train+test
+    splits, no `image_id`, no `classes_to_idx`, no `validation`."""
+    from PIL import Image as PILImage
+
+    names = [f"class_{i}" for i in range(num_classes)]
+    features = {
+        "img": datasets.Image(),
+        "fine_label": datasets.ClassLabel(names=names),
+    }
+    if with_coarse:
+        features["coarse_label"] = datasets.ClassLabel(names=["coarse_a", "coarse_b"])
+
+    def build(n_per_class: int):
+        payload = {
+            "img": [
+                PILImage.fromarray(np.zeros((8, 8, 3), dtype=np.uint8))
+                for _ in range(num_classes * n_per_class)
+            ],
+            "fine_label": [c for c in range(num_classes) for _ in range(n_per_class)],
+        }
+        if with_coarse:
+            payload["coarse_label"] = [
+                c % 2 for c in range(num_classes) for _ in range(n_per_class)
+            ]
+        return datasets.Dataset.from_dict(payload, features=datasets.Features(features))
+
+    return {"train": build(per_class), "test": build(2)}, names
+
+
+def _benchmark_dm(monkeypatch: pytest.MonkeyPatch, raw, names, **kwargs):
+    from src.data.benchmark_image_datamodule import BenchmarkImageDataModule
+
+    monkeypatch.setattr(
+        "src.data.benchmark_image_datamodule.datasets.load_dataset",
+        lambda *_args, **_kwargs: raw,
+    )
+    defaults = dict(
+        dataset_name="fake/cifar",
+        image_column="img",
+        label_column="fine_label",
+        drop_columns=["coarse_label"],
+        val_split_size=8,
+        num_classes=len(names),
+        class_to_idx={name: i for i, name in enumerate(names)},
+        batch_size=4,
+        num_workers=0,
+        pin_memory=False,
+    )
+    return BenchmarkImageDataModule(**{**defaults, **kwargs})
+
+
+def test_benchmark_datamodule_adapts_schema_and_carves_stratified_validation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The three gaps that stop a stock benchmark loading through the project's schema --
+    wrong column names, no `image_id`, no `validation` split -- must all close, and the
+    carve must come out of `train` (never `test`) with classes held in proportion."""
+    raw, names = _fake_cifar_like(num_classes=4, per_class=10)
+    dm = _benchmark_dm(monkeypatch, raw, names)
+    dm.setup(stage="fit")
+
+    assert len(dm.data_train) == 32 and len(dm.data_val) == 8  # 40 train, 8 carved out
+    assert dm.data_val.dataset.column_names == ["image", "label", "image_id"]
+    assert collections.Counter(dm.data_val.dataset["label"]) == {0: 2, 1: 2, 2: 2, 3: 2}
+
+    image_ids, images, labels, fold = next(iter(dm.val_dataloader()))
+    assert images.shape[0] == 4 and labels.shape[0] == 4
+    assert all(i.startswith("validation-") for i in image_ids)
+    assert fold[0] == "validation"
+
+
+def test_benchmark_datamodule_leaves_an_existing_validation_split_alone(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A benchmark that already ships `validation` must not have a second one carved out
+    of its train split."""
+    raw, names = _fake_cifar_like(num_classes=4, per_class=10)
+    raw = {**raw, "validation": raw["test"]}
+    dm = _benchmark_dm(monkeypatch, raw, names)
+    dm.setup(stage="fit")
+
+    assert len(dm.data_train) == 40  # untouched
+    assert len(dm.data_val) == 8
+
+
+def test_benchmark_datamodule_ignores_splits_the_base_class_never_reads(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """SVHN ships a 531k-row `extra` split. Renaming, indexing and caching it would cost
+    minutes and gigabytes for data no stage ever touches."""
+    raw, names = _fake_cifar_like(num_classes=4, per_class=10)
+    raw = {**raw, "extra": raw["train"]}
+    dm = _benchmark_dm(monkeypatch, raw, names)
+
+    assert sorted(dm._load_raw_dataset()) == ["test", "train", "validation"]
+
+
+def test_benchmark_datamodule_validates_class_to_idx_against_the_class_label(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """These datasets carry no `classes_to_idx` column, so the base class's cross-check
+    cannot run. The ClassLabel feature stands in for it -- a mis-specified mapping in the
+    YAML must still fail loudly rather than mislabel every prediction."""
+    raw, names = _fake_cifar_like(num_classes=4, per_class=10)
+    wrong = {name: i for i, name in enumerate(reversed(names))}
+    dm = _benchmark_dm(monkeypatch, raw, names, class_to_idx=wrong)
+    dm.trainer = SimpleNamespace(world_size=1, state=SimpleNamespace(stage="test"))
+
+    with pytest.raises(AssertionError, match="does not match the dataset's own ClassLabel"):
+        dm.setup(stage="test")
+
+
+def test_benchmark_datamodule_adopts_the_class_label_when_unconfigured(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    raw, names = _fake_cifar_like(num_classes=4, per_class=10)
+    dm = _benchmark_dm(monkeypatch, raw, names, class_to_idx=None)
+    dm.trainer = SimpleNamespace(world_size=1, state=SimpleNamespace(stage="test"))
+    dm.setup(stage="test")
+
+    assert dm.class_to_idx == {name: i for i, name in enumerate(names)}
+    assert dm.trainer.test_idx_to_classes[0] == names[0]
+
+
+def test_benchmark_datamodule_rejects_an_impossible_validation_carve(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    raw, names = _fake_cifar_like(num_classes=4, per_class=10)
+    dm = _benchmark_dm(monkeypatch, raw, names, val_split_size=999)
+
+    with pytest.raises(ValueError, match="val_split_size must be in"):
+        dm.setup(stage="fit")

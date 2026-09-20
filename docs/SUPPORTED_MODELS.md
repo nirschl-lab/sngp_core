@@ -46,6 +46,7 @@ Built in exactly one place, `src/models/backbones.py`:
 | `resnet18` | resnet | ImageNet1K_V1 |
 | `resnet34` | resnet | ImageNet1K_V1 |
 | `resnet50` | resnet | ImageNet1K_V2 |
+| `wide_resnet28_10` | resnet | — (none exist) |
 | `vit_b_16` | vit | ImageNet1K_V1 |
 | `vit_b_32` | vit | ImageNet1K_V1 |
 | `vit_l_16` | vit | ImageNet1K_V1 |
@@ -55,14 +56,27 @@ Built in exactly one place, `src/models/backbones.py`:
 Select via `model.net.arch=<name>` (baseline/SNGP) or
 `model.net.base_model_spec.arch=<name>` (deep ensemble).
 
+Every entry but one wraps torchvision. `wide_resnet28_10` is the CIFAR WideResNet-28-10
+(Zagoruyko & Komodakis), **vendored into `backbones.py` itself** rather than imported:
+neither torchvision nor `timm` has a CIFAR WideResNet (`timm`'s `wide_resnet50_2` /
+`wide_resnet101_2` are ImageNet bottleneck WRNs, a different architecture), and
+`backbones.py` is inlined verbatim into the HF `trust_remote_code` bundle by
+`scripts/hf/export_to_hub.py`, so a third-party import here would follow it into every
+exported model. It is transcribed from the SNGP reference
+(`uncertainty_baselines/models/wide_resnet_sngp.py`): pre-activation blocks, a 3×3
+stride-1 stem with no maxpool, bias-free convs, and filter-wise dropout 0.1 — that last is
+part of the reference recipe and is therefore baked in, not a config knob. 640-d features,
+36.5M parameters. It expects 32px input; see
+[models/CIFAR100_BENCHMARK.md](models/CIFAR100_BENCHMARK.md).
+
 ## SNGP × ViT compatibility
 
 SNGP recursively wraps every `Conv2d`/`Linear` in the backbone with spectral
 normalization. That wrapping isn't validated against ViT internals
 (`LayerNorm`/attention), so ViT architectures are rejected at construction time —
 `SPECTRAL_NORM_COMPATIBLE` in `src/models/backbones.py` enumerates the allowed set
-(currently all `resnet*` entries). Passing a `vit_*` arch to `sngp_classifier` raises
-immediately rather than silently training something unvalidated.
+(currently every `resnet*` entry plus `wide_resnet28_10`). Passing a `vit_*` arch to
+`sngp_classifier` raises immediately rather than silently training something unvalidated.
 
 The wrapping is bounded, not hard: with `spectral_norm_bound: c` (the paper's eq. 15,
 `BoundedSpectralNorm` in `src/models/components/spectral_norm.py`) a weight is rescaled

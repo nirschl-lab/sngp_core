@@ -71,7 +71,7 @@ def _build_baseline_module_source() -> str:
         "import torch\n"
         "import torch.nn.functional as F\n"
         "from transformers import PreTrainedModel, PretrainedConfig\n\n"
-        'Backbone = Literal["resnet18", "resnet34", "resnet50", "vit_b_16", "vit_b_32", "vit_l_16", "vit_l_32", "vit_h_14"]\n'
+        'Backbone = Literal["resnet18", "resnet34", "resnet50", "wide_resnet28_10", "vit_b_16", "vit_b_32", "vit_l_16", "vit_l_32", "vit_h_14"]\n'
     )
     return "\n\n".join([
         header.rstrip("\n"),

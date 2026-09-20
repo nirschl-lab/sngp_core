@@ -1,0 +1,99 @@
+# @package _global_
+
+# to execute this experiment run:
+# python train.py experiment=sngp_specreg_cifar100_literal
+#
+# The rep-spectral paper's OWN recipe (arXiv 2405.17181) on CIFAR-100 / WRN-28-10:
+# a long unregularized burn-in (the paper trains 160 of 200 epochs before switching the
+# penalty on -- 200 of 250 here), and no weight decay, so the spectral penalty is the
+# only weight regularizer. Same setup as the Acevedo pilot
+# (configs/experiment/sngp_specreg_acevedo.yaml), moved to the SNGP benchmark.
+#
+# Read alongside sngp_specreg_cifar100.yaml, which is the controlled comparison against
+# SNGP. This file answers a different question: does the published rep-spectral recipe
+# transfer to CIFAR-100 at all?
+#
+# Expect it to lose on accuracy, and that not to be a bug: 200 epochs with no weight
+# decay will overfit a 36M-parameter WRN-28-10, and by the time the penalty switches on
+# the LR has already decayed to 0.04 * 0.2^3. That gap is the finding, not a defect --
+# which is exactly why it runs beside the matched arm rather than instead of it.
+#
+# Deviations mirrored in tests/test_configs.py::_SELECTION_OVERRIDES (`val/loss`
+# selection, no early stopping). Unlike the matched arm, this one keeps weight_decay 0
+# and so needs no _SPECREG_WD_EXEMPT entry.
+
+defaults:
+  - override /data: cifar100
+  - override /model: sngp_specreg_classifier
+  - override /callbacks: default
+  - override /trainer: default
+
+name: "cifar100_sngp_specreg_literal_wrn28x10"
+WANDB_PROJECT: ${oc.env:PROJECT_NAME}
+tags: ["sngp_specreg", "sngp", "rep-spectral", "cifar100", "wide_resnet28_10", "benchmark", "paper-literal", "training"]
+
+seed: 12345
+
+num_classes: 100
+
+trainer:
+  min_epochs: 250
+  max_epochs: 250
+  accelerator: "gpu"
+
+model:
+  optimizer:
+    _target_: torch.optim.SGD
+    _partial_: true
+    lr: 0.04
+    momentum: 0.9
+    nesterov: true
+    weight_decay: 0.0   # paper-literal: the spectral penalty is the only weight regularizer
+  net:
+    arch: wide_resnet28_10
+    num_classes: ${num_classes}
+    pretrained: false
+    length_scale: 1.0
+    ridge_penalty: 1.0
+    normalize_input: false
+    mean_field_factor: 7.5
+  # 200 of 250 == the paper's 160 of 200, same 80% fraction.
+  spec_reg_burnin_epochs: 200
+  spec_reg_coef: 0.01          # the paper's gamma
+  spec_reg_every_n_steps: 24   # the paper's --reg-freq-update
+  spec_reg_conv_mode: operator
+  spec_reg_n_power_iterations: 1
+  compile: false
+  scheduler:
+    _target_: src.models.components.schedulers.warmup_piecewise_lr
+    _partial_: true
+    decay_epochs: [60, 120, 160]
+    reference_epochs: 200
+    gamma: 0.2
+    warmup_epochs: 1
+    warmup_start_factor: 0.1
+  num_classes: ${num_classes}
+
+data:
+  datamodule:
+    batch_size: 128
+
+logger:
+  wandb:
+    project: "${WANDB_PROJECT}"
+    tags: "${tags_with:${tags},${data.datamodule.institution}}"
+    group: "CIFAR100"
+    name: ${name}
+    log_model: True
+  aim:
+    experiment: ""
+
+callbacks:
+  model_checkpoint:
+    _target_: src.callbacks.model_checkpoint_from_epoch.ModelCheckpointFromEpoch
+    monitor: "val/loss"
+    mode: "min"
+    start_epoch: ${model.spec_reg_burnin_epochs}
+  early_stopping: null
+  test_artifacts:
+    hist_bins: 10

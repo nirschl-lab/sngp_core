@@ -1,0 +1,108 @@
+# @package _global_
+
+# to execute this experiment run:
+# python train.py experiment=sngp_specreg_cifar100
+#
+# SNGP with spectral REGULARIZATION (rep-spectral, arXiv 2405.17181) on CIFAR-100 /
+# WideResNet-28-10, set up as a controlled comparison against sngp_cifar100.yaml: same
+# backbone, optimizer, schedule, budget, batch size, weight decay, GP head and selection
+# rule. The ONLY difference is how the backbone's Lipschitz constant is controlled --
+# a bounded spectral norm on every conv (SNGP) versus a penalty on the top singular
+# values (here). That is the claim under test.
+#
+# The companion arm sngp_specreg_cifar100_literal.yaml instead follows the rep-spectral
+# paper's own recipe (long burn-in, no weight decay). Run both: this one answers "is
+# spectral regularization better than spectral normalization, all else equal", the other
+# answers "does the published rep-spectral recipe transfer to CIFAR-100".
+#
+# Deviations from the protocol defaults, mirrored in tests/test_configs.py:
+#   * _SELECTION_OVERRIDES: `val/loss` selection, no early stopping;
+#   * _SPECREG_WD_EXEMPT: weight_decay is 6e-4, NOT 0. The sngp_specreg_* guard normally
+#     forces 0 so the penalty is the only weight regularizer -- correct for the Acevedo
+#     pilot, wrong here, where the point is to hold everything but the regularizer fixed
+#     against the SNGP arm. Dropping weight decay would also badly overfit a WRN-28-10.
+
+defaults:
+  - override /data: cifar100
+  - override /model: sngp_specreg_classifier
+  - override /callbacks: default
+  - override /trainer: default
+
+name: "cifar100_sngp_specreg_wrn28x10"
+WANDB_PROJECT: ${oc.env:PROJECT_NAME}
+tags: ["sngp_specreg", "sngp", "rep-spectral", "cifar100", "wide_resnet28_10", "benchmark", "training"]
+
+seed: 12345
+
+num_classes: 100
+
+trainer:
+  min_epochs: 250
+  max_epochs: 250
+  accelerator: "gpu"
+
+model:
+  optimizer:
+    _target_: torch.optim.SGD
+    _partial_: true
+    lr: 0.04
+    momentum: 0.9
+    nesterov: true
+    weight_decay: 6e-4   # matched to sngp_cifar100.yaml -- see header
+  net:
+    arch: wide_resnet28_10
+    num_classes: ${num_classes}
+    pretrained: false
+    # use_spectral_norm / spectral_norm_bound come from the model config (false / null).
+    # GP head matched to sngp_cifar100.yaml so the two arms differ only in the regularizer.
+    length_scale: 1.0
+    ridge_penalty: 1.0
+    normalize_input: false
+    mean_field_factor: 7.5
+  # Regularized from epoch 1 -- spectral normalization is active from step 0 in the SNGP
+  # arm, so anything longer would compare a regularized model against an unregularized
+  # one for most of training. (1 rather than 0 because the checkpoint gate below ranks
+  # epochs >= start_epoch, and the guard requires 0 < burn-in < max_epochs.)
+  spec_reg_burnin_epochs: 1
+  # PENDING THE PILOT. gamma = 0.01 at cadence 24 is the rep-spectral paper's value,
+  # tuned for a ResNet18 on CIFAR-10 under SGD 0.01. WRN-28-10 has 28 conv layers and
+  # trains at lr 0.04, so sum(sigma^2) and the penalty gradient are on a different scale.
+  # docs/models/CIFAR100_BENCHMARK.md records what the 20-epoch pilot measured.
+  spec_reg_coef: 0.01
+  spec_reg_every_n_steps: 24
+  spec_reg_conv_mode: operator
+  spec_reg_n_power_iterations: 1
+  compile: false
+  scheduler:
+    _target_: src.models.components.schedulers.warmup_piecewise_lr
+    _partial_: true
+    decay_epochs: [60, 120, 160]
+    reference_epochs: 200
+    gamma: 0.2
+    warmup_epochs: 1
+    warmup_start_factor: 0.1
+  num_classes: ${num_classes}
+
+data:
+  datamodule:
+    batch_size: 128
+
+logger:
+  wandb:
+    project: "${WANDB_PROJECT}"
+    tags: "${tags_with:${tags},${data.datamodule.institution}}"
+    group: "CIFAR100"
+    name: ${name}
+    log_model: True
+  aim:
+    experiment: ""
+
+callbacks:
+  model_checkpoint:
+    _target_: src.callbacks.model_checkpoint_from_epoch.ModelCheckpointFromEpoch
+    monitor: "val/loss"
+    mode: "min"
+    start_epoch: ${model.spec_reg_burnin_epochs}
+  early_stopping: null
+  test_artifacts:
+    hist_bins: 10

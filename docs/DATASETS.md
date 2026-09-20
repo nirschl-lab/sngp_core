@@ -1,9 +1,10 @@
 # Datasets
 
-All datasets are HuggingFace `datasets` hosted under the `nirschl-lab` org, curated
-from [this paper](https://huggingface.co/papers/2407.01791). They share one schema
-(image + label), so adding a dataset to the framework is a config change, never new
-Python — see [Adding a dataset](#adding-a-dataset) below.
+The project's own datasets are HuggingFace `datasets` hosted under the `nirschl-lab`
+org, curated from [this paper](https://huggingface.co/papers/2407.01791). They share one
+schema (image + label), so adding one of *those* is a config change, never new Python —
+see [Adding a dataset](#adding-a-dataset) below. Three public benchmarks are also wired
+up, through an adapter; see [Public benchmarks](#public-benchmarks).
 
 | Dataset | HF id | Classes | Content | Data config | Experiment preset |
 |---|---|---|---|---|---|
@@ -24,6 +25,35 @@ overrides needed:
 ```bash
 uv run src/train.py data=jung model=baseline_classifier
 ```
+
+## Public benchmarks
+
+Added for the CIFAR-100 / WideResNet-28-10 reproduction of the SNGP benchmark — see
+[models/CIFAR100_BENCHMARK.md](models/CIFAR100_BENCHMARK.md).
+
+| Dataset | HF id | Classes | Role | Data config |
+|---|---|---|---|---|
+| CIFAR-100 | `uoft-cs/cifar100` | 100 | Train + in-distribution test | `configs/data/cifar100.yaml` |
+| CIFAR-10 | `uoft-cs/cifar10` | 10 | OOD set only | `configs/data/cifar10.yaml` |
+| SVHN | `ufldl-stanford/svhn` (`cropped_digits`) | 10 | OOD set only | `configs/data/svhn.yaml` |
+
+**These are not config-only.** None of them is in the `nirschl-lab` schema: CIFAR-100 has
+`img`/`fine_label`/`coarse_label`, none of the three has an `image_id` or a
+`classes_to_idx` column, and none ships a `validation` split. They therefore load through
+`src/data/benchmark_image_datamodule.py::BenchmarkImageDataModule`, which renames the
+columns, synthesizes `image_id`, carves a stratified validation split out of `train`
+(5000 rows, seed 42 — never out of `test`, or checkpoint selection would leak into the
+reported numbers), and validates `class_to_idx` against the split's `ClassLabel` feature
+instead of the missing column.
+
+They also use `configs/img_augmentations/cifar32.yaml`, which keeps images at their native
+32×32 rather than resizing to 224 like every other preset. CIFAR-10 and SVHN reuse the
+CIFAR-100 preset deliberately: an OOD input must be preprocessed exactly the way the
+in-distribution data was, or the measured OOD score partly reflects a preprocessing shift.
+
+Adding another public benchmark (CIFAR-10 as a *training* set, Fashion-MNIST, …) is a
+config change against `BenchmarkImageDataModule` — set `image_column`, `label_column`,
+`drop_columns` and `dataset_config_name` to match its schema.
 
 ## In-distribution vs. out-of-distribution evaluation
 

@@ -5,6 +5,12 @@
 > tag, or the `isbi2026` branch, to use them; they remain the ISBI 2026 paper's
 > checkpoints. Baseline and Deep-Ensemble checkpoints are unaffected.
 
+> **Per-dataset pages.** This file stays the entry point, but detail for newer datasets
+> lives under `docs/checkpoints/`. Currently:
+> [checkpoints/CIFAR_CHECKPOINTS.md](checkpoints/CIFAR_CHECKPOINTS.md) — the CIFAR-100 /
+> WideResNet-28-10 benchmark arms, which are off-protocol and have no
+> `best.calibrated.ckpt` (they pin `mean_field_factor` instead of fitting it).
+
 > **Convention for new entries.** Each final run has two checkpoints in the same
 > `checkpoints/` directory: `best.ckpt` (straight out of training) and
 > `best.calibrated.ckpt` (written by `scripts/checkpoints/calibrate_checkpoint.py` with the

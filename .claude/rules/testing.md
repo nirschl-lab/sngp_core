@@ -21,7 +21,8 @@ considering a task done.
 | `src/models/sngp/**`, `src/models/sngp_lit_module.py` | `pytest tests/models/sngp/` |
 | `src/models/ensemble/**`, `src/models/deep_ensemble_lit_module.py` | `pytest tests/checkpointing/test_ensemble_assembly.py tests/models/test_output_contract.py tests/models/ensemble/` |
 | `src/checkpointing/legacy.py`, `src/checkpointing/resolve.py`, `scripts/checkpoints/**` | `pytest tests/checkpointing/` |
-| `src/data/classification_image_datamodule.py`, `artifact_image_datamodule.py`, `mnist_datamodule.py` | `pytest tests/test_datamodules.py` |
+| `src/data/classification_image_datamodule.py`, `artifact_image_datamodule.py`, `mnist_datamodule.py`, `benchmark_image_datamodule.py` | `pytest tests/test_datamodules.py` |
+| `src/models/components/schedulers.py` | `pytest tests/models/test_schedulers.py` |
 | `src/callbacks/**` | `pytest tests/callbacks/` |
 | `src/inference/**` | `pytest tests/test_infer.py` |
 | `src/train.py` | `pytest tests/test_train.py` |

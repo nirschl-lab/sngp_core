@@ -1,0 +1,39 @@
+defaults:
+  - /img_augmentations: cifar32
+
+# Short, path-safe dataset identifier -- drives task_name/output-directory naming
+# (see docs/OUTPUT_LAYOUT.md). Distinct from datamodule.dataset_name below, which is
+# the full HuggingFace repo id and unsafe to use as a directory segment.
+name: cifar10
+
+# CIFAR/SVHN are not in the nirschl-lab schema (no image_id, no classes_to_idx, no
+# validation split), so they load through BenchmarkImageDataModule rather than
+# ClassificationImageDataModule. See docs/DATASETS.md.
+# OOD set only -- never trained on. Balanced, 5000 train images per class.
+class_freq: null
+
+datamodule:
+  _target_: src.data.benchmark_image_datamodule.BenchmarkImageDataModule
+  dataset_name: uoft-cs/cifar10
+  image_column: img
+  label_column: label
+  val_split_size: 5000
+  val_split_seed: 42
+  num_classes: 10
+  class_to_idx:
+    airplane: 0
+    automobile: 1
+    bird: 2
+    cat: 3
+    deer: 4
+    dog: 5
+    frog: 6
+    horse: 7
+    ship: 8
+    truck: 9
+  batch_size: 128
+  num_workers: 16
+  pin_memory: True
+  test_all_folds: False
+  sample_rate: 0
+  institution: null
