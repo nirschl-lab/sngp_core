@@ -324,6 +324,7 @@ class TestExperimentProtocolConsistency:
         "likelihood",
         "output_bias",
         "random_feature_type",
+        "scale_random_features",
         "n_power_iterations_sn",
     )
 

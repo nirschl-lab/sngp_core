@@ -90,6 +90,7 @@ class RandomFeatureGaussianProcess(nn.Module):
         likelihood: str = "gaussian",
         output_bias: bool = False,
         random_feature_type: str = "orf",
+        scale_random_features: bool = True,
         dtype: torch.dtype = torch.float32,
     ):
         super().__init__()
@@ -112,6 +113,7 @@ class RandomFeatureGaussianProcess(nn.Module):
         self.likelihood = likelihood
         self.output_bias = output_bias
         self.random_feature_type = random_feature_type
+        self.scale_random_features = scale_random_features
 
         # LayerNorm on the GP input ("similar to applying ARD", per the reference's own
         # description) -- also keeps the RFF kernel well-scaled as backbone feature
@@ -139,8 +141,15 @@ class RandomFeatureGaussianProcess(nn.Module):
         # `precision_accum` and self-heals, so the cache can never go stale across a load.
         self.register_buffer("_cov_stale", torch.tensor(True), persistent=False)
 
-        # Pre-scaling constant for RFFs
-        self.rff_scale = math.sqrt(2.0 / rff_dim)
+        # Pre-scaling constant for RFFs. `scale_random_features=False` drops it (1.0),
+        # which is what the reference CIFAR baseline does and what its own comment
+        # recommends "when using GP layer as the output layer of a neural network ... to
+        # prevent it from changing the learning rate to the hidden layers": the factor
+        # sqrt(2/m) is ~0.044 at m=1024, and it multiplies the gradient flowing back into
+        # the backbone. Adam rescales that away per-parameter, so it is invisible under
+        # the project's AdamW protocol; plain SGD at a fixed lr just trains the backbone
+        # ~22x too slowly. Default stays True so existing checkpoints are untouched.
+        self.rff_scale = math.sqrt(2.0 / rff_dim) if scale_random_features else 1.0
 
     # -- random feature map --------------------------------------------------
 
@@ -233,7 +242,8 @@ class RandomFeatureGaussianProcess(nn.Module):
     # -- forward -------------------------------------------------------------
 
     def _features(self, x: torch.Tensor) -> torch.Tensor:
-        """Compute RFFs: phi(x) = sqrt(2/m) * cos(x W + b).
+        """Compute RFFs: phi(x) = sqrt(2/m) * cos(x W + b), or cos(x W + b) when
+        `scale_random_features` is off.
 
         x: [B, in_dim] -> [B, rff_dim]
         """
@@ -334,6 +344,7 @@ class SNGPClassifier(nn.Module):
         likelihood: str = "gaussian",
         output_bias: bool = False,
         random_feature_type: str = "orf",
+        scale_random_features: bool = True,
         spectral_norm_bound: Optional[float] = None,
         use_spectral_norm: bool = True,
     ):
@@ -352,6 +363,7 @@ class SNGPClassifier(nn.Module):
         self.likelihood = likelihood
         self.output_bias = output_bias
         self.random_feature_type = random_feature_type
+        self.scale_random_features = bool(scale_random_features)
         self.spectral_norm_bound = None if spectral_norm_bound is None else float(spectral_norm_bound)
         self.use_spectral_norm = bool(use_spectral_norm)
 
@@ -386,6 +398,7 @@ class SNGPClassifier(nn.Module):
             likelihood=likelihood,
             output_bias=output_bias,
             random_feature_type=random_feature_type,
+            scale_random_features=scale_random_features,
         )
 
     def reset_precision(self) -> None:
@@ -411,6 +424,7 @@ class SNGPClassifier(nn.Module):
             "likelihood": self.likelihood,
             "output_bias": self.output_bias,
             "random_feature_type": self.random_feature_type,
+            "scale_random_features": self.scale_random_features,
             "spectral_norm_bound": self.spectral_norm_bound,
             "use_spectral_norm": self.use_spectral_norm,
         }

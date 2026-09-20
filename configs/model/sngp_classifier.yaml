@@ -46,6 +46,13 @@ net:
   likelihood: gaussian # unit Laplace weight (reference default for image classification)
   output_bias: false # reference uses a fixed zero GP output bias
   random_feature_type: orf # orthogonal random features (Yu et al. 2016)
+  # Scale the random features by sqrt(2/rff_dim) (~0.044 at 1024). True is the edward2
+  # default and what every checkpoint in this project was trained with. The reference
+  # CIFAR baseline sets it False, because the factor also multiplies the gradient
+  # reaching the backbone -- invisible under this project's AdamW protocol, which
+  # renormalizes per parameter, but under plain SGD it trains the backbone ~22x too
+  # slowly. See docs/models/CIFAR100_BENCHMARK.md.
+  scale_random_features: true
   n_power_iterations_sn: 1
 
 # optimizer and scheduler

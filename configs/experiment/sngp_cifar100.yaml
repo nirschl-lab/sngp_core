@@ -59,16 +59,25 @@ model:
     pretrained: false
     # The reference's CIFAR GP head. These differ from the family defaults in
     # configs/model/sngp_classifier.yaml (which follow Liu et al. Table 9 / the ImageNet
-    # baseline): length_scale 1.4142 -> 1.0 (`gp_scale=1.0`; our length_scale is
-    # sqrt(gp_kernel_scale)), ridge_penalty 1e-3 -> 1.0, normalize_input true -> false
-    # (`gp_input_normalization=False`), mean_field_factor 1.0 -> 7.5.
+    # baseline): ridge_penalty 1e-3 -> 1.0, normalize_input true -> false
+    # (`gp_input_normalization=False`), mean_field_factor 1.0 -> 7.5, and the two below.
+    #
+    # length_scale 20.0 and scale_random_features false are BOTH required -- a 6-epoch
+    # probe puts this head at val/acc 0.327 against the deterministic baseline's 0.345,
+    # while dropping either one collapses it to 0.06 / 0.04. length_scale is 20 because
+    # the reference composes `gp_scale=1.0` with `OrthogonalRandomFeatures(stddev=0.05)`
+    # and this repo folds both into one knob (= 1/stddev); `gp_scale` alone reads as 1.0
+    # and degenerates the kernel. scale_random_features is false per the reference's own
+    # advice -- sqrt(2/1024) also scales the gradient reaching the backbone, which AdamW
+    # hides but SGD does not. Both are explained in docs/models/CIFAR100_BENCHMARK.md.
     #
     # Caveat on the bound: `spectral_norm_bound` constrains the *reshaped* [out, in*k*k]
     # Miyato norm, while the reference's SpectralNormalizationConv2D constrains the true
     # conv operator norm. 6.0 is therefore the reference's number but not the same
     # quantity -- see docs/models/CIFAR100_BENCHMARK.md for the measured ratio.
     spectral_norm_bound: 6.0
-    length_scale: 1.0
+    length_scale: 20.0
+    scale_random_features: false
     ridge_penalty: 1.0
     normalize_input: false
     mean_field_factor: 7.5

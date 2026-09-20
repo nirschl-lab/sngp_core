@@ -45,7 +45,7 @@ Cross-checked against the paper and the official
 | Epochs / batch | 250 / 128 | experiment config |
 | Weight decay | **6e-4** | experiment config |
 | Spectral norm | bound 6.0, 1 power iteration, convs only | `spectral_norm_bound` |
-| GP head | `rff_dim` 1024, `length_scale` 1.0, `ridge_penalty` 1.0, `normalize_input` false, `cov_momentum` -1.0, ORF, no output bias | experiment config |
+| GP head | `rff_dim` 1024, `length_scale` **20.0**, `ridge_penalty` 1.0, `normalize_input` false, `cov_momentum` -1.0, ORF, no output bias, `scale_random_features` **false** | experiment config |
 | Mean-field factor | 7.5 | `mean_field_factor` |
 | Dropout | filter-wise 0.1 | baked into `wide_resnet28_10` |
 | Augmentation | zero-pad 4 → random crop 32 → hflip | `configs/img_augmentations/cifar32.yaml` |
@@ -71,7 +71,39 @@ Cross-checked against the paper and the official
 | Selection on `val/loss`, fixed budget, no early stopping | The reference does no calibration-aware selection; `val/nll_cal` is still logged, just never acted on. Identical across all four arms. |
 | No post-hoc calibration pass | `mean_field_factor` is pinned at the reference's 7.5 rather than fitted by `calibrate_checkpoint.py`. `val/mean_field_factor_fit` is logged, so you can see what a fitted σ would have given. |
 | Warmup steps per epoch, not per step | `LitModuleBase.configure_optimizers` hardcodes `interval: "epoch"`. 1 of 250 epochs; immaterial. |
-| `scale_random_features=False` not mirrored | The reference skips the `sqrt(2/D)` RFF scaling; this repo always applies it. A constant the learned linear layer absorbs — but it does shift the covariance scale, which is one more reason not to read too much into the literal 7.5. |
+
+### `scale_random_features` and the GP length scale — found by piloting, not by reading
+
+The first 20-epoch pilot had SNGP at **val/acc 0.173 against the baseline's 0.587**, on the
+same backbone and optimizer. It was not failing to generalize, it was failing to *fit*
+(train/acc 0.153), which pointed at the GP head rather than at the recipe.
+
+Two things were wrong, and only one of them is visible in `sngp.py`'s flag list.
+
+**1. `scale_random_features`.** The feature map here is `phi = sqrt(2/m)·cos(xW + b)`, and
+`sqrt(2/1024) ≈ 0.044` multiplies the gradient that reaches the backbone. edward2 makes
+this optional and the reference CIFAR baseline passes `scale_random_features=False`, with
+the comment: *"When using GP layer as the output layer of a neural network, it is
+recommended to turn this scaling off to prevent it from changing the learning rate to the
+hidden layers."* Under this project's AdamW protocol the factor is invisible — Adam
+renormalizes per parameter — which is why the biomedical SNGP runs never showed it. Under
+plain SGD at a fixed LR it trains the backbone roughly 22x too slowly. `SNGPClassifier`
+now takes `scale_random_features` (default `True`, so every existing checkpoint and the
+biomedical protocol are untouched); the CIFAR arms set it `False`.
+
+**2. The length scale is 20.0, not 1.0.** `gp_scale=1.0` is only half the reference's
+parameterization. `wide_resnet_sngp.py` also passes
+`OrthogonalRandomFeatures(stddev=0.05)`, and edward2 composes the two —
+`gp_inputs = inputs * gp_input_scale` (with `gp_input_scale = 1/sqrt(gp_kernel_scale) = 1`)
+and then a kernel whose entries have stddev 0.05. This repo folds both into one
+`length_scale`, where `W = standard_normal / length_scale`, so the reference's effective
+value is `1 / 0.05 = 20.0`. Reading `gp_scale` alone gives 1.0, at which the cosine
+pre-activations have std ≈ 5 and the random features decorrelate (0.033 correlation
+across samples) — the kernel degenerates and the head becomes noise.
+
+Both are now set in the CIFAR experiment configs. The lesson for the next reproduction:
+an edward2 GP layer's effective length scale is `1 / (gp_input_scale · initializer stddev)`,
+and neither factor alone is the answer.
 
 ### `spectral_norm_bound = 6.0` is the reference's number but not the same quantity
 

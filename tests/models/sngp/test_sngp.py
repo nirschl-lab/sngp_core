@@ -219,3 +219,18 @@ class TestSNGPClassifier:
         assert model.gp_head.classifier.bias is None
         with_bias = SNGPClassifier(num_classes=6, arch="resnet18", rff_dim=64, output_bias=True)
         assert with_bias.gp_head.classifier.bias is not None
+
+
+def test_spec_without_scale_random_features_rebuilds_unchanged():
+    """`scale_random_features` was added after checkpoints existed. A `net_spec` written
+    before it must still rebuild bit-identically, so the key has to default to True and
+    `build_net` must tolerate its absence."""
+    from src.models.registry import build_net
+
+    net = SNGPClassifier(num_classes=4, arch="resnet18", pretrained=False, rff_dim=64)
+    assert net.spec["scale_random_features"] is True
+
+    legacy_spec = {k: v for k, v in net.spec.items() if k != "scale_random_features"}
+    rebuilt = build_net(legacy_spec)
+    assert rebuilt.gp_head.scale_random_features is True
+    assert rebuilt.gp_head.rff_scale == net.gp_head.rff_scale

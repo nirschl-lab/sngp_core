@@ -359,3 +359,55 @@ class TestRandomFeatureType:
     def test_rejects_unknown_type(self):
         with pytest.raises(ValueError, match="Unsupported random_feature_type"):
             make_gp(random_feature_type="sobol")
+
+
+class TestScaleRandomFeatures:
+    """`scale_random_features` controls the `sqrt(2/rff_dim)` factor on phi.
+
+    It looks cosmetic -- a constant the learned readout could absorb -- but it also
+    multiplies the gradient reaching the backbone. Adam renormalizes that away per
+    parameter, so the project's AdamW protocol never noticed; plain SGD at a fixed lr
+    trains the backbone ~22x too slowly at rff_dim=1024, which is what broke the first
+    CIFAR-100 pilot (val/acc 0.17 vs a 0.59 deterministic baseline). The reference CIFAR
+    baseline turns it off for exactly this reason. See docs/models/CIFAR100_BENCHMARK.md.
+    """
+
+    def test_default_keeps_the_sqrt_scaling(self):
+        """Default must stay True: every checkpoint in this project was trained with it."""
+        gp = make_gp(rff_dim=128)
+        assert gp.scale_random_features is True
+        assert gp.rff_scale == pytest.approx(math.sqrt(2.0 / 128))
+
+    def test_disabling_drops_the_factor_entirely(self):
+        gp = make_gp(rff_dim=128, scale_random_features=False)
+        assert gp.rff_scale == 1.0
+
+    def test_features_differ_by_exactly_the_constant(self):
+        """The two heads must compute the same cos() and differ only by the scalar --
+        i.e. this knob changes magnitude, never the kernel."""
+        torch.manual_seed(0)
+        scaled = make_gp(rff_dim=128)
+        torch.manual_seed(0)
+        unscaled = make_gp(rff_dim=128, scale_random_features=False)
+
+        x = torch.randn(4, 64)
+        phi_scaled = scaled._features(x)
+        phi_unscaled = unscaled._features(x)
+        assert torch.allclose(phi_scaled, phi_unscaled * math.sqrt(2.0 / 128), atol=1e-6)
+
+    def test_gradient_into_the_input_scales_with_it(self):
+        """The property that actually matters: the factor passes straight through to the
+        gradient the backbone would receive."""
+        torch.manual_seed(0)
+        scaled = make_gp(rff_dim=128)
+        torch.manual_seed(0)
+        unscaled = make_gp(rff_dim=128, scale_random_features=False)
+
+        sample = torch.randn(4, 64)  # one input, so only the knob differs
+        grads = []
+        for gp in (scaled, unscaled):
+            x = sample.clone().requires_grad_(True)
+            gp._features(x).sum().backward()
+            grads.append(x.grad.norm().item())
+
+        assert grads[1] == pytest.approx(grads[0] / math.sqrt(2.0 / 128), rel=1e-4)

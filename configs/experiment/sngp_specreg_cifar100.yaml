@@ -55,7 +55,8 @@ model:
     pretrained: false
     # use_spectral_norm / spectral_norm_bound come from the model config (false / null).
     # GP head matched to sngp_cifar100.yaml so the two arms differ only in the regularizer.
-    length_scale: 1.0
+    length_scale: 20.0
+    scale_random_features: false
     ridge_penalty: 1.0
     normalize_input: false
     mean_field_factor: 7.5
