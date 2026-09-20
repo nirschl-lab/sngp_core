@@ -101,9 +101,35 @@ value is `1 / 0.05 = 20.0`. Reading `gp_scale` alone gives 1.0, at which the cos
 pre-activations have std ≈ 5 and the random features decorrelate (0.033 correlation
 across samples) — the kernel degenerates and the head becomes noise.
 
-Both are now set in the CIFAR experiment configs. The lesson for the next reproduction:
-an edward2 GP layer's effective length scale is `1 / (gp_input_scale · initializer stddev)`,
-and neither factor alone is the answer.
+Both are now set in the CIFAR experiment configs. Measured at 6 epochs, against a
+deterministic control at val/acc 0.345:
+
+| GP head config | val/acc |
+|---|---|
+| `scale_random_features` off + `length_scale` 20 | **0.327** |
+| scaling off, `length_scale` 1.0 | 0.063 |
+| scaling off, LayerNorm + `length_scale` 1.4142 | 0.010 |
+| `length_scale` 20, scaling left on | 0.045 |
+
+and re-confirmed at 20 epochs: SNGP val/acc **0.599** against the baseline's 0.595, versus
+0.173 before the fix.
+
+The lesson for the next reproduction: an edward2 GP layer's effective length scale is
+`1 / (gp_input_scale · initializer stddev)`, and neither factor alone is the answer.
+`scale_random_features` is a live hazard for **any** SGD-trained SNGP in this repo, not
+just CIFAR — under AdamW it is invisible, so nothing else here has ever exposed it.
+
+### Sizing `spec_reg_coef`
+
+γ = 0.01 at cadence 24 is the rep-spectral paper's value, tuned for a ResNet18 on
+CIFAR-10 under SGD 0.01, so it was not safe to assume it transfers to a 28-conv WRN at
+lr 0.04. The 20-epoch pilot says it does. Against γ = 0.0025: Σσ² 227 vs 314, σ_max 4.06
+vs 4.88 — measurably tighter — with CE (1.250 vs 1.238) and train accuracy (0.634 vs
+0.632) unchanged. Kept at 0.01.
+
+For scale: an untrained backbone is at Σσ² ≈ 290, and the SNGP arm's `spectral_norm_bound`
+of 6.0 corresponds to an operator-norm σ_max of ~8.8 (the 1.46× below), so at σ_max 4.06
+the penalty is constraining the spectrum *harder* than the spectral-norm arm is.
 
 ### `spectral_norm_bound = 6.0` is the reference's number but not the same quantity
 

@@ -65,10 +65,11 @@ model:
   # one for most of training. (1 rather than 0 because the checkpoint gate below ranks
   # epochs >= start_epoch, and the guard requires 0 < burn-in < max_epochs.)
   spec_reg_burnin_epochs: 1
-  # PENDING THE PILOT. gamma = 0.01 at cadence 24 is the rep-spectral paper's value,
-  # tuned for a ResNet18 on CIFAR-10 under SGD 0.01. WRN-28-10 has 28 conv layers and
-  # trains at lr 0.04, so sum(sigma^2) and the penalty gradient are on a different scale.
-  # docs/models/CIFAR100_BENCHMARK.md records what the 20-epoch pilot measured.
+  # The rep-spectral paper's gamma, kept after the 20-epoch pilot confirmed it is active
+  # on this backbone rather than assumed to transfer from its ResNet18/CIFAR-10 setting.
+  # Pilot at 20 epochs, gamma 0.01 vs 0.0025: sum(sigma^2) 227 vs 314, sigma_max 4.06 vs
+  # 4.88 -- so 0.01 measurably constrains the spectrum -- while CE (1.250 vs 1.238) and
+  # train accuracy (0.634 vs 0.632) are unchanged. A lower gamma buys nothing here.
   spec_reg_coef: 0.01
   spec_reg_every_n_steps: 24
   spec_reg_conv_mode: operator
