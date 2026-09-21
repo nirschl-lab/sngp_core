@@ -208,13 +208,27 @@ uncertainty.
 
 ## Results
 
-Published reference points to beat, for orientation: deterministic ~79.8% acc / 0.875 NLL,
-SNGP ~79.1% acc, OOD AUROC ~0.80 vs SVHN. If the deterministic and SNGP rows do not land
-near these (allowing the 45k-train gap), the spectral-reg comparison beside them is not
-yet worth reading.
+[../results/CIFAR100_RESULTS.md](../results/CIFAR100_RESULTS.md) — full tables for both
+checkpoints, in-distribution and OOD.
 
-_(To be filled in after the runs — accuracy, NLL, smooth-ECE and OOD AUROC for each arm at
-both `best.ckpt` and `last.ckpt`.)_
+Headline, at epoch 249 (`last.ckpt`, the reference's reporting point):
+
+| Arm | Acc | NLL | smECE | AUROC vs CIFAR-10 | AUROC vs SVHN |
+|---|---:|---:|---:|---:|---:|
+| Baseline | 0.8045 | 0.8067 | 0.0800 | 0.816 | 0.708 |
+| SNGP | 0.7973 | 0.7995 | 0.0734 | 0.815 | 0.793 |
+| SpecReg (matched) | 0.8047 | 0.7771 | 0.0613 | 0.824 | 0.819 |
+
+The reproduction holds: baseline 0.8045 and SNGP 0.7973 against published ~0.798/~0.791,
+and SNGP's +8.6 pt SVHN AUROC over the deterministic baseline is the paper's central
+claim. Spectral regularization is level on accuracy and ahead on NLL, calibration and
+both OOD axes.
+
+**Do not compare the arms at `best.ckpt`.** `val/loss` selects epoch 75 / 76 / 246 for
+baseline / SNGP / spectral-reg respectively — CE validation loss degrades after the first
+LR drop while accuracy keeps climbing, and the spectral penalty suppresses exactly that
+degradation. The apparent +2.6 pt accuracy win for spectral regularization at `best.ckpt`
+is mostly that epoch gap and vanishes at equal epoch.
 
 ## What is new in the repo for this
 

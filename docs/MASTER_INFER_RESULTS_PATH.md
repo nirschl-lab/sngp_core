@@ -385,3 +385,44 @@ uv run src/visualization/predictive_entropy.py --run-dir "$RUN" --indist acevedo
 uv run src/visualization/spectral_reg_training_curves.py \
     --run nirschl-lab/uncertainty-aware-ml/5bnnbxdb --burnin-epoch 50 --figures-dir figures/acevedo_specreg
 ```
+
+---
+
+## CIFAR-100 / WideResNet-28-10 benchmark (2026-09-20)
+
+Four arms x {`best.ckpt`, `last.ckpt`} x {CIFAR-100 ID, CIFAR-10 OOD, SVHN OOD}. Results:
+[results/CIFAR100_RESULTS.md](results/CIFAR100_RESULTS.md); checkpoints:
+[checkpoints/CIFAR_CHECKPOINTS.md](checkpoints/CIFAR_CHECKPOINTS.md). **Report the
+`cifar100last_*` (epoch 249) rows** -- `val/loss` selected wildly different epochs per arm
+(75 / 76 / 246), so the `cifar100_*` set is not a like-for-like comparison.
+
+```bash
+# best.ckpt
+/data1/maheswararao/experiments/uncertainty-aware-ml/infer/cifar100_{baseline,sngp,specreg,specreg_literal}__{cifar100,cifar10,svhn}
+# last.ckpt  (no specreg_literal -- its last.ckpt was lost to a run-dir collision)
+/data1/maheswararao/experiments/uncertainty-aware-ml/infer/cifar100last_{baseline,sngp,specreg}__{cifar100,cifar10,svhn}
+```
+
+No `best.calibrated.ckpt`: these arms pin `mean_field_factor` at the reference's 7.5
+instead of fitting it, so `calibrate_checkpoint.py` is deliberately not in this pipeline.
+
+Reproduce the inference (one arm per GPU; `infer.save.run_name` **must** carry the dataset
+-- setting it replaces the whole auto-derived path tail including the `<dataset>` segment,
+so omitting it makes the three datasets overwrite each other):
+```bash
+B=/data1/maheswararao/experiments/uncertainty-aware-ml/train
+R=runs/2026-09-20_18-06-59/checkpoints
+for ds in cifar100 cifar10 svhn; do
+  uv run src/inference/infer.py ckpt_path=$B/sngp_classifier_cifar100/$R/last.ckpt \
+      data=$ds fold=test infer.save.run_name="cifar100last_sngp__${ds}" \
+      data.datamodule.num_workers=8
+done
+```
+
+Dempster-Shafer OOD AUROC (the score the SNGP reference uses for CIFAR; `score_mode`
+added to `src/metrics/auc.py` for this) and the calibration table:
+```bash
+scripts/metrics/stage_cifar100_ood.sh          # symlinks infer/ -> csv/ood_metrics/<method>/<dataset>.csv
+uv run python -m src.paper_helpers.ood_metrics.cifar100
+# -> csv/ood_metrics/cifar100_ood_auroc_dempster_shafer.csv
+```

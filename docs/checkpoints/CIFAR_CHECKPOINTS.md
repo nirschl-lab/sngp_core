@@ -39,45 +39,62 @@ uv run python -c "from src.checkpointing.io import read_meta; print(read_meta('<
 
 ---
 
+All four arms were trained 2026-09-20 in parallel, one per L40S, 250 epochs, seed 12345,
+W&B group `CIFAR100`. Results: [../results/CIFAR100_RESULTS.md](../results/CIFAR100_RESULTS.md).
+
+> **Run-directory collision — read before using the spectral-reg checkpoints.** Both
+> spectral-reg arms had `model.name: sngp_specreg_classifier`, so `task_name` was
+> identical, and launching them in the same second gave them the *same* Hydra run
+> directory. Two trainers wrote into one `checkpoints/`: Lightning suffixed the second
+> `best` as `best-v1.ckpt`, and **the literal arm's `last.ckpt` was overwritten** by the
+> matched arm's and is gone. The files below are identified by their `hyper_parameters`
+> (`spec_reg_burnin_epochs`), not by filename order. Fixed for future runs by
+> `model.name: sngp_specreg_literal_classifier` in
+> `configs/experiment/sngp_specreg_cifar100_literal.yaml`; re-running the literal arm
+> would give it a clean directory and recover its `last.ckpt`.
+
 ## baseline_cifar100 — deterministic WRN-28-10
 
-_pending — run not yet launched_
-
 ```bash
-# best.ckpt:
-# last.ckpt:
-# W&B run:
+# best.ckpt  (epoch 75, min val/loss)
+/data1/maheswararao/experiments/uncertainty-aware-ml/train/baseline_classifier_cifar100/runs/2026-09-20_18-06-59/checkpoints/best.ckpt
+# last.ckpt  (epoch 249 -- the reference reporting point)
+/data1/maheswararao/experiments/uncertainty-aware-ml/train/baseline_classifier_cifar100/runs/2026-09-20_18-06-59/checkpoints/last.ckpt
 ```
 
 ## sngp_cifar100 — SNGP, reference recipe (`spectral_norm_bound` 6.0)
 
-_pending — run not yet launched_
-
 ```bash
-# best.ckpt:
-# last.ckpt:
-# W&B run:
+# best.ckpt  (epoch 76, min val/loss)
+/data1/maheswararao/experiments/uncertainty-aware-ml/train/sngp_classifier_cifar100/runs/2026-09-20_18-06-59/checkpoints/best.ckpt
+# last.ckpt  (epoch 249)
+/data1/maheswararao/experiments/uncertainty-aware-ml/train/sngp_classifier_cifar100/runs/2026-09-20_18-06-59/checkpoints/last.ckpt
 ```
 
 ## sngp_specreg_cifar100 — spectral regularization, matched to the SNGP arm
 
-_pending — run not yet launched. `spec_reg_coef` is set from the 20-epoch pilot; record
-the value used here alongside the paths, since the config's 0.01 is a placeholder
-inherited from the rep-spectral paper's ResNet18 setting._
+`spec_reg_coef` 0.01, burn-in 1, weight decay 6e-4.
 
 ```bash
-# best.ckpt:
-# last.ckpt:
-# spec_reg_coef:
-# W&B run:
+# best.ckpt  (epoch 246, min val/loss over epochs >= burn-in)
+/data1/maheswararao/experiments/uncertainty-aware-ml/train/sngp_specreg_classifier_cifar100/runs/2026-09-20_18-06-59/checkpoints/best.ckpt
+# last.ckpt  (epoch 249)
+/data1/maheswararao/experiments/uncertainty-aware-ml/train/sngp_specreg_classifier_cifar100/runs/2026-09-20_18-06-59/checkpoints/last.ckpt
 ```
 
 ## sngp_specreg_cifar100_literal — rep-spectral paper-literal (burn-in 200, wd 0)
 
-_pending — run not yet launched_
+Shares the directory above; **its checkpoint is the `-v1` one** (`spec_reg_burnin_epochs:
+200`). Its `last.ckpt` does not exist — see the collision note.
 
 ```bash
-# best.ckpt:
-# last.ckpt:
-# W&B run:
+# best.ckpt  (epoch 200, the first rankable epoch)
+/data1/maheswararao/experiments/uncertainty-aware-ml/train/sngp_specreg_classifier_cifar100/runs/2026-09-20_18-06-59/checkpoints/best-v1.ckpt
+```
+
+Verify any entry before use:
+
+```bash
+uv run python -c "import torch; ck=torch.load('<path>', map_location='cpu', weights_only=False); \
+print(ck['epoch'], ck['hyper_parameters'].get('spec_reg_burnin_epochs'))"
 ```

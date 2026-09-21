@@ -29,6 +29,12 @@ defaults:
   - override /trainer: default
 
 name: "cifar100_sngp_specreg_literal_wrn28x10"
+
+# `model.name` is overridden below, not just here: `task_name` in configs/train.yaml is
+# "train/${model.name}_<dataset>", so leaving it at the family default would give this run
+# the SAME output directory as sngp_specreg_cifar100. Launching both at once then lands two
+# trainers in one checkpoints/ dir -- which happened on the first full run: `best.ckpt` and
+# `best-v1.ckpt` ended up one per arm, and one arm's `last.ckpt` was overwritten.
 WANDB_PROJECT: ${oc.env:PROJECT_NAME}
 tags: ["sngp_specreg", "sngp", "rep-spectral", "cifar100", "wide_resnet28_10", "benchmark", "paper-literal", "training"]
 
@@ -42,6 +48,9 @@ trainer:
   accelerator: "gpu"
 
 model:
+  # Distinct from sngp_specreg_classifier so this arm gets its own output directory --
+  # see the note under `name:` above.
+  name: sngp_specreg_literal_classifier
   optimizer:
     _target_: torch.optim.SGD
     _partial_: true

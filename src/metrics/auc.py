@@ -3,6 +3,7 @@ import numpy as np
 import pandas as pd
 import os
 
+from src.metrics.dempster_shafer_uncertainity import DempsterShaferUncertainty
 from src.metrics.io import (
     LEGACY_ISBI_FOLD_POLICY,
     SYMMETRIC_FOLD_POLICY,  # noqa: F401 -- re-exported for callers of this module
@@ -10,6 +11,10 @@ from src.metrics.io import (
     normalized_entropy,
     parse_float_list,
 )
+
+# Score modes whose value rises with uncertainty (so AUROC must not invert them).
+DEMPSTER_SHAFER_SCORE_MODES = frozenset({"dempster_shafer", "ds"})
+UNCERTAINTY_SCORE_MODES = frozenset({"entropy", "uncertainty"}) | DEMPSTER_SHAFER_SCORE_MODES
 
 seeds = [42, 1337, 12345, 8675309, 314159, 271828, 20240427, 987654321, 3735928559, 777]
 sample_rate = 1000
@@ -35,7 +40,37 @@ def _compute_ood_score_series(df, score_mode):
         entropy = probs.map(lambda x: _normalized_entropy(x) if x is not None else np.nan)
         return entropy.dropna()
 
-    raise ValueError("Unsupported score_mode. Use 'msp' or 'entropy'.")
+    if score_mode in DEMPSTER_SHAFER_SCORE_MODES:
+        # `K / (K + sum_c exp(logit_c))` -- total evidence mass, not distribution shape.
+        # This is the score the SNGP reference itself uses for CIFAR OOD detection
+        # (`dempster_shafer_ood` in baselines/cifar/sngp.py), and the one worth reaching
+        # for with a GP head: softmax is shift-invariant, so MSP and entropy throw away
+        # exactly the logit magnitude SNGP is trained to modulate.
+        #
+        # Prefer the persisted column: `src/inference/infer.py` writes it from
+        # `src.metrics.uncertainty.dempster_shafer`, which reproduces
+        # `DempsterShaferUncertainty` in float64. Older CSVs predate the column but do
+        # carry `class_logits`, so fall back to recomputing rather than failing.
+        if "dempster_shafer" in df.columns:
+            series = pd.to_numeric(df["dempster_shafer"], errors="coerce").dropna()
+            if not series.empty:
+                return series
+        if "class_logits" not in df.columns:
+            raise KeyError(
+                "Need either a 'dempster_shafer' column or 'class_logits' for "
+                "score_mode='dempster_shafer'. Note probabilities are not enough: "
+                "softmax discards the total evidence this score measures."
+            )
+        logits = df["class_logits"].map(_parse_class_probs)
+        valid = logits[logits.map(lambda x: x is not None and len(x) > 0)]
+        if valid.empty:
+            return pd.Series(dtype=float)
+        scores = DempsterShaferUncertainty(np.vstack(valid.to_numpy()))
+        return pd.Series(scores, index=valid.index).dropna()
+
+    raise ValueError(
+        "Unsupported score_mode. Use 'msp', 'entropy', or 'dempster_shafer'."
+    )
 
 
 def AUROC(ID_MSP, OOD_MSP, score_is_uncertainty=False):
@@ -110,7 +145,7 @@ def AUROC_across_dataset(
                     f"for ID='{id_name}' and OOD='{ood_name}'."
                 )
 
-            score_is_uncertainty = score_mode in {"entropy", "uncertainty"}
+            score_is_uncertainty = score_mode in UNCERTAINTY_SCORE_MODES
             #calcualte mean and std across 10 different seeds
             auroc_list = []
             for seed in seeds:
