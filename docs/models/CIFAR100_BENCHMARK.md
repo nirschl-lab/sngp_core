@@ -211,20 +211,24 @@ uncertainty.
 [../results/CIFAR100_RESULTS.md](../results/CIFAR100_RESULTS.md) — full tables for both
 checkpoints, in-distribution and OOD.
 
-Headline, at epoch 249 (`last.ckpt`, the reference's reporting point):
+Headline, three seeds, epoch 249 (`last.ckpt`, the reference's reporting point):
 
-| Arm | Acc | NLL | smECE | AUROC vs CIFAR-10 | AUROC vs SVHN |
-|---|---:|---:|---:|---:|---:|
-| Baseline | 0.8045 | 0.8067 | 0.0800 | 0.816 | 0.708 |
-| SNGP | 0.7973 | 0.7995 | 0.0734 | 0.815 | 0.793 |
-| SpecReg (matched) | 0.8047 | 0.7771 | 0.0613 | 0.824 | 0.819 |
+| Arm | seeds | Acc | NLL | smECE | AUROC C-10 | AUROC SVHN |
+|---|---:|---:|---:|---:|---:|---:|
+| Baseline | 3 | 0.8061 ± 0.0027 | 0.8074 ± 0.0096 | 0.0779 ± 0.0038 | 0.8129 ± 0.0023 | 0.7503 ± 0.0388 |
+| SNGP (`c = 6.0`) | 3 | 0.8025 ± 0.0045 | 0.7912 ± 0.0073 | 0.0685 ± 0.0042 | 0.8183 ± 0.0037 | 0.7961 ± 0.0057 |
+| SpecReg (matched) | 3 | 0.8048 ± 0.0036 | **0.7739 ± 0.0107** | **0.0609 ± 0.0013** | 0.8206 ± 0.0029 | **0.8285 ± 0.0119** |
 
-The reproduction holds: baseline 0.8045 and SNGP 0.7973 against published ~0.798/~0.791,
-and SNGP's +8.6 pt SVHN AUROC over the deterministic baseline is the paper's central
-claim. Spectral regularization is level on accuracy and ahead on NLL, calibration and
-both OOD axes.
+The reproduction holds — baseline 0.806 and SNGP 0.803 against published ~0.798/~0.791,
+and SNGP is +4.6 pts over the baseline on SVHN AUROC, the paper's central claim.
 
-**Do not compare the arms at `best.ckpt`.** `val/loss` selects epoch 75 / 76 / 246 for
+Spectral regularization beats SNGP on **far-OOD (+0.033), NLL (−0.017) and calibration
+(−0.008)**, sign-consistent across all three seeds. It does **not** beat it on accuracy or
+near-OOD — both mixed in sign across seeds. `c = 4.1`, the operator-norm-equivalent
+control for the 1.46× estimator gap below, came out slightly worse than `c = 6.0`, so the
+bound was not the limiting factor.
+
+**Do not compare the arms at `best.ckpt`.****Do not compare the arms at `best.ckpt`.** `val/loss` selects epoch 75 / 76 / 246 for
 baseline / SNGP / spectral-reg respectively — CE validation loss degrades after the first
 LR drop while accuracy keeps climbing, and the spectral penalty suppresses exactly that
 degradation. The apparent +2.6 pt accuracy win for spectral regularization at `best.ckpt`

@@ -98,3 +98,29 @@ Verify any entry before use:
 uv run python -c "import torch; ck=torch.load('<path>', map_location='cpu', weights_only=False); \
 print(ck['epoch'], ck['hyper_parameters'].get('spec_reg_burnin_epochs'))"
 ```
+
+---
+
+## Overnight follow-up (2026-09-21) — seeds, the `c = 4.1` control, literal re-run
+
+Driven by `scripts/tmux/cifar100_overnight.sh`; W&B group
+`CIFAR100_overnight_2026-09-20_21-38-42`. Results pooled with the seed-12345 runs above in
+[../results/CIFAR100_RESULTS.md](../results/CIFAR100_RESULTS.md).
+
+Every run has an **explicit** `hydra.run.dir`, so no two share a directory — that is what
+prevents the collision documented above from recurring.
+
+```bash
+B=/data1/maheswararao/experiments/uncertainty-aware-ml/overnight/overnight_2026-09-20_21-38-42
+$B/s1_baseline/checkpoints/{best,last}.ckpt        # baseline, seed 1
+$B/s2_baseline/checkpoints/{best,last}.ckpt        # baseline, seed 2
+$B/s1_sngp/checkpoints/{best,last}.ckpt            # SNGP c=6.0, seed 1
+$B/s2_sngp/checkpoints/{best,last}.ckpt            # SNGP c=6.0, seed 2
+$B/s1_specreg/checkpoints/{best,last}.ckpt         # SpecReg matched, seed 1
+$B/s2_specreg/checkpoints/{best,last}.ckpt         # SpecReg matched, seed 2
+$B/c41_sngp/checkpoints/{best,last}.ckpt           # SNGP spectral_norm_bound=4.1, seed 12345
+$B/literal_rerun/checkpoints/{best,last}.ckpt      # rep-spectral literal, seed 12345
+```
+
+`literal_rerun` is the clean re-run of the arm whose `last.ckpt` was lost to the
+collision; it has both checkpoints.
