@@ -3,34 +3,36 @@
 Reproduction of the benchmark SNGP was published on (Liu et al. 2022,
 [arXiv 2205.00403](https://arxiv.org/abs/2205.00403)), run so that the rep-spectral
 variant can be judged against a *reproduced* SNGP number rather than only against the
-Acevedo pilot ([ACEVEDO_SPECREG_RESULTS.md](ACEVEDO_SPECREG_RESULTS.md)). Recipe, every
-deviation, and the two GP-head bugs the pilot caught:
-[../models/CIFAR100_BENCHMARK.md](../models/CIFAR100_BENCHMARK.md).
+Acevedo pilot ([ACEVEDO_SPECREG_RESULTS.md](ACEVEDO_SPECREG_RESULTS.md)).
 
-Trained 2026-09-20/21 on branch `sngp-spectral-reg`, 250 epochs per run on one L40S
-each. **Three seeds (12345, 1, 2)** for the three healthy arms; one seed for the
-`c = 4.1` control and the rep-spectral-literal arm. W&B groups `CIFAR100` and
-`CIFAR100_overnight_2026-09-20_21-38-42`. Checkpoints:
-[../checkpoints/CIFAR_CHECKPOINTS.md](../checkpoints/CIFAR_CHECKPOINTS.md). Inference
-directories and every reproduce command:
-[../MASTER_INFER_RESULTS_PATH.md](../MASTER_INFER_RESULTS_PATH.md).
+| | |
+|---|---|
+| Runs | 250 epochs, one L40S per arm, 2026-09-20/21, branch `sngp-spectral-reg` |
+| Seeds | 12345 / 1 / 2 — baseline, SNGP `c = 6.0`, SpecReg (matched)<br>12345 only — SNGP `c = 4.1`, rep-spectral literal |
+| W&B | groups `CIFAR100` and `CIFAR100_overnight_2026-09-20_21-38-42` |
+| Recipe, deviations, GP-head bugs | [../models/CIFAR100_BENCHMARK.md](../models/CIFAR100_BENCHMARK.md) |
+| Checkpoints | [../checkpoints/CIFAR_CHECKPOINTS.md](../checkpoints/CIFAR_CHECKPOINTS.md) |
+| Inference dirs, reproduce commands | [../MASTER_INFER_RESULTS_PATH.md](../MASTER_INFER_RESULTS_PATH.md) |
 
-**Off the fair-comparison protocol, deliberately** — SGD+Nesterov with a
-warmup/piecewise schedule instead of AdamW+cosine, a fixed 250-epoch budget with no
-early stopping, `val/loss` selection instead of `val/nll_cal`, the reference's CIFAR GP
-constants, and **no post-hoc calibration** (`mean_field_factor` pinned at the
-reference's 7.5, never fitted). Do not read these numbers next to the biomedical
-protocol runs.
+## Read this first
 
-**Read the `last.ckpt` tables, not `best.ckpt`.** `val/loss` selected epoch 75 for the
-baseline and 76 for SNGP — CE validation loss degrades after the first LR drop while
-accuracy keeps climbing — but epoch 246 for spectral regularization, whose penalty
-suppresses that degradation. The arms are therefore *not* comparable at `best.ckpt`, and
-epoch 249 is the reference's own reporting point besides. Both are given; the gap
-between them is itself a finding.
-
-`±` means **across seeds** in the headline table below, and across bootstrap resamples
-of one run in the single-seed tables further down. The two are not interchangeable.
+1. **Off the fair-comparison protocol, deliberately** — SGD+Nesterov with a
+   warmup/piecewise schedule instead of AdamW+cosine; a fixed 250-epoch budget, no early
+   stopping; `val/loss` selection instead of `val/nll_cal`; the reference's CIFAR GP
+   constants; **no post-hoc calibration** (`mean_field_factor` pinned at the reference's
+   7.5, never fitted). Do not read these numbers next to the biomedical protocol runs.
+2. **Compare the arms at epoch 249 (`last.ckpt`), never at `best.ckpt`.** `val/loss`
+   selects epoch 75 / 76 / 246 for baseline / SNGP / SpecReg: CE validation loss degrades
+   after the first LR drop while accuracy keeps climbing, and the spectral penalty
+   suppresses exactly that degradation. Epoch 249 is also the reference's own reporting
+   point. The `best.ckpt` table below is kept for reference only.
+3. **`±` means two different things** — across seeds in the headline table, across 10
+   bootstrap resamples of one run in the seed-12345 tables. Not interchangeable.
+4. **Metrics.** smECE is top-label (confidence vs. correct); the macro one-vs-rest
+   average reads ~0.003 for every arm at 100 classes and says nothing. AUROC uses
+   Dempster-Shafer uncertainty `K / (K + Σ exp(logit))`, the reference's own OOD score
+   (`dempster_shafer_ood` in `baselines/cifar/sngp.py`) — softmax is shift-invariant, so
+   MSP and entropy discard the logit magnitude an SNGP head is trained to modulate.
 
 ---
 
@@ -44,12 +46,13 @@ of one run in the single-seed tables further down. The two are not interchangeab
 | SNGP (`c = 4.1`) | 1 | 0.8019 | 0.7965 | 0.0677 | 0.8089 | 0.7888 |
 | SpecReg (rep-spectral literal) | 1 | 0.7372 | 1.2651 | 0.1363 | 0.7273 | 0.8564 |
 
-*Mean ± std across seeds. AUROC is Dempster-Shafer, itself averaged over 10 bootstrap
-resamples per run before the across-seed statistics.*
+*Mean ± std across seeds; each run's AUROC is itself averaged over 10 bootstrap resamples
+first. The literal arm's row comes from its clean re-run, not from the seed-12345 run
+detailed below.*
 
-### Paired SpecReg(matched) − SNGP(`c = 6.0`), per seed
+### Paired SpecReg (matched) − SNGP (`c = 6.0`), per seed
 
-Paired rather than comparing the marginal means: the seeds are shared, so a per-seed
+Paired rather than differencing the marginal means: the seeds are shared, so a per-seed
 difference removes the run-to-run variation that dominates the `±` columns above.
 
 | seed | Accuracy | NLL | smECE | AUROC C-10 | AUROC SVHN |
@@ -60,81 +63,31 @@ difference removes the run-to-run variation that dominates the `±` columns abov
 | **mean** | +0.0023 | **−0.0173** | **−0.0076** | +0.0023 | **+0.0325** |
 | sign-consistent | mixed | **3/3** | **3/3** | mixed | **3/3** |
 
-**What survives three seeds.** Spectral regularization beats SNGP on **far-OOD detection
-(SVHN, +0.033)**, **NLL (−0.017)** and **calibration (smECE −0.008)**, sign-consistent
-across all three seeds; the SVHN per-seed gaps (+0.026, +0.032, +0.039) each exceed
-SNGP's own across-seed std of 0.006.
+### What three seeds support
 
-**What does not.** Accuracy and near-OOD (CIFAR-10) are **mixed in sign** and within
-noise — the three arms are indistinguishable on both. The first run's single-seed
-CIFAR-10 lead for spectral regularization (+0.009) was an artifact.
-
-**SNGP's own claim reproduces, and is about stability as much as level.** +0.046 over the
-deterministic baseline on SVHN — and the baseline's across-seed std there is 0.0388
-against SNGP's 0.0057, i.e. the deterministic model's far-OOD behaviour is erratic
-(0.708 to 0.769 across seeds) while SNGP's is not.
-
-**`c = 4.1` does not help** (SVHN 0.7888, CIFAR-10 0.8089 — both slightly *below*
-`c = 6.0`), so the 1.46× reshaped-vs-operator estimator mismatch was **not** leaving the
-SNGP arm under-constrained. That caveat from the first run is closed. One seed, so treat
-it as a check that nothing was badly wrong rather than a tuning result.
-
-**Ignore the literal arm's SVHN 0.8564.** It is the best OOD number in the table attached
-to the worst model in the table (0.737 accuracy, 1.265 NLL, 0.136 smECE): a badly-fit
-network whose logits are uniformly small separates ID from OOD on total evidence without
-being useful for anything. A caution about reading OOD AUROC alone, not a result.
+- **Survives.** SpecReg beats SNGP on **far-OOD (SVHN, +0.033)**, **NLL (−0.017)** and
+  **calibration (smECE −0.008)**, sign-consistent 3/3. The per-seed SVHN gaps (+0.026,
+  +0.032, +0.039) each exceed SNGP's own across-seed std of 0.006.
+- **Does not survive.** Accuracy and near-OOD (CIFAR-10) are mixed in sign and within
+  noise — the three arms are indistinguishable on both. The first run's single-seed
+  CIFAR-10 lead for SpecReg (+0.009) was an artifact.
+- **The reproduction holds.** Baseline 0.806 and SNGP 0.803 against published ~0.798 /
+  ~0.791, on 45k training images instead of 50k.
+- **SNGP's own claim reproduces — stability as much as level.** +0.046 over the baseline
+  on SVHN, and the baseline's across-seed std there is 0.0388 against SNGP's 0.0057: the
+  deterministic model swings 0.708–0.769 across seeds, SNGP does not.
+- **`c = 4.1` does not help** (SVHN 0.7888, CIFAR-10 0.8089 — both slightly *below*
+  `c = 6.0`), so the 1.46× reshaped-vs-operator estimator mismatch was **not** leaving
+  the SNGP arm under-constrained. That caveat from the first run is closed. One seed — a
+  check, not a tuning result.
+- **Ignore the literal arm's SVHN 0.8564.** The best OOD number in the table belongs to
+  its worst model (0.737 accuracy, 1.265 NLL, 0.136 smECE): a badly-fit network with
+  uniformly small logits separates ID from OOD on total evidence while being useless for
+  anything else. A caution about reading OOD AUROC alone, not a result.
 
 ---
 
-## Single-seed detail (seed 12345) — in-distribution, epoch 249
-
-| Arm | Accuracy | NLL | smECE | mean DS |
-|---|---:|---:|---:|---:|
-| Baseline (deterministic) | 0.8045 | 0.8067 | 0.0800 | 0.018 |
-| SNGP (`c = 6.0`) | 0.7973 | 0.7995 | 0.0734 | 0.021 |
-| **SpecReg (matched)** | **0.8047** | **0.7771** | **0.0613** | 0.023 |
-| SpecReg (rep-spectral literal) | — | — | — | — |
-
-*Published reference points: deterministic ~0.798 accuracy / 0.875 NLL, SNGP ~0.791.
-Both reproduce within ~0.7 pt on accuracy and beat the published NLL, on 45k training
-images instead of 50k. smECE is top-label (confidence vs. correct); the multiclass macro
-one-vs-rest average reads ~0.003 for every arm at 100 classes and is not informative.
-`—` on the literal arm means no epoch-249 checkpoint exists, not that it went unmeasured:
-its `last.ckpt` was overwritten by a run-directory collision and is unrecoverable without
-retraining — see [../checkpoints/CIFAR_CHECKPOINTS.md](../checkpoints/CIFAR_CHECKPOINTS.md).*
-
-**At equal epoch the three arms are within 0.7 pt on accuracy.** Spectral regularization
-separates on NLL (−0.030 vs SNGP) and calibration (smECE −0.012 vs SNGP, −0.019 vs
-baseline), not on accuracy.
-
-## Single-seed detail (seed 12345) — OOD detection, epoch 249
-
-| Arm | vs CIFAR-10 (near) | vs SVHN (far) |
-|---|---:|---:|
-| Baseline (deterministic) | 0.8155 ± 0.0158 | 0.7076 ± 0.0130 |
-| SNGP (`c = 6.0`) | 0.8152 ± 0.0115 | 0.7933 ± 0.0110 |
-| **SpecReg (matched)** | **0.8239 ± 0.0134** | **0.8192 ± 0.0100** |
-| SpecReg (rep-spectral literal) | — | — |
-
-*`—` is "no epoch-249 checkpoint exists", not "not measured": the literal arm's
-`last.ckpt` was overwritten by a run-directory collision and is unrecoverable without
-retraining. See [../checkpoints/CIFAR_CHECKPOINTS.md](../checkpoints/CIFAR_CHECKPOINTS.md).
-Its `best.ckpt` (epoch 200) is in the table further down.*
-
-*Scored with Dempster-Shafer uncertainty `K / (K + Σ exp(logit))`, the score the
-reference itself uses for CIFAR OOD (`dempster_shafer_ood` in `baselines/cifar/sngp.py`):
-softmax is shift-invariant, so MSP and entropy discard exactly the logit magnitude an
-SNGP head is trained to modulate. Mean ± std over 10 bootstrap resamples of 1000 ID and
-1000 OOD rows.*
-
-*Superseded by the three-seed table above; kept for provenance.* On this seed the
-baseline's SVHN AUROC is 0.708, its worst of the three seeds — so the +8.6 pt SNGP margin
-read here overstates the three-seed figure of +4.6. The +0.9 pt CIFAR-10 lead for
-spectral regularization does not survive additional seeds at all.*
-
----
-
-## `best.ckpt` — for reference only, not a like-for-like comparison
+## `best.ckpt` — reference only, not a like-for-like comparison
 
 | Arm | Epoch | Accuracy | NLL | smECE | CIFAR-10 AUROC | SVHN AUROC |
 |---|---:|---:|---:|---:|---:|---:|
@@ -143,25 +96,63 @@ spectral regularization does not survive additional seeds at all.*
 | SpecReg (matched) | 246 | 0.8034 | 0.7753 | 0.0612 | 0.8232 ± 0.0134 | 0.8316 ± 0.0095 |
 | SpecReg (literal) | 200 | 0.7404 | 1.2395 | 0.1370 | 0.7318 ± 0.0103 | 0.8600 ± 0.0075 |
 
-*Spectral regularization's apparent +2.6 pt accuracy lead here is mostly the 246-vs-75
-epoch gap, not the regularizer: it vanishes at equal epoch above. Conversely SNGP looks
-*worse* than the baseline on OOD here only because epoch 76 precedes the distance-aware
-behaviour the method depends on. That the penalty is what let this arm keep improving to
-epoch 246 is a real property — but it is a different claim from "better at equal budget",
-and this table cannot support either one on its own.*
+*SpecReg's apparent +2.6 pt accuracy lead here is mostly the 246-vs-75 epoch gap, not the
+regularizer — it vanishes at equal epoch. SNGP looks worse than the baseline on OOD only
+because epoch 76 precedes the distance-aware behaviour the method depends on. That the
+penalty let the matched arm keep improving to epoch 246 is a real property, but it is a
+different claim from "better at equal budget", and this table supports neither on its
+own.*
 
 ## The rep-spectral-literal arm
 
-`sngp_specreg_cifar100_literal` follows the rep-spectral paper's own recipe — 200 of 250
-epochs unregularized, weight decay 0 so the penalty is the only weight regularizer — and
-loses badly: 0.7404 accuracy, 1.2395 NLL, 0.1370 smECE at its selected epoch 200. Both
-causes were predicted in the config header: 200 epochs with no weight decay overfits a
-36M-parameter WRN, and by epoch 200 the LR has decayed to `0.04 × 0.2³`, so the penalty
-arrives with almost no learning rate left to act through.
+**The published rep-spectral recipe does not transfer to CIFAR-100 as written.**
+`sngp_specreg_cifar100_literal` keeps that recipe — 200 of 250 epochs unregularized,
+weight decay 0 so the penalty is the only weight regularizer — and loses badly: 0.7404
+accuracy, 1.2395 NLL, 0.1370 smECE at its selected epoch 200. Both causes were predicted
+in the config header: 200 epochs with no weight decay overfits a 36M-parameter WRN, and
+by epoch 200 the LR has decayed to `0.04 × 0.2³`, leaving the penalty almost no learning
+rate to act through. The matched arm — same penalty, active from epoch 1, weight decay
+kept at the SNGP arm's 6e-4 — is where the method's benefit shows up.
 
-**The published rep-spectral recipe does not transfer to CIFAR-100 as written.** The
-matched arm — same penalty, active from epoch 1, weight decay kept at the SNGP arm's
-6e-4 — is where the method's benefit shows up.
+---
+
+## Seed 12345 in detail — superseded by the three-seed tables, kept for provenance
+
+In-distribution, epoch 249:
+
+| Arm | Accuracy | NLL | smECE | mean DS |
+|---|---:|---:|---:|---:|
+| Baseline (deterministic) | 0.8045 | 0.8067 | 0.0800 | 0.018 |
+| SNGP (`c = 6.0`) | 0.7973 | 0.7995 | 0.0734 | 0.021 |
+| **SpecReg (matched)** | **0.8047** | **0.7771** | **0.0613** | 0.023 |
+| SpecReg (rep-spectral literal) | — | — | — | — |
+
+*Published reference points: deterministic ~0.798 accuracy / 0.875 NLL, SNGP ~0.791. This
+seed reproduces both within ~0.7 pt on accuracy and beats the published NLL, on 45k
+training images instead of 50k.*
+
+OOD detection, epoch 249:
+
+| Arm | vs CIFAR-10 (near) | vs SVHN (far) |
+|---|---:|---:|
+| Baseline (deterministic) | 0.8155 ± 0.0158 | 0.7076 ± 0.0130 |
+| SNGP (`c = 6.0`) | 0.8152 ± 0.0115 | 0.7933 ± 0.0110 |
+| **SpecReg (matched)** | **0.8239 ± 0.0134** | **0.8192 ± 0.0100** |
+| SpecReg (rep-spectral literal) | — | — |
+
+*± is over 10 bootstrap resamples of 1000 ID and 1000 OOD rows from this one run.*
+
+- **At equal epoch the three arms are within 0.7 pt on accuracy.** SpecReg separates on
+  NLL (−0.030 vs SNGP) and calibration (smECE −0.012 vs SNGP, −0.019 vs baseline), not on
+  accuracy.
+- **This seed flatters SNGP on OOD.** Its baseline SVHN AUROC of 0.708 is the worst of
+  the three seeds, so the +8.6 pt SNGP margin read here overstates the three-seed +4.6.
+  The +0.9 pt CIFAR-10 lead for SpecReg does not survive more seeds at all.
+- **`—` is "no epoch-249 checkpoint", not "not measured".** This run's literal arm lost
+  its `last.ckpt` to a run-directory collision
+  ([../checkpoints/CIFAR_CHECKPOINTS.md](../checkpoints/CIFAR_CHECKPOINTS.md)); its
+  `best.ckpt` (epoch 200) is in the table above, and the headline's epoch-249 row for
+  this arm comes from the clean re-run.
 
 ---
 
@@ -172,9 +163,9 @@ matched arm — same penalty, active from epoch 1, weight decay kept at the SNGP
   and CIFAR-10 OOD are *not* established in either direction.
 - **`c = 4.1` and the literal arm are single-seed.** Both are checks, not measurements.
 - **The `c = 6.0` estimator mismatch is checked, not eliminated.** `c = 4.1` (the
-  operator-norm equivalent of the reference's 6.0, given the measured 1.46× ratio) came
-  out slightly *worse*, so the bound was not the limiting factor — but that is one run,
-  and no intermediate value was tried.
+  operator-norm equivalent of 6.0, given the measured 1.46× ratio) came out slightly
+  *worse*, so the bound was not the limiting factor — but that is one run, and no
+  intermediate value was tried.
 - **No post-hoc calibration.** `mean_field_factor` is pinned at 7.5, not fitted, so the
   calibration columns are uncalibrated for every arm.
 - **No figures yet** — reliability curves, DS histograms and the OOD-AUROC comparison
