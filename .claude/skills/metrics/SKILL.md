@@ -59,13 +59,27 @@ belongs to before writing anything:
   decompositions (`per_sample_nll`/`per_sample_brier`/`per_sample_correct`) behind
   `metrics.json`'s `_std`/`_sem` keys. Only for metrics that *are* a mean over
   per-sample values; AUROC/ECE/macro-F1 are not, and deliberately get no `_std`.
-- `src/metrics/auc.py` — `AUROC` (single ID/OOD pair), `AUROC_across_dataset` (one ID
-  dataset vs many OOD datasets, bootstrapped over 10 seeds). Takes a `fold_policy`
-  (`OodFoldPolicy` from `io.py`) -- defaults to `LEGACY_ISBI_FOLD_POLICY`, which
-  filters the ID frame to `fold=='test'` but leaves OOD unfiltered; that asymmetry is
-  load-bearing for every already-published number, so don't change the default to
-  "fix" it. Pass `SYMMETRIC_FOLD_POLICY` for a new analysis that wants both frames
-  filtered the same way.
+- `src/metrics/auc.py` — `AUROC` (single ID/OOD pair) plus **two** cross-dataset
+  estimators. Pick deliberately:
+  - `AUROC_across_dataset` — subsamples 1000 rows per frame over 10 fixed seeds and
+    returns `"mean ± std"` **strings**. Frozen: it reproduces every published ISBI
+    number, so use it when reproducing or extending those. (The `±` is *not* a
+    bootstrap: `Series.sample` defaults to `replace=False`.)
+  - `AUROC_across_dataset_full_population` — the whole ID test set against the whole
+    OOD test set, no subsampling, one deterministic **float** per OOD dataset. This is
+    the SNGP paper's protocol (arXiv 2205.00403); use it for anything reported against
+    that paper. Dispersion belongs across *training* seeds, not here.
+
+    The two do not agree to 4 decimals and are not meant to.
+
+  Both take a `fold_policy` (`OodFoldPolicy` from `io.py`). `AUROC_across_dataset`
+  defaults to `LEGACY_ISBI_FOLD_POLICY`, which filters the ID frame to `fold=='test'`
+  but leaves OOD unfiltered; that asymmetry is load-bearing for every already-published
+  number, so don't change the default to "fix" it. The full-population one defaults to
+  `SYMMETRIC_FOLD_POLICY`, since nothing published rides on it.
+
+  `score_mode="msp"` reads `prediction_prob_score` (callback schema) or `confidence`
+  (inference schema), in that order — both are max-softmax-probability.
 - `src/paper_helpers/ood_metrics/runner.py::run_ood_comparison` — the generalized,
   parametrized cross-dataset comparison across methods. **Use this, don't write a new
   copy-paste script.** `acevedo.py`/`kather2018.py`/`wong.py` in the same package are

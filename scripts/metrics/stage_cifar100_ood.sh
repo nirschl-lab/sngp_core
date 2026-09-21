@@ -28,19 +28,31 @@ STAGING="csv/ood_metrics"
 
 ARMS=(baseline sngp specreg specreg_literal)
 DATASETS=(cifar100 cifar10 svhn)
+# Two checkpoint selections, staged under distinct prefixes. `cifar100last_*` (epoch
+# 249) is the one the arms are compared at; `cifar100_*` (best.ckpt) is kept for the
+# reference-only table. The literal arm has no last.ckpt -- it was lost to the
+# run-directory collision -- so a missing dir there is expected, not an error.
+PREFIXES=(cifar100 cifar100last)
 
 missing=0
-for arm in "${ARMS[@]}"; do
-  dest="${STAGING}/cifar100_${arm}"
-  mkdir -p "${dest}"
-  for ds in "${DATASETS[@]}"; do
-    src="${INFER_ROOT}/cifar100_${arm}__${ds}/predictions.csv"
-    if [[ ! -f "${src}" ]]; then
-      echo "MISSING ${src}" >&2
-      missing=1
-      continue
-    fi
-    ln -sfn "${src}" "${dest}/${ds}.csv"
+staged=0
+for prefix in "${PREFIXES[@]}"; do
+  for arm in "${ARMS[@]}"; do
+    dest="${STAGING}/${prefix}_${arm}"
+    for ds in "${DATASETS[@]}"; do
+      src="${INFER_ROOT}/${prefix}_${arm}__${ds}/predictions.csv"
+      if [[ ! -f "${src}" ]]; then
+        if [[ "${prefix}" == "cifar100last" && "${arm}" == "specreg_literal" ]]; then
+          continue  # known-absent, see above
+        fi
+        echo "MISSING ${src}" >&2
+        missing=1
+        continue
+      fi
+      mkdir -p "${dest}"
+      ln -sfn "${src}" "${dest}/${ds}.csv"
+      staged=$((staged + 1))
+    done
   done
 done
 
@@ -49,4 +61,4 @@ if (( missing )); then
   exit 1
 fi
 
-echo "Staged ${#ARMS[@]} methods x ${#DATASETS[@]} datasets under ${STAGING}/"
+echo "Staged ${staged} CSVs under ${STAGING}/"

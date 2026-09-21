@@ -419,10 +419,20 @@ for ds in cifar100 cifar10 svhn; do
 done
 ```
 
-Dempster-Shafer OOD AUROC (the score the SNGP reference uses for CIFAR; `score_mode`
-added to `src/metrics/auc.py` for this) and the calibration table:
+OOD AUROC under the SNGP paper's protocol (full CIFAR-100 test set vs full OOD test set,
+no subsampling), for both scores -- MSP is the paper's own, Dempster-Shafer the reference
+implementation's:
 ```bash
 scripts/metrics/stage_cifar100_ood.sh          # symlinks infer/ -> csv/ood_metrics/<method>/<dataset>.csv
 uv run python -m src.paper_helpers.ood_metrics.cifar100
-# -> csv/ood_metrics/cifar100_ood_auroc_dempster_shafer.csv
+# -> csv/ood_metrics/{cifar100,cifar100last}_ood_auroc_{msp,dempster_shafer}.csv
+```
+
+The three-seed tables (the ones to quote) come from the overnight reporter instead --
+it is the only path that pools seeds, and `--include-seed-12345` is what makes it three
+seeds per arm rather than two:
+```bash
+L=/data1/maheswararao/experiments/uncertainty-aware-ml/tmux_logs/cifar100_overnight_2026-09-20_21-38-42
+uv run python scripts/metrics/cifar100_overnight_report.py \
+    --tag overnight_2026-09-20_21-38-42 --include-seed-12345 --out $L/SUMMARY.md
 ```

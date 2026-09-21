@@ -31,10 +31,11 @@ The two list columns here are written as Python list objects and stringified by 
 (`repr`, not JSON) — which is why `_parse_class_probs` needs its `ast.literal_eval`
 fallback. The inference schema below uses real `json.dumps` instead.
 
-**Consumed by**: `src/metrics/auc.py::AUROC_across_dataset` (reads
-`prediction_prob_score` for `score_mode="msp"`, `class_probs` for
-`score_mode="entropy"`, filters `fold=='test'` for the ID dataset) and
-`src/paper_helpers/ood_metrics/runner.py::run_ood_comparison` (thin wrapper around it).
+**Consumed by**: `src/metrics/auc.py`'s `AUROC_across_dataset` /
+`AUROC_across_dataset_full_population` (read `prediction_prob_score` for
+`score_mode="msp"`, `class_probs` for `score_mode="entropy"`, and filter `fold=='test'`
+for the ID dataset) and `src/paper_helpers/ood_metrics/runner.py::run_ood_comparison`
+(thin wrapper around both).
 
 ## Inference-time CSVs (`src/inference/infer.py`)
 
@@ -47,7 +48,7 @@ Written by `ClassificationInferenceRunner`/`ArtifactInferenceRunner` to
 | `fold` | source fold |
 | `target` | ground-truth class index |
 | `prediction` | predicted class index |
-| `confidence` | max softmax probability -- **note: named `confidence`, not `prediction_prob_score`** |
+| `confidence` | max softmax probability -- **note: named `confidence`, not `prediction_prob_score`**. `score_mode="msp"` in `auc.py` accepts either name, callback's first |
 | `class_logits` | JSON-encoded list, logits per class. Always written |
 | `class_probs` | JSON-encoded list, softmax probabilities per class |
 | `stream` | `"real"`/`"artifact"` in artifact mode, `"default"` otherwise. **Always present** -- never key schema detection on it |

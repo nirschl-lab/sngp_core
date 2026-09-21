@@ -7,8 +7,10 @@ Visualization" section). [src/metrics/io.py](../src/metrics/io.py) is the shared
 loader for both prediction-CSV schemas (`load_predictions` → a `PredictionFrame` with
 normalized `confidence`/`correct`/`probs`/`entropy_norm`/`entropy_nats` columns and a
 `capabilities` set) that everything else in this directory builds on rather than
-re-parsing `class_probs` from scratch; `src/metrics/auc.py`'s `AUROC`/
-`AUROC_across_dataset` are the shared AUROC building blocks.
+re-parsing `class_probs` from scratch; `src/metrics/auc.py`'s `AUROC`,
+`AUROC_across_dataset` (frozen 10-seed subsampling, published ISBI numbers) and
+`AUROC_across_dataset_full_population` (whole test splits, the SNGP paper's protocol)
+are the shared AUROC building blocks.
 
 Untested-by-policy does **not** apply here (unlike `src/visualization/**`) — `src/metrics/**`
 is covered by `pytest tests/metrics/` per `.claude/rules/testing.md`.

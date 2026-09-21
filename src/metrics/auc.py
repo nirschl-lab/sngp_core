@@ -1,3 +1,5 @@
+from typing import Dict, Sequence
+
 from sklearn.metrics import roc_auc_score
 import numpy as np
 import pandas as pd
@@ -16,6 +18,18 @@ from src.metrics.io import (
 DEMPSTER_SHAFER_SCORE_MODES = frozenset({"dempster_shafer", "ds"})
 UNCERTAINTY_SCORE_MODES = frozenset({"entropy", "uncertainty"}) | DEMPSTER_SHAFER_SCORE_MODES
 
+# Where max-softmax-probability lives, in precedence order. The two names are the same
+# quantity under the project's two CSV schemas: `prediction_prob_score` is written by
+# src/callbacks/test_artifacts_callback.py, `confidence` by src/inference/records.py
+# (`outputs.probs.max(dim=1).values`). See .claude/skills/metrics/references/csv_schema.md.
+#
+# Precedence, not preference: the callback name is checked first so every already-published
+# call site resolves to exactly the column it resolved to before this fallback existed.
+# `src.metrics.io.load_predictions` refuses frames carrying both, so on a real CSV the
+# order can never silently pick the wrong one -- but that guarantee lives in another
+# module, so it is pinned by a test here too.
+MSP_SCORE_COLUMNS = ("prediction_prob_score", "confidence")
+
 seeds = [42, 1337, 12345, 8675309, 314159, 271828, 20240427, 987654321, 3735928559, 777]
 sample_rate = 1000
 
@@ -29,9 +43,14 @@ _normalized_entropy = normalized_entropy
 
 def _compute_ood_score_series(df, score_mode):
     if score_mode == "msp":
-        if "prediction_prob_score" not in df.columns:
-            raise KeyError("Missing required column 'prediction_prob_score' for score_mode='msp'")
-        return pd.to_numeric(df["prediction_prob_score"], errors="coerce").dropna()
+        column = next((c for c in MSP_SCORE_COLUMNS if c in df.columns), None)
+        if column is None:
+            raise KeyError(
+                "Missing required column for score_mode='msp': need either "
+                "'prediction_prob_score' (callback schema) or 'confidence' "
+                "(inference schema)."
+            )
+        return pd.to_numeric(df[column], errors="coerce").dropna()
 
     if score_mode in {"entropy", "uncertainty"}:
         if "class_probs" not in df.columns:
@@ -71,6 +90,23 @@ def _compute_ood_score_series(df, score_mode):
     raise ValueError(
         "Unsupported score_mode. Use 'msp', 'entropy', or 'dempster_shafer'."
     )
+
+
+def _read_ood_score_series(csv_path, csv_file_names, name, score_mode, fold):
+    """Read one dataset's prediction CSV, optionally fold-filter it, and reduce it to a
+    score series.
+
+    Shared by both estimators below so neither re-implements the read. Keeps the inline
+    `df[df["fold"] == fold]` rather than calling `io.filter_fold`, which raises earlier
+    and with different exception types on an absent/empty fold -- this helper is on the
+    frozen path, so its failure modes must not move.
+    """
+    df = pd.read_csv(os.path.join(csv_path, csv_file_names[name]))
+    if fold is not None:
+        df = df[df["fold"] == fold]
+    # Module-global lookup on purpose, so tests can monkeypatch it -- do not rebind this
+    # to a local or a `from ... import` name.
+    return _compute_ood_score_series(df, score_mode)
 
 
 def AUROC(ID_MSP, OOD_MSP, score_is_uncertainty=False):
@@ -120,7 +156,17 @@ def AUROC_across_dataset(
     score_mode="msp",
     fold_policy: OodFoldPolicy = LEGACY_ISBI_FOLD_POLICY,
 ):
-    """`fold_policy` defaults to `LEGACY_ISBI_FOLD_POLICY`: filters the ID frame to
+    """Mean +- std over 10 fixed-seed subsamples of <=`sample_rate` rows per frame.
+
+    Frozen: this reproduces every published number in csv/final/ and
+    csv/isbi_test_files/. Use it for those. For anything reporting the SNGP paper's
+    protocol, use `AUROC_across_dataset_full_population` instead -- the two will not
+    agree to 4 decimals and are not meant to.
+
+    Note the `+-` here is *not* a bootstrap: `Series.sample` defaults to
+    `replace=False`, so this is subsampling without replacement.
+
+    `fold_policy` defaults to `LEGACY_ISBI_FOLD_POLICY`: filters the ID frame to
     `fold=='test'` but leaves the OOD frame unfiltered. That asymmetry is not a bug --
     it's load-bearing for every already-published number in csv/final/ and
     csv/isbi_test_files/ -- so it stays the default; pass `SYMMETRIC_FOLD_POLICY`
@@ -129,14 +175,12 @@ def AUROC_across_dataset(
     res = {}
     for id_name in id_names:
         for ood_name in ood_names:
-            id_df = pd.read_csv(os.path.join(csv_path, csv_file_names[id_name]))
-            if fold_policy.id_fold is not None:
-                id_df = id_df[id_df["fold"] == fold_policy.id_fold]
-            ood_df = pd.read_csv(os.path.join(csv_path, csv_file_names[ood_name]))
-            if fold_policy.ood_fold is not None:
-                ood_df = ood_df[ood_df["fold"] == fold_policy.ood_fold]
-            id_scores = _compute_ood_score_series(id_df, score_mode)
-            ood_scores = _compute_ood_score_series(ood_df, score_mode)
+            id_scores = _read_ood_score_series(
+                csv_path, csv_file_names, id_name, score_mode, fold_policy.id_fold
+            )
+            ood_scores = _read_ood_score_series(
+                csv_path, csv_file_names, ood_name, score_mode, fold_policy.ood_fold
+            )
 
             n_samples = min(sample_rate, len(id_scores), len(ood_scores))
             if n_samples == 0:
@@ -157,4 +201,63 @@ def AUROC_across_dataset(
             # res[ood_name] = (np.mean(auroc_list), np.std(auroc_list))
             res[ood_name] = f"{np.mean(auroc_list):.4f} ± {np.std(auroc_list):.4f}"
         # res[id_name] = sub_res
+    return res
+
+
+def AUROC_across_dataset_full_population(
+    csv_path: str,
+    csv_file_names: Dict[str, str],
+    id_name: str,
+    ood_names: Sequence[str],
+    *,
+    score_mode: str = "msp",
+    fold_policy: OodFoldPolicy = SYMMETRIC_FOLD_POLICY,
+) -> Dict[str, float]:
+    """One deterministic AUROC per OOD dataset, over every row of both test sets.
+
+    The protocol of the SNGP paper (Liu et al., arXiv 2205.00403, section 6.2.1 /
+    appendix C.1): the full in-distribution test set against the full OOD test set, no
+    subsampling, so the number is a property of the model rather than of a resampling
+    seed. Dispersion, where reported, belongs across *training* seeds -- this returns one
+    float per OOD dataset and takes no position on how those floats are aggregated.
+
+    No new estimator is needed for this: `AUROC` already computes the full-population
+    number, since it contains no sampling of its own.
+
+    Unequal group sizes are fine and deliberate -- CIFAR-100's 10,000 test rows against
+    SVHN's 26,032. AUROC is a rank statistic estimating `P(score_OOD > score_ID)`, which
+    is invariant to the ID:OOD ratio; the sibling function's `min(...)` balancing was an
+    artifact of subsampling, not a requirement.
+
+    The deliberate counterpart to `AUROC_across_dataset`, which returns `"mean +- std"`
+    strings over 10 fixed-seed subsamples of <=1000 rows. That one is frozen for
+    published ISBI numbers; this one is for the SNGP protocol. Three differences beyond
+    the estimator, all intentional:
+
+      - `id_name` is scalar, not a list. The list form keys its result dict by OOD name
+        alone, so a second ID dataset silently overwrote the first's results.
+      - `fold_policy` defaults to `SYMMETRIC_FOLD_POLICY`: test-vs-test is what the
+        protocol says, and no published number depends on this function, so the legacy
+        asymmetry has nothing to be load-bearing for here.
+      - The ID frame is read and scored once, not once per OOD dataset.
+    """
+    id_scores = _read_ood_score_series(
+        csv_path, csv_file_names, id_name, score_mode, fold_policy.id_fold
+    )
+    score_is_uncertainty = score_mode in UNCERTAINTY_SCORE_MODES
+
+    res: Dict[str, float] = {}
+    for ood_name in ood_names:
+        ood_scores = _read_ood_score_series(
+            csv_path, csv_file_names, ood_name, score_mode, fold_policy.ood_fold
+        )
+        if len(id_scores) == 0 or len(ood_scores) == 0:
+            raise ValueError(
+                f"No valid rows available for AUROC with score_mode='{score_mode}' for "
+                f"ID='{id_name}' ({len(id_scores)} rows) and OOD='{ood_name}' "
+                f"({len(ood_scores)} rows)."
+            )
+        res[ood_name] = float(
+            AUROC(id_scores, ood_scores, score_is_uncertainty=score_is_uncertainty)
+        )
     return res

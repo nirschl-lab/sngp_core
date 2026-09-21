@@ -211,24 +211,28 @@ uncertainty.
 [../results/CIFAR100_RESULTS.md](../results/CIFAR100_RESULTS.md) — full tables for both
 checkpoints, in-distribution and OOD.
 
-Headline, three seeds, epoch 249 (`last.ckpt`, the reference's reporting point):
+Headline, three seeds, epoch 249 (`last.ckpt`, the reference's reporting point). AUROC
+is MSP over the full test splits — the paper's own protocol; the Dempster-Shafer
+companion table is in the results page.
 
-| Arm | seeds | Acc | NLL | smECE | AUROC C-10 | AUROC SVHN |
+| Arm | seeds | Acc | NLL | smECE | MSP AUROC C-10 | MSP AUROC SVHN |
 |---|---:|---:|---:|---:|---:|---:|
-| Baseline | 3 | 0.8061 ± 0.0027 | 0.8074 ± 0.0096 | 0.0779 ± 0.0038 | 0.8129 ± 0.0023 | 0.7503 ± 0.0388 |
-| SNGP (`c = 6.0`) | 3 | 0.8025 ± 0.0045 | 0.7912 ± 0.0073 | 0.0685 ± 0.0042 | 0.8183 ± 0.0037 | 0.7961 ± 0.0057 |
-| SpecReg (matched) | 3 | 0.8048 ± 0.0036 | **0.7739 ± 0.0107** | **0.0609 ± 0.0013** | 0.8206 ± 0.0029 | **0.8285 ± 0.0119** |
+| Baseline | 3 | 0.8061 ± 0.0027 | 0.8074 ± 0.0096 | 0.0779 ± 0.0038 | 0.8056 ± 0.0024 | 0.7235 ± 0.0378 |
+| SNGP (`c = 6.0`) | 3 | 0.8025 ± 0.0045 | 0.7912 ± 0.0073 | 0.0685 ± 0.0042 | 0.8070 ± 0.0033 | 0.7483 ± 0.0057 |
+| SpecReg (matched) | 3 | 0.8048 ± 0.0036 | **0.7739 ± 0.0107** | **0.0609 ± 0.0013** | **0.8111 ± 0.0014** | **0.7857 ± 0.0080** |
 
-The reproduction holds — baseline 0.806 and SNGP 0.803 against published ~0.798/~0.791,
-and SNGP is +4.6 pts over the baseline on SVHN AUROC, the paper's central claim.
+Accuracy and near-OOD reproduce — baseline 0.806 / SNGP 0.803 against published
+~0.798/~0.791, and near-OOD MSP 0.806/0.807 against 0.795/0.798. **Far-OOD does not**:
+MSP SVHN lands 7–10 pts below the published 0.799/0.846, on 45k training images against
+50k and 3 seeds against 10. Read the between-arm gaps on that axis, not the level.
 
-Spectral regularization beats SNGP on **far-OOD (+0.033), NLL (−0.017) and calibration
-(−0.008)**, sign-consistent across all three seeds. It does **not** beat it on accuracy or
-near-OOD — both mixed in sign across seeds. `c = 4.1`, the operator-norm-equivalent
-control for the 1.46× estimator gap below, came out slightly worse than `c = 6.0`, so the
-bound was not the limiting factor.
+Spectral regularization beats SNGP on **far-OOD (+0.037 MSP, +0.033 DS), NLL (−0.017)
+and calibration (−0.008)**, sign-consistent across all three seeds under both scores. It
+does **not** beat it on accuracy or near-OOD — both mixed in sign across seeds.
+`c = 4.1`, the operator-norm-equivalent control for the 1.46× estimator gap below, came
+out slightly worse than `c = 6.0`, so the bound was not the limiting factor.
 
-**Do not compare the arms at `best.ckpt`.****Do not compare the arms at `best.ckpt`.** `val/loss` selects epoch 75 / 76 / 246 for
+**Do not compare the arms at `best.ckpt`.** `val/loss` selects epoch 75 / 76 / 246 for
 baseline / SNGP / spectral-reg respectively — CE validation loss degrades after the first
 LR drop while accuracy keeps climbing, and the spectral penalty suppresses exactly that
 degradation. The apparent +2.6 pt accuracy win for spectral regularization at `best.ckpt`
