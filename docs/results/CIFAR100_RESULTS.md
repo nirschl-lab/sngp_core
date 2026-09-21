@@ -46,8 +46,9 @@ variation.
 Both reproduce within ~0.7 pt on accuracy and beat the published NLL, on 45k training
 images instead of 50k. smECE is top-label (confidence vs. correct); the multiclass macro
 one-vs-rest average reads ~0.003 for every arm at 100 classes and is not informative.
-The literal arm's `last.ckpt` was lost to a run-directory collision — see
-[../checkpoints/CIFAR_CHECKPOINTS.md](../checkpoints/CIFAR_CHECKPOINTS.md).*
+`—` on the literal arm means no epoch-249 checkpoint exists, not that it went unmeasured:
+its `last.ckpt` was overwritten by a run-directory collision and is unrecoverable without
+retraining — see [../checkpoints/CIFAR_CHECKPOINTS.md](../checkpoints/CIFAR_CHECKPOINTS.md).*
 
 **At equal epoch the three arms are within 0.7 pt on accuracy.** Spectral regularization
 separates on NLL (−0.030 vs SNGP) and calibration (smECE −0.012 vs SNGP, −0.019 vs
@@ -60,6 +61,12 @@ baseline), not on accuracy.
 | Baseline (deterministic) | 0.8155 ± 0.0158 | 0.7076 ± 0.0130 |
 | SNGP (`c = 6.0`) | 0.8152 ± 0.0115 | 0.7933 ± 0.0110 |
 | **SpecReg (matched)** | **0.8239 ± 0.0134** | **0.8192 ± 0.0100** |
+| SpecReg (rep-spectral literal) | — | — |
+
+*`—` is "no epoch-249 checkpoint exists", not "not measured": the literal arm's
+`last.ckpt` was overwritten by a run-directory collision and is unrecoverable without
+retraining. See [../checkpoints/CIFAR_CHECKPOINTS.md](../checkpoints/CIFAR_CHECKPOINTS.md).
+Its `best.ckpt` (epoch 200) is in the table further down.*
 
 *Scored with Dempster-Shafer uncertainty `K / (K + Σ exp(logit))`, the score the
 reference itself uses for CIFAR OOD (`dempster_shafer_ood` in `baselines/cifar/sngp.py`):
