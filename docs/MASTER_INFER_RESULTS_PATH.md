@@ -436,3 +436,11 @@ L=/data1/maheswararao/experiments/uncertainty-aware-ml/tmux_logs/cifar100_overni
 uv run python scripts/metrics/cifar100_overnight_report.py \
     --tag overnight_2026-09-20_21-38-42 --include-seed-12345 --out $L/SUMMARY.md
 ```
+
+The SVHN sample-count check (full 26,032-row split vs 10,000-row draws, the sensitivity
+table in [results/CIFAR100_RESULTS.md](results/CIFAR100_RESULTS.md)). Prints to stdout;
+nothing else consumes it:
+```bash
+uv run python scripts/metrics/cifar100_svhn_subsample_check.py \
+    --tag overnight_2026-09-20_21-38-42
+```

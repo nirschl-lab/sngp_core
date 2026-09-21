@@ -105,8 +105,9 @@ difference removes the run-to-run variation that dominates the `±` columns abov
   Far-OOD is 7–10 pt *below* published (ours 0.724 / 0.748 vs 0.799 / 0.846). Accuracy
   reproduces (0.806 / 0.803 vs ~0.798 / ~0.791) on 45k training images instead of 50k,
   so this is not a broken model; SVHN AUROC is simply the high-variance axis here, and
-  the published figure averages 10 seeds against our 3. **Treat the absolute far-OOD
-  level as unreproduced and read only the between-arm gaps.**
+  the published figure averages 10 seeds against our 3. It is **not** the OOD sample
+  count — that is ruled out below. **Treat the absolute far-OOD level as unreproduced
+  and read only the between-arm gaps.**
 - **SNGP's own claim reproduces on stability, weakly on level.** Its SVHN margin over
   the baseline is **+0.025 under MSP** but +0.044 under DS — so the headline benefit is
   partly a property of the score, not only of the method. What holds under both is the
@@ -122,6 +123,31 @@ difference removes the run-to-run variation that dominates the `±` columns abov
   smECE): a badly-fit network with uniformly small logits separates ID from OOD on
   *total evidence* while being useless for anything else, and DS reads total evidence
   where MSP does not. The clearest case on this page for reporting both scores.
+
+### Does the SVHN sample count explain the gap to published? No.
+
+SVHN's test split is 26,032 rows against the 10,000 of the CIFAR splits the paper's other
+columns use, which is the obvious suspect for the far-OOD shortfall above. Capping SVHN at
+10,000 rules it out — across all three arms, three seeds and both scores, ten independent
+draws each:
+
+| Arm | Score | SVHN full (26,032) | 10K draws (mean) | Δ |
+|---|---|---:|---:|---:|
+| Baseline | MSP | 0.7235 ± 0.0378 | 0.7234 ± 0.0379 | −0.0001 |
+| SNGP (`c = 6.0`) | MSP | 0.7483 ± 0.0057 | 0.7480 ± 0.0056 | −0.0003 |
+| SpecReg (matched) | MSP | 0.7857 ± 0.0080 | 0.7855 ± 0.0080 | −0.0002 |
+| Baseline | DS | 0.7487 ± 0.0382 | 0.7484 ± 0.0383 | −0.0002 |
+| SNGP (`c = 6.0`) | DS | 0.7932 ± 0.0045 | 0.7929 ± 0.0044 | −0.0003 |
+| SpecReg (matched) | DS | 0.8267 ± 0.0114 | 0.8264 ± 0.0116 | −0.0002 |
+
+Every arm moves by ≤ 0.0003; per-run spread across the ten draws is 0.0026–0.0066, so even
+a single unlucky draw lands within ~0.004 of the full-population value. This is what the
+estimator predicts rather than a surprise: AUROC is a rank statistic estimating
+`P(score_OOD > score_ID)`, so discarding 60% of the OOD rows at random costs precision,
+not position — the same reason unequal group sizes are fine in the first place.
+
+The full split stays the reported number: same answer, lower variance, no seed.
+Reproduce with `scripts/metrics/cifar100_svhn_subsample_check.py`.
 
 ---
 
@@ -204,8 +230,11 @@ OOD detection, epoch 249:
   and CIFAR-10 OOD are *not* established in either direction.
 - **The absolute far-OOD level is not reproduced.** MSP SVHN comes out 7–10 pt below the
   published numbers for both the baseline and SNGP, on 45k training images against 50k
-  and 3 seeds against 10. Between-arm gaps on this axis are consistent and survive both
-  scores; the level does not, so do not quote it as a reproduction of the paper.
+  and 3 seeds against 10. The OOD sample count is *not* the cause — capping SVHN at
+  10,000 moves every arm by ≤ 0.0003 (see above) — so the remaining candidates are the
+  training-set size, the seed count, or a real difference in the arm. Between-arm gaps on
+  this axis are consistent and survive both scores; the level does not, so do not quote
+  it as a reproduction of the paper.
 - **`c = 4.1` and the literal arm are single-seed.** Both are checks, not measurements.
 - **The `c = 6.0` estimator mismatch is checked, not eliminated.** `c = 4.1` (the
   operator-norm equivalent of 6.0, given the measured 1.46× ratio) came out slightly
