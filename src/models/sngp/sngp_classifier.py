@@ -20,6 +20,29 @@ from src.models.registry import register_net
 DEFAULT_MEAN_FIELD_FACTOR = 1.0
 PROBIT_MEAN_FIELD_FACTOR = math.pi / 8
 
+# Laplace weight `w_i` in `P = ridge*I + sum_i w_i phi_i phi_i^T`. The multinomial-logistic
+# Hessian is `diag(p) - p p^T` per example -- a [K, K] matrix -- while the precision
+# accumulator this project keeps is a single [rff_dim, rff_dim], so the Hessian has to be
+# reduced to one scalar per example. These are the reductions:
+#   gaussian         -- unit weight; the reference default for image classification.
+#   binary_logistic  -- p_max (1 - p_max), the edward2 reference's own reduction: read the
+#                       top class as a one-vs-rest Bernoulli and ignore the rest.
+#   trace_logistic   -- tr(diag(p) - p p^T) = sum_k p_k(1 - p_k) = 1 - ||p||^2. Uses every
+#                       class rather than only the argmax, and is the tightest scalar
+#                       summary of the full Hessian that costs nothing extra.
+# `per_class_logistic` (the unreduced [B, K] diagonal) is implemented in `_laplace_weights`
+# but refused at construction -- see the guard in `RandomFeatureGaussianProcess.__init__`.
+SUPPORTED_LIKELIHOODS = ("gaussian", "binary_logistic", "trace_logistic")
+PER_CLASS_LIKELIHOOD = "per_class_logistic"
+
+_PER_CLASS_MSG = (
+    "likelihood='per_class_logistic' is not supported yet. Its [B, K] weight needs a "
+    "[num_classes, rff_dim, rff_dim] precision accumulator and yields a [B, K] predictive "
+    "variance, which neither the [B, 1] `ModelOutput.variance` contract nor the "
+    "one-scalar-per-row `predictions.csv` schema carries today. The weight itself is "
+    f"implemented in `_laplace_weights`. Use one of {SUPPORTED_LIKELIHOODS}."
+)
+
 _LEGACY_BUFFERS = ("cov_ema", "num_updates")
 
 _LEGACY_CKPT_MSG = (
@@ -94,8 +117,10 @@ class RandomFeatureGaussianProcess(nn.Module):
         dtype: torch.dtype = torch.float32,
     ):
         super().__init__()
-        if likelihood not in ("gaussian", "binary_logistic"):
-            raise ValueError(f"Unsupported likelihood: {likelihood!r}. Use 'gaussian' or 'binary_logistic'.")
+        if likelihood == PER_CLASS_LIKELIHOOD:
+            raise NotImplementedError(_PER_CLASS_MSG)
+        if likelihood not in SUPPORTED_LIKELIHOODS:
+            raise ValueError(f"Unsupported likelihood: {likelihood!r}. Use one of {SUPPORTED_LIKELIHOODS}.")
         if random_feature_type not in ("rff", "orf"):
             raise ValueError(f"Unsupported random_feature_type: {random_feature_type!r}. Use 'rff' or 'orf'.")
         if ridge_penalty <= 0:
@@ -191,22 +216,53 @@ class RandomFeatureGaussianProcess(nn.Module):
         self.precision_accum.zero_()
         self._cov_stale.fill_(True)
 
+    @staticmethod
+    @torch.no_grad()
+    def _laplace_weights(logits: torch.Tensor, likelihood: str) -> Optional[torch.Tensor]:
+        """The Laplace weight `w` for one batch of logits, or `None` for unit weights.
+
+        Returns `[B]` for the scalar reductions and `[B, K]` for `per_class_logistic`;
+        see the `SUPPORTED_LIKELIHOODS` comment at the top of this module for what each
+        reduction is. Static (rather than reading `self.likelihood`) so the per-class
+        branch stays reachable from tests while the constructor refuses that mode.
+
+        logits: [B, num_classes]
+        """
+        if likelihood == "gaussian":
+            # Reference default for image classification: unit weight.
+            return None
+
+        prob = torch.softmax(logits.float(), dim=-1)
+        if likelihood == "binary_logistic":
+            # Top class read as a one-vs-rest Bernoulli -- the edward2 convention.
+            p = prob.max(dim=-1).values
+            return p * (1.0 - p)
+        if likelihood == "trace_logistic":
+            # tr(diag(p) - p p^T) = sum_k p_k(1 - p_k) = 1 - ||p||^2.
+            return 1.0 - (prob * prob).sum(dim=-1)
+        if likelihood == PER_CLASS_LIKELIHOOD:
+            # The unreduced Hessian diagonal, [B, K].
+            return prob * (1.0 - prob)
+        raise ValueError(f"Unsupported likelihood: {likelihood!r}. Use one of {SUPPORTED_LIKELIHOODS}.")
+
     @torch.no_grad()
     def update_precision(self, phi: torch.Tensor, logits: torch.Tensor) -> None:
         """Accumulate this batch's contribution to the Laplace precision matrix.
 
         phi: [B, rff_dim], logits: [B, num_classes]
         """
-        if self.likelihood == "gaussian":
-            # Reference default for image classification: unit weight.
-            weighted = phi
+        weights = self._laplace_weights(logits, self.likelihood)
+        if weights is None:
+            batch_precision = phi.T @ phi
+        elif weights.dim() == 1:
+            # `sum_i w_i phi_i phi_i^T` -- the weight is applied ONCE, to one side of the
+            # outer product, matching `P = ridge*I + sum_i w_i phi_i phi_i^T` in the class
+            # docstring and edward2's `sqrt(w) * phi` squared against itself.
+            batch_precision = (phi * weights.unsqueeze(-1).to(phi.dtype)).T @ phi
         else:
-            # Multinomial-logistic Laplace weight p(1-p), reduced over classes via the
-            # max-probability convention.
-            prob = torch.softmax(logits.float(), dim=-1).max(dim=-1).values
-            weighted = phi * torch.sqrt(prob * (1.0 - prob)).unsqueeze(-1).to(phi.dtype)
+            # Unreachable: the constructor refuses the only mode that returns [B, K].
+            raise NotImplementedError(_PER_CLASS_MSG)
 
-        batch_precision = weighted.T @ phi
         if self.cov_momentum < 0:
             # Exact sum over the epoch -- the paper's scheme, and the reference default.
             self.precision_accum.add_(batch_precision)

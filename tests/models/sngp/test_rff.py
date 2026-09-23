@@ -5,7 +5,9 @@ import torch
 
 from src.models.sngp.sngp_classifier import (
     DEFAULT_MEAN_FIELD_FACTOR,
+    PER_CLASS_LIKELIHOOD,
     PROBIT_MEAN_FIELD_FACTOR,
+    SUPPORTED_LIKELIHOODS,
     RandomFeatureGaussianProcess,
 )
 
@@ -237,7 +239,7 @@ class TestLikelihood:
         assert make_gp().likelihood == "gaussian"
 
     def test_binary_logistic_downweights_relative_to_gaussian(self):
-        """p(1-p) <= 0.25, so the Laplace-weighted accumulator is strictly smaller."""
+        """p_max(1-p_max) <= 0.25, so the Laplace-weighted accumulator is strictly smaller."""
         torch.manual_seed(0)
         x = torch.randn(8, 64)
 
@@ -249,9 +251,118 @@ class TestLikelihood:
         gaussian(x), logistic(x)
         assert logistic.precision_accum.diagonal().sum() < gaussian.precision_accum.diagonal().sum()
 
+    @pytest.mark.parametrize("likelihood", SUPPORTED_LIKELIHOODS)
+    def test_accumulator_is_the_weighted_outer_product_sum(self, likelihood):
+        """`precision_accum == sum_i w_i phi_i phi_i^T`, exactly.
+
+        The regression guard for the weight being applied ONCE. The previous
+        implementation multiplied `phi` by `sqrt(w)` on one side only and so accumulated
+        `sum_i sqrt(w_i) phi_i phi_i^T` -- which every inequality-style test in this class
+        still passes, because sqrt is monotone.
+        """
+        torch.manual_seed(0)
+        gp = make_gp(likelihood=likelihood)
+        batches = [torch.randn(8, 64) for _ in range(3)]
+        gp.train()
+        for batch in batches:
+            gp(batch)
+
+        expected = torch.zeros(gp.rff_dim, gp.rff_dim)
+        with torch.no_grad():
+            for batch in batches:
+                phi = gp._features(batch)
+                w = gp._laplace_weights(gp.classifier(phi), likelihood)
+                weighted = phi if w is None else phi * w.unsqueeze(-1)
+                expected += weighted.T @ phi
+        torch.testing.assert_close(gp.precision_accum, expected, atol=1e-4, rtol=1e-4)
+
+    def test_trace_logistic_sits_between_binary_logistic_and_gaussian(self):
+        """`1 - ||p||^2 = sum_k p_k(1-p_k) >= p_max(1-p_max)`, and is at most `1 - 1/K`.
+
+        So the trace reduction keeps more of the data than the max-probability one while
+        still down-weighting confident examples against the unit-weight gaussian.
+        """
+        torch.manual_seed(0)
+        x = torch.randn(16, 64)
+
+        gaussian = make_gp(likelihood="gaussian")
+        traced = make_gp(likelihood="trace_logistic")
+        binary = make_gp(likelihood="binary_logistic")
+        traced.load_state_dict(gaussian.state_dict())
+        binary.load_state_dict(gaussian.state_dict())
+
+        for gp in (gaussian, traced, binary):
+            gp.train()
+            gp(x)
+
+        binary_mass = binary.precision_accum.diagonal().sum()
+        trace_mass = traced.precision_accum.diagonal().sum()
+        gaussian_mass = gaussian.precision_accum.diagonal().sum()
+        assert binary_mass < trace_mass < gaussian_mass
+
+    @pytest.mark.parametrize(
+        "likelihood,expected_shape",
+        [
+            ("gaussian", None),
+            ("binary_logistic", (4,)),
+            ("trace_logistic", (4,)),
+            (PER_CLASS_LIKELIHOOD, (4, 10)),
+        ],
+    )
+    def test_laplace_weight_shapes(self, likelihood, expected_shape):
+        """`_laplace_weights` is static, so the per-class branch stays testable even
+        though no `RandomFeatureGaussianProcess` can be built with that mode."""
+        logits = torch.randn(4, 10)
+        w = RandomFeatureGaussianProcess._laplace_weights(logits, likelihood)
+        if expected_shape is None:
+            assert w is None
+        else:
+            assert tuple(w.shape) == expected_shape
+            assert ((w >= 0) & (w <= 1)).all()
+
+    def test_trace_logistic_weight_is_one_minus_squared_norm(self):
+        logits = torch.randn(6, 10)
+        prob = torch.softmax(logits, dim=-1)
+        w = RandomFeatureGaussianProcess._laplace_weights(logits, "trace_logistic")
+        torch.testing.assert_close(w, (prob * (1.0 - prob)).sum(dim=-1))
+
+    def test_likelihood_does_not_touch_the_training_signal(self):
+        """The mode feeds `precision_accum` and nothing else.
+
+        This is what lets two runs differing only in `likelihood` be compared as the same
+        trained model. If it ever breaks, the CIFAR-100 likelihood arms stop being paired.
+        """
+        torch.manual_seed(0)
+        x = torch.randn(8, 64)
+
+        gaussian = make_gp(likelihood="gaussian")
+        traced = make_gp(likelihood="trace_logistic")
+        traced.load_state_dict(gaussian.state_dict())
+
+        grads = []
+        outs = []
+        for gp in (gaussian, traced):
+            gp.train()
+            logits, raw_logits, variance = gp(x)
+            assert logits is raw_logits and variance is None
+            raw_logits.square().sum().backward()
+            outs.append(raw_logits.detach().clone())
+            grads.append(gp.classifier.weight.grad.clone())
+
+        torch.testing.assert_close(outs[0], outs[1])
+        torch.testing.assert_close(grads[0], grads[1])
+        # ... while the thing the mode *is* supposed to move has moved.
+        assert not torch.allclose(gaussian.precision_accum, traced.precision_accum)
+
     def test_rejects_unknown_likelihood(self):
         with pytest.raises(ValueError, match="Unsupported likelihood"):
             make_gp(likelihood="poisson")
+
+    def test_rejects_per_class_logistic_at_construction(self):
+        """Implemented as a weight, refused as a mode -- it needs a [K, m, m] accumulator
+        and a [B, K] variance that the ModelOutput/CSV contracts do not carry."""
+        with pytest.raises(NotImplementedError, match="per_class_logistic"):
+            make_gp(likelihood=PER_CLASS_LIKELIHOOD)
 
     def test_rejects_non_positive_ridge(self):
         with pytest.raises(ValueError, match="ridge_penalty must be > 0"):

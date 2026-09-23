@@ -133,6 +133,13 @@ set only `arch` / `num_classes` / `pretrained`, and the config tests reject over
 | SNGP `cov_momentum` | -1 (exact per-epoch sum) | reference |
 | SNGP `normalize_input` / `likelihood` / `output_bias` / `random_feature_type` / `n_power_iterations_sn` | true / gaussian / false / orf / 1 | reference |
 
+`likelihood` is fixed, not swept, but it has two off-protocol alternatives to `gaussian`
+(`binary_logistic`, `trace_logistic` — see
+[models/SNGP_GUIDE.md](models/SNGP_GUIDE.md#the-laplace-weight-likelihood)). It is
+inference-only in the strictest sense: it feeds the precision accumulator and never the
+loss, so two runs differing only in `likelihood` train the same model. That makes it a
+poor sweep target — changing it is better done as a named arm than as an HPO dimension.
+
 `SNGPClassifier`'s constructor defaults equal these (so `deep_ensemble_sngp_*` members,
 built from the spec, get them too), except `spectral_norm_bound`, whose ctor default stays
 `None` (stock hard normalization) so checkpoints written before the bound existed rebuild

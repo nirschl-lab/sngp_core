@@ -93,7 +93,8 @@ class TestSNGPClassifier:
         assert x.grad is not None
         assert x.grad.shape == x.shape
 
-    def test_spec_round_trips_through_registry(self):
+    @pytest.mark.parametrize("likelihood", ["binary_logistic", "trace_logistic"])
+    def test_spec_round_trips_through_registry(self, likelihood):
         """Every ctor kwarg must survive the round trip -- the old version of this test
         checked only `arch` and `num_classes`, so a dropped spec key went unnoticed."""
         from src.models.registry import build_net
@@ -110,7 +111,7 @@ class TestSNGPClassifier:
             n_power_iterations_sn=3,
             mean_field_factor=0.5,
             normalize_input=False,
-            likelihood="binary_logistic",
+            likelihood=likelihood,
             output_bias=True,
             spectral_norm_bound=2.0,
         )
@@ -118,6 +119,7 @@ class TestSNGPClassifier:
         assert isinstance(rebuilt, SNGPClassifier)
         assert rebuilt.spec == model.spec
         assert rebuilt.spec["spectral_norm_bound"] == 2.0
+        assert rebuilt.spec["likelihood"] == likelihood
 
     def test_ctor_defaults_are_the_paper_constants(self):
         """A bare SNGPClassifier is the Liu et al. 2022 Table 9 model -- except the

@@ -43,7 +43,13 @@ net:
   cov_momentum: -1.0 # exact per-epoch sum with a per-epoch reset (paper scheme)
   mean_field: true # inference-only correction; training sees raw logits
   normalize_input: true # LayerNorm on the GP input ("similar to ARD")
-  likelihood: gaussian # unit Laplace weight (reference default for image classification)
+  # Laplace weight w_i in P = ridge*I + sum_i w_i phi_i phi_i^T. `gaussian` (unit weight)
+  # is the reference default for image classification and the protocol constant -- keep it
+  # here, and keep it equal to SNGPClassifier's ctor default (tests/test_configs.py checks
+  # both). `binary_logistic` (p_max(1-p_max)) and `trace_logistic` (1 - ||p||^2, the trace
+  # of the full multinomial Hessian) are off-protocol alternatives, set per run via
+  # `model.net.likelihood=...`. Inference-only: the weight never reaches the loss.
+  likelihood: gaussian
   output_bias: false # reference uses a fixed zero GP output bias
   random_feature_type: orf # orthogonal random features (Yu et al. 2016)
   # Scale the random features by sqrt(2/rff_dim) (~0.044 at 1024). True is the edward2

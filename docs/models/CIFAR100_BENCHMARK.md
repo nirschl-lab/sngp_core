@@ -165,6 +165,33 @@ Outputs land under `train/<model.name>_cifar100/runs/<timestamp>/`
 ([OUTPUT_LAYOUT.md](../OUTPUT_LAYOUT.md)), W&B group `CIFAR100`. Record checkpoints in
 [../checkpoints/CIFAR_CHECKPOINTS.md](../checkpoints/CIFAR_CHECKPOINTS.md).
 
+### The `trace_logistic` arm
+
+An override-only arm, like the `c = 4.1` control: `sngp_specreg_cifar100` with
+`model.net.likelihood=trace_logistic`, which replaces the GP head's unit Laplace weight
+with `1 - ||p||²` (the trace of the multinomial Hessian — see
+[SNGP_GUIDE.md](SNGP_GUIDE.md#the-laplace-weight-likelihood)). Three seeds, one block:
+
+```bash
+scripts/tmux/cifar100_trace_logistic.sh     # 3 x 250 epochs, ~2.7 h, training only
+```
+
+Two things to keep straight when reading it against the `gaussian` SpecReg rows:
+
+- **The trained model is the same.** `likelihood` feeds only the precision accumulator; it
+  never reaches the loss. So accuracy and every raw-logit metric should land within
+  seed-level noise of the existing SpecReg arm (0.8048 ± 0.0036). A large gap means the
+  change leaked into training, not that the likelihood helped.
+- **The pinned `mean_field_factor = 7.5` is wrong for this arm.** On a converged CIFAR-100
+  classifier `w = 1 - ||p||² ≈ 0.02`, so the accumulator shrinks ~50×, the predictive
+  variance rises by about as much, and `1 + 7.5·var` goes from ~1.15 to ~8.5 — a ~3× logit
+  shrink. Run
+  [`scripts/metrics/cifar100_mean_field_sweep.py`](../../scripts/metrics/cifar100_mean_field_sweep.py)
+  before comparing anything; it is free, offline re-scoring from the prediction CSVs.
+  Compare at `last.ckpt` as usual — `val/loss` reads mean-field logits, so `best.ckpt` will
+  select a different epoch here than in the gaussian runs despite identical per-epoch
+  weights.
+
 ### Pilot first
 
 `spec_reg_coef` is **not yet calibrated for this backbone**. γ = 0.01 at cadence 24 is the

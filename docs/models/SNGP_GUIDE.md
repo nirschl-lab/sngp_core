@@ -131,6 +131,39 @@ Record both checkpoints in [../MASTER_CHECKPONT_PATHS.md](../MASTER_CHECKPONT_PA
 (`best.ckpt` = trained, `best.calibrated.ckpt` = report from this) and the output
 directory in [../MASTER_INFER_RESULTS_PATH.md](../MASTER_INFER_RESULTS_PATH.md).
 
+## The Laplace weight (`likelihood`)
+
+The posterior precision is `P = ridge*I + sum_i w_i phi_i phi_i^T`. For a multinomial
+logistic likelihood the per-example Hessian is `diag(p) - p p^T`, a `[K, K]` matrix — but
+`precision_accum` is a single `[rff_dim, rff_dim]`, so that Hessian has to be reduced to
+one scalar `w_i`. `likelihood` picks the reduction:
+
+| value | `w_i` | notes |
+|---|---|---|
+| `gaussian` (default) | `1` | Unit weight. The reference default for image classification and this project's protocol constant. |
+| `binary_logistic` | `p_max (1 - p_max)` | Reads the top class as a one-vs-rest Bernoulli and discards the rest — edward2's own reduction. `<= 0.25`. |
+| `trace_logistic` | `1 - \|\|p\|\|^2 = sum_k p_k (1 - p_k)` | The trace of the full Hessian: uses every class, costs nothing extra, and is `>=` the `binary_logistic` weight. `<= 1 - 1/K`. |
+
+`per_class_logistic` — the unreduced `[B, K]` diagonal `p (1 - p)` — is implemented in
+`RandomFeatureGaussianProcess._laplace_weights` but **refused at construction**. It would
+need a `[K, rff_dim, rff_dim]` accumulator (419 MB per buffer at `K=100, rff_dim=1024`) and
+would return a `[B, K]` predictive variance, which neither the `[B, 1]`
+`ModelOutput.variance` contract nor the one-scalar-per-row `predictions.csv` schema carries.
+
+Two properties worth holding on to:
+
+- **It never touches training.** The weight only feeds the precision accumulator; the loss
+  sees raw logits and no variance is computed in train mode. Two runs differing only in
+  `likelihood` train the *same* model — what differs is the eval-time predictive variance,
+  and so the mean-field-corrected logits. `tests/models/sngp/test_rff.py::TestLikelihood::
+  test_likelihood_does_not_touch_the_training_signal` pins this.
+- **It interacts with `mean_field_factor`.** A logistic weight shrinks the accumulator, which
+  inflates the variance, which strengthens the mean-field correction at a fixed factor. On a
+  converged classifier the effect is large (`w ~ 0.02` at CIFAR-100 train accuracy), so a
+  factor fitted for `gaussian` will badly over-shrink a logistic run. **Refit
+  `mean_field_factor` (§3) after changing `likelihood`** — or, for a pinned-factor benchmark,
+  sweep it offline before comparing arms.
+
 ## Gotchas
 
 - **Pre-correction checkpoints do not load.** The old head stored `cov_ema`/
