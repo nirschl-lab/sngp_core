@@ -29,6 +29,27 @@ MODEL_ROW_ORDER: list[str] = [
     "SNGP + Spectral Reg",
 ]
 
+# One fixed color per model variant, from the same Wong 2011 palette as `DATASET_COLORS`,
+# so a method reads as the same color across every figure that compares methods -- the
+# counterpart of `DATASET_COLORS` for the model axis.
+#
+# The baseline is grey on purpose: it is the deterministic reference the uncertainty
+# methods are read against, and it is usually drawn as a reference line rather than as a
+# series of its own, so it should recede rather than compete for attention.
+#
+# Figures that predate this dict build their own local maps
+# (`artifact_ablation_curves.py::MODEL_COLORS`, the two module-level constants in
+# `spectral_norm_bound_curve.py`); those are not wired up to this and stay as they are
+# until someone is regenerating those figures anyway.
+METHOD_COLORS: dict[str, str] = {
+    "Baseline Classifier": "#949494",
+    "Deep Ensemble": "#DE8F05",
+    "Monte Carlo Dropout": "#CC78BC",
+    "SNGP": "#0173B2",
+    "SNGP Ensemble": "#56B4E9",
+    "SNGP + Spectral Reg": "#D55E00",
+}
+
 
 def order_models(names) -> list[str]:
     """Canonical display order for whatever subset of models a figure or table actually

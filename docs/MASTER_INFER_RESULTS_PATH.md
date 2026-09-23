@@ -462,3 +462,25 @@ Its first table is a gate: `softmax(raw_logits / sqrt(1 + 7.5 var))` recomputed 
 against the `class_probs` the live pipeline wrote. That agrees to ~3e-7 (the float32 CSV
 round-trip) and the `softmax / λ = 7.5` rows reproduce the headline three-seed numbers
 exactly, which is what makes the rest of the sweep readable as a like-for-like comparison.
+
+The `mean_field_factor` sweep and its figure (the "`mean_field_factor` sweep" section of
+[results/CIFAR100_RESULTS.md](results/CIFAR100_RESULTS.md)). Same offline re-scoring, 30
+values of λ over 3 seeds, ~3 min on CPU. Two steps, because computation and figures are
+separate in this repo -- the per-seed CSV is the interface, and it is per-seed precisely so
+the figure can draw a seed band (the `--csv` from the links script above is seed-averaged and
+cannot):
+```bash
+uv run python scripts/metrics/cifar100_mean_field_sweep.py \
+    --tag overnight_2026-09-20_21-38-42 --include-seed-12345 \
+    --csv figures/mean_field_sweep/cifar100_mean_field_sweep_per_seed.csv \
+    --out $L/SWEEP_MEAN_FIELD.md
+
+uv run python src/visualization/cifar100_mean_field_sweep.py \
+    --sweep-csv figures/mean_field_sweep/cifar100_mean_field_sweep_per_seed.csv
+# -> figures/mean_field_sweep/cifar100_calibration_and_ood_vs_mean_field_factor.{csv,png,pdf}
+```
+Same gate, plus two more worth checking before reading anything: the `λ = 7.5` rows must
+reproduce the committed headline numbers (they do, to four decimals, including the
+Dempster-Shafer columns -- which is what proves DS was recomputed from the rescaled logits
+rather than read from the persisted `dempster_shafer` column, a value that is constant in λ),
+and the accuracy column must not move at all.

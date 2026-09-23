@@ -223,6 +223,74 @@ OOD detection, epoch 249:
 
 ---
 
+## `mean_field_factor` sweep
+
+λ is pinned at 7.5 for every arm and was never fitted (caveat 1). Swept offline from the
+persisted `raw_logits` + GP variance over `{0} ∪ logspace(-1, 3.5, 28)` plus 7.5 — 30 points,
+3 seeds, no re-inference. Reproduce:
+[../MASTER_INFER_RESULTS_PATH.md](../MASTER_INFER_RESULTS_PATH.md).
+
+![Calibration and OOD AUROC vs. the mean-field factor, CIFAR-100](../../figures/mean_field_sweep/cifar100_calibration_and_ood_vs_mean_field_factor.png)
+
+Reading notes: λ = 0.1 is effectively no correction (mean shrink 1.001), so the left edge is
+the uncorrected model; the pinned 7.5 is only a **1.09×** shrink. Accuracy is a control — the
+correction divides every logit of an example by one positive scalar, so argmax is invariant
+and that panel must be flat. The dotted lines are the λ→∞ limit, where the MSP ranking
+becomes logit-margin / σ. The calibration panels are y-clipped; all three rise steeply past
+λ ≈ 100.
+
+### Where each metric optimises
+
+| Arm | metric | at λ = 7.5 | best | at λ | Δ |
+|---|---|---:|---:|---:|---:|
+| SNGP | NLL | 0.7912 | 0.7600 | 31.6 | **−0.0312** |
+| SNGP | smECE | 0.0685 | 0.0242 | 46.4 | **−0.0444** |
+| SNGP | MSP AUROC vs CIFAR-10 | 0.8070 | 0.8070 | 10 | +0.0000 |
+| SNGP | MSP AUROC vs SVHN | 0.7483 | 0.7942 | 3162 | **+0.0459** |
+| SNGP | DS AUROC vs SVHN | 0.7932 | 0.8278 | 1000 | +0.0346 |
+| SpecReg | NLL | 0.7739 | 0.7474 | 31.6 | **−0.0265** |
+| SpecReg | smECE | 0.0609 | 0.0245 | 46.4 | **−0.0365** |
+| SpecReg | MSP AUROC vs CIFAR-10 | 0.8111 | 0.8113 | 0.1 | +0.0002 |
+| SpecReg | MSP AUROC vs SVHN | 0.7857 | 0.8126 | 3162 | **+0.0268** |
+| SpecReg | DS AUROC vs SVHN | 0.8267 | 0.8370 | 147 | +0.0104 |
+
+Sweep range, as a measure of how much λ is worth: smECE 0.49, far-OOD MSP AUROC 0.052 (SNGP)
+/ 0.030 (SpecReg), near-OOD MSP AUROC 0.028 / 0.037. Accuracy 0.000.
+
+**Calibration and far-OOD want different λ.** Calibration bottoms out at λ ≈ 30–50; far-OOD
+AUROC is monotone to the end of the sweep and near-OOD is flat then falls. λ ≈ 50 is the
+compromise both arms support — three seeds, sign-consistent:
+
+| Arm | λ | NLL | smECE | MSP C-10 | MSP SVHN | DS SVHN |
+|---|---:|---:|---:|---:|---:|---:|
+| SNGP | 7.5 *(current)* | 0.7912 ± 0.0073 | 0.0685 ± 0.0042 | 0.8070 ± 0.0033 | 0.7483 ± 0.0057 | 0.7932 ± 0.0045 |
+| SNGP | 46.4 | 0.7657 ± 0.0063 | **0.0242 ± 0.0017** | 0.8046 ± 0.0030 | 0.7668 ± 0.0049 | 0.8078 ± 0.0029 |
+| SpecReg | 7.5 *(current)* | 0.7739 ± 0.0107 | 0.0609 ± 0.0013 | 0.8111 ± 0.0014 | 0.7857 ± 0.0080 | 0.8267 ± 0.0116 |
+| SpecReg | 46.4 | 0.7507 ± 0.0100 | **0.0245 ± 0.0029** | 0.8081 ± 0.0015 | 0.7973 ± 0.0054 | 0.8341 ± 0.0057 |
+
+### Control: how much of this is the GP variance?
+
+Each λ was also compared against a *global* temperature of the same average strength
+(`softmax(raw / s̄(λ))`, `s̄` = that arm's mean shrink), best-vs-best:
+
+| Arm | metric | best over λ | best global T |
+|---|---|---:|---:|
+| SNGP | NLL | **0.7600** | 0.7637 |
+| SNGP | smECE | **0.0242** | 0.0257 |
+| SNGP | MSP AUROC vs SVHN | **0.7942** | 0.7799 |
+| SNGP | MSP AUROC vs CIFAR-10 | 0.8070 | **0.8177** |
+| SpecReg | NLL | **0.7474** | 0.7554 |
+| SpecReg | smECE | **0.0245** | 0.0305 |
+| SpecReg | MSP AUROC vs SVHN | 0.8126 | **0.8175** |
+| SpecReg | MSP AUROC vs CIFAR-10 | 0.8113 | **0.8219** |
+
+The per-example variance earns its place on calibration only, and by a small margin. On OOD
+a plain temperature is better in three of the four arm × dataset cells — including *both*
+near-OOD cells, by ~0.011. On this benchmark the mean-field correction is doing much less
+epistemic work than its form suggests.
+
+---
+
 ## Predictive link — normalized sigmoid / normCDF vs. mean-field softmax
 
 [arXiv:2502.03366](https://arxiv.org/abs/2502.03366) (Mucsányi et al., NeurIPS 2025)
@@ -243,19 +311,9 @@ Read with three caveats:
    arbitrarily.
 3. **λ and the link are varied independently**, or a win in one would be read as the other.
 
-### λ sweep, softmax — our pinned λ = 7.5 is not the best setting
-
-| Arm | λ | NLL | smECE | MSP C-10 | MSP SVHN |
-|---|---:|---:|---:|---:|---:|
-| SNGP (`c = 6.0`) | 7.5 *(current)* | 0.7912 ± 0.0073 | 0.0685 ± 0.0042 | 0.8070 ± 0.0033 | 0.7483 ± 0.0057 |
-| SNGP (`c = 6.0`) | 20 | **0.7666 ± 0.0068** | 0.0493 ± 0.0037 | 0.8067 ± 0.0031 | 0.7562 ± 0.0055 |
-| SNGP (`c = 6.0`) | 50 | 0.7688 ± 0.0063 | **0.0236 ± 0.0026** | 0.8043 ± 0.0029 | **0.7679 ± 0.0049** |
-| SpecReg (matched) | 7.5 *(current)* | 0.7739 ± 0.0107 | 0.0609 ± 0.0013 | 0.8111 ± 0.0014 | 0.7857 ± 0.0080 |
-| SpecReg (matched) | 20 | 0.7538 ± 0.0102 | 0.0452 ± 0.0008 | 0.8105 ± 0.0015 | 0.7905 ± 0.0068 |
-| SpecReg (matched) | 50 | **0.7530 ± 0.0101** | **0.0237 ± 0.0027** | 0.8077 ± 0.0016 | **0.7980 ± 0.0053** |
-
-Moving λ from 7.5 to 50 improves NLL, smECE and far-OOD AUROC together, for both arms and
-all three seeds, at a cost of ≤ 0.003 near-OOD. Accuracy is unchanged throughout.
+λ is swept properly in [the section above](#mean_field_factor-sweep) — 30 points rather than
+the six used here — so this section varies only the link, at the pinned λ = 7.5 and at each
+link's own best λ.
 
 ### Naive link swap at λ = 7.5 — not usable
 
@@ -321,9 +379,15 @@ already in the codebase, currently pinned at a value that is not its optimum.
   *worse*, so the bound was not the limiting factor — but that is one run, and no
   intermediate value was tried.
 - **No post-hoc calibration.** `mean_field_factor` is pinned at 7.5, not fitted, so the
-  calibration columns are uncalibrated for every arm. The λ sweep above now shows 7.5 is
-  *not* the optimum — λ = 50 improves NLL, smECE and far-OOD together on both SNGP arms —
-  so the headline tables understate both. Re-running them calibrated is outstanding work,
-  not a finished result.
+  calibration columns are uncalibrated for every arm. The sweep above shows 7.5 is *not* the
+  optimum for anything: smECE alone improves by ~0.04 on both arms at λ ≈ 46, so the headline
+  calibration columns understate every SNGP arm, and the baseline — which has no such knob —
+  is being compared against arms held at an arbitrary setting. Note the sweep is evaluated on
+  **test**; it is a sensitivity analysis, not a fitting protocol, and a λ chosen from it would
+  have to be fitted on validation before any number is re-quoted. Re-running the headline
+  tables calibrated is outstanding work, not a finished result.
+- **λ has no single optimum.** Calibration wants λ ≈ 30–50, far-OOD AUROC is still improving
+  at λ = 3162, and near-OOD degrades past ≈ 50. Any single pinned value is a choice between
+  them, so the arms' relative ranking on OOD is partly a function of that choice.
 - **No figures yet** — reliability curves, DS histograms and the OOD-AUROC comparison
   plot still need generating via `src/visualization/`.
