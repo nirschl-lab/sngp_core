@@ -223,6 +223,86 @@ OOD detection, epoch 249:
 
 ---
 
+## Predictive link — normalized sigmoid / normCDF vs. mean-field softmax
+
+[arXiv:2502.03366](https://arxiv.org/abs/2502.03366) (Mucsányi et al., NeurIPS 2025)
+replaces softmax with an element-wise normCDF or sigmoid that is then normalized. It
+consumes only `(mean, variance)`, both of which the SNGP CSVs persist, so it was evaluated
+offline from the existing predictions — no re-run, no GPU. Reproduce:
+[../MASTER_INFER_RESULTS_PATH.md](../MASTER_INFER_RESULTS_PATH.md).
+
+Read with three caveats:
+
+1. **The paper trains its activations in** (`NormedSigmoidNLLLoss` / `NormedNdtrNLLLoss`);
+   it never swaps them onto a softmax-trained model. Softmax is shift-invariant, so CE
+   never constrained the absolute logit level; these links are not, so the swap exposes a
+   free parameter — quantified in the shift table below.
+2. **Accuracy is invariant** under softmax and the sigmoid link (shared per-example
+   variance ⇒ identical argmax). It is *not* under normCDF: Φ is within 1e-9 of its ceiling
+   by logit 6, and 23–34% of rows have ≥2 classes above that, so those ties are broken
+   arbitrarily.
+3. **λ and the link are varied independently**, or a win in one would be read as the other.
+
+### λ sweep, softmax — our pinned λ = 7.5 is not the best setting
+
+| Arm | λ | NLL | smECE | MSP C-10 | MSP SVHN |
+|---|---:|---:|---:|---:|---:|
+| SNGP (`c = 6.0`) | 7.5 *(current)* | 0.7912 ± 0.0073 | 0.0685 ± 0.0042 | 0.8070 ± 0.0033 | 0.7483 ± 0.0057 |
+| SNGP (`c = 6.0`) | 20 | **0.7666 ± 0.0068** | 0.0493 ± 0.0037 | 0.8067 ± 0.0031 | 0.7562 ± 0.0055 |
+| SNGP (`c = 6.0`) | 50 | 0.7688 ± 0.0063 | **0.0236 ± 0.0026** | 0.8043 ± 0.0029 | **0.7679 ± 0.0049** |
+| SpecReg (matched) | 7.5 *(current)* | 0.7739 ± 0.0107 | 0.0609 ± 0.0013 | 0.8111 ± 0.0014 | 0.7857 ± 0.0080 |
+| SpecReg (matched) | 20 | 0.7538 ± 0.0102 | 0.0452 ± 0.0008 | 0.8105 ± 0.0015 | 0.7905 ± 0.0068 |
+| SpecReg (matched) | 50 | **0.7530 ± 0.0101** | **0.0237 ± 0.0027** | 0.8077 ± 0.0016 | **0.7980 ± 0.0053** |
+
+Moving λ from 7.5 to 50 improves NLL, smECE and far-OOD AUROC together, for both arms and
+all three seeds, at a cost of ≤ 0.003 near-OOD. Accuracy is unchanged throughout.
+
+### Naive link swap at λ = 7.5 — not usable
+
+| Arm | predictive | acc | NLL | smECE | MSP C-10 | MSP SVHN |
+|---|---|---:|---:|---:|---:|---:|
+| SNGP (`c = 6.0`) | softmax | 0.8025 ± 0.0045 | 0.7912 ± 0.0073 | 0.0685 ± 0.0042 | 0.8070 ± 0.0033 | 0.7483 ± 0.0057 |
+| SNGP (`c = 6.0`) | normed sigmoid | 0.8025 ± 0.0045 | 3.8673 ± 0.0012 | 0.5189 ± 0.0018 | 0.5818 ± 0.0091 | 0.7644 ± 0.0674 |
+| SNGP (`c = 6.0`) | normed normCDF | 0.7971 ± 0.0036 | 3.8276 ± 0.0019 | 0.5167 ± 0.0016 | 0.4761 ± 0.0102 | 0.6879 ± 0.0764 |
+
+### Shift sensitivity, λ = 7.5 — the free parameter, measured
+
+NLL under a global logit offset that cross-entropy never constrained:
+
+| predictive | −8 | −6 | −4 | −2 | 0 | +2 | +4 |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| softmax | 0.7912 | 0.7912 | 0.7912 | 0.7912 | 0.7912 | 0.7912 | 0.7912 |
+| normed sigmoid | 0.8061 | 1.1838 | 2.0092 | 3.0204 | 3.8673 | 4.3619 | 4.5491 |
+| normed normCDF | 1.3085 | 1.0145 | 1.4558 | 2.6729 | 3.8276 | 4.4354 | 4.5907 |
+
+SNGP (`c = 6.0`), 3 seeds; std omitted for width, all ≤ 0.021. Softmax is exactly flat by
+construction. The links swing by ~3.7 nats along an axis that is not a property of the model.
+
+### Best achievable — `(λ, T, offset)` fit on half the test rows, reported on the other half
+
+| Arm | predictive | λ\* | T\* | offset\* | NLL | smECE | MSP C-10 | MSP SVHN |
+|---|---|---:|---:|---:|---:|---:|---:|---:|
+| SNGP (`c = 6.0`) | softmax | 30 ± 17 | 1.04 | 0 | 0.7483 ± 0.0118 | 0.0357 ± 0.0031 | **0.8092 ± 0.0047** | **0.7643 ± 0.0056** |
+| SNGP (`c = 6.0`) | normed sigmoid | 0 | 1.20 | −8 | 0.7412 ± 0.0116 | 0.0421 ± 0.0028 | 0.7936 ± 0.0033 | 0.6944 ± 0.0144 |
+| SNGP (`c = 6.0`) | normed normCDF | 0.13 ± 0.23 | 3.41 | −4 | **0.7067 ± 0.0108** | **0.0230 ± 0.0054** | 0.8040 ± 0.0033 | 0.7199 ± 0.0096 |
+| SpecReg (matched) | softmax | 50 ± 0 | 0.92 | 0 | 0.7285 ± 0.0099 | 0.0316 ± 0.0034 | **0.8096 ± 0.0024** | **0.7972 ± 0.0046** |
+| SpecReg (matched) | normed sigmoid | 0 | 1.21 | −8 | 0.7359 ± 0.0094 | 0.0583 ± 0.0022 | 0.7953 ± 0.0019 | 0.7428 ± 0.0041 |
+| SpecReg (matched) | normed normCDF | 0 | 3.35 | −4 | **0.6893 ± 0.0105** | **0.0196 ± 0.0014** | 0.8059 ± 0.0018 | 0.7605 ± 0.0038 |
+
+Accuracy is identical within each arm (0.8063 ± 0.0066 / 0.8107 ± 0.0044). λ\* ≈ 0 for both
+links: their fitted form **discards the GP predictive variance**, and what remains is a
+two-parameter affine reshaping of the logits.
+
+### Verdict
+
+Fully retuned, the normCDF link buys in-distribution calibration (NLL −0.04, smECE −0.013)
+and pays for it in far-OOD AUROC (SVHN −0.044 SNGP, −0.037 SpecReg) while setting λ\* ≈ 0 —
+i.e. it improves the score this project does not lead on by discarding the quantity SNGP
+exists to produce. Not adopted. The transferable result is the λ sweep above: the knob
+already in the codebase, currently pinned at a value that is not its optimum.
+
+---
+
 ## What these numbers do not establish
 
 - **Three seeds, not more.** The surviving claims (SVHN OOD, NLL, smECE) are
@@ -241,6 +321,9 @@ OOD detection, epoch 249:
   *worse*, so the bound was not the limiting factor — but that is one run, and no
   intermediate value was tried.
 - **No post-hoc calibration.** `mean_field_factor` is pinned at 7.5, not fitted, so the
-  calibration columns are uncalibrated for every arm.
+  calibration columns are uncalibrated for every arm. The λ sweep above now shows 7.5 is
+  *not* the optimum — λ = 50 improves NLL, smECE and far-OOD together on both SNGP arms —
+  so the headline tables understate both. Re-running them calibrated is outstanding work,
+  not a finished result.
 - **No figures yet** — reliability curves, DS histograms and the OOD-AUROC comparison
   plot still need generating via `src/visualization/`.

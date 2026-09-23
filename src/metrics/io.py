@@ -224,6 +224,25 @@ def logits_array(frame: PredictionFrame) -> np.ndarray:
     return _stack_column(frame, "logits", "class_logits")
 
 
+def raw_logits_array(frame: PredictionFrame) -> np.ndarray:
+    """`[N, C]` logits *before* the family's inference-time correction.
+
+    Only SNGP-family runs have this: it is the GP head's output before the mean-field
+    division, so `class_logits == raw_logits / sqrt(1 + lambda * uncertainty)`. Together
+    with `uncertainty_array` it is everything needed to recompute the predictive under a
+    different mean-field factor -- or a different output activation entirely
+    (`src/metrics/gaussian_predictives.py`) -- straight from a written CSV, with no
+    network forward pass. A Baseline run has neither column.
+    """
+    if "raw_logits" not in frame.capabilities:
+        raise MissingPredictionData(
+            f"{frame.path} has no 'raw_logits' column. Only nets that apply an "
+            "inference-time logit correction persist one (SNGP's mean-field scaling); a "
+            "plain Baseline has nothing to record there."
+        )
+    return _stack_column(frame, "raw_logits_parsed", "raw_logits")
+
+
 def uncertainty_array(frame: PredictionFrame) -> np.ndarray:
     """`[N]` model-side uncertainty, one scalar per sample.
 
@@ -360,6 +379,7 @@ def load_predictions(
         capabilities.add("logits")
 
     if "raw_logits" in df.columns:
+        df["raw_logits_parsed"] = df["raw_logits"].map(parse_float_list)
         capabilities.add("raw_logits")
 
     if "member_logits" in df.columns:

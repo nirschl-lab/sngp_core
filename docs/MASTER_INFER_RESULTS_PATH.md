@@ -444,3 +444,21 @@ nothing else consumes it:
 uv run python scripts/metrics/cifar100_svhn_subsample_check.py \
     --tag overnight_2026-09-20_21-38-42
 ```
+
+The predictive-link comparison -- mean-field softmax vs the normalized sigmoid / normCDF
+activations of [arXiv:2502.03366](https://arxiv.org/abs/2502.03366), plus the
+mean-field-factor sweep (the "Predictive link" section of
+[results/CIFAR100_RESULTS.md](results/CIFAR100_RESULTS.md)). Pure offline re-scoring: it
+reads `raw_logits` and `uncertainty` out of the prediction CSVs the runs above already
+wrote, so it re-runs no inference, needs no GPU, and takes ~2 min on CPU. Baseline arms are
+skipped -- no variance, so no logit Gaussian to push forward:
+```bash
+L=/data1/maheswararao/experiments/uncertainty-aware-ml/tmux_logs/cifar100_overnight_2026-09-20_21-38-42
+uv run python scripts/metrics/cifar100_predictive_links.py \
+    --tag overnight_2026-09-20_21-38-42 --include-seed-12345 \
+    --out $L/SUMMARY_PREDICTIVE_LINKS.md --csv $L/predictive_links.csv
+```
+Its first table is a gate: `softmax(raw_logits / sqrt(1 + 7.5 var))` recomputed offline
+against the `class_probs` the live pipeline wrote. That agrees to ~3e-7 (the float32 CSV
+round-trip) and the `softmax / λ = 7.5` rows reproduce the headline three-seed numbers
+exactly, which is what makes the rest of the sweep readable as a like-for-like comparison.
