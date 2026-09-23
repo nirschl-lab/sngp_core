@@ -124,3 +124,38 @@ $B/literal_rerun/checkpoints/{best,last}.ckpt      # rep-spectral literal, seed 
 
 `literal_rerun` is the clean re-run of the arm whose `last.ckpt` was lost to the
 collision; it has both checkpoints.
+
+---
+
+## `trace_logistic` likelihood arm (2026-09-23) — SpecReg matched, three seeds
+
+Driven by `scripts/tmux/cifar100_trace_logistic.sh`; W&B group
+`CIFAR100_trace_logistic_2026-09-23_17-06-47`. `sngp_specreg_cifar100` with
+`model.net.likelihood=trace_logistic` — the GP head's Laplace weight becomes
+`1 - ||p||²` instead of the reference's unit weight
+([../models/SNGP_GUIDE.md](../models/SNGP_GUIDE.md#the-laplace-weight-likelihood)).
+
+```bash
+B=/data1/maheswararao/experiments/uncertainty-aware-ml/overnight/trace_logistic_2026-09-23_17-06-47
+$B/tl_specreg_s12345/checkpoints/{best,last}.ckpt   # SpecReg matched, trace_logistic, seed 12345
+$B/tl_specreg_s1/checkpoints/{best,last}.ckpt       # ... seed 1
+$B/tl_specreg_s2/checkpoints/{best,last}.ckpt       # ... seed 2
+```
+
+Verify the mode survived the round trip before using one:
+
+```bash
+uv run python -c "from src.checkpointing.io import read_meta; print(read_meta('<path>').net_spec['likelihood'])"
+# -> trace_logistic
+```
+
+Two caveats specific to this arm, both from `likelihood` being an inference-only knob:
+
+- **`best.ckpt` is not comparable to the gaussian arms' `best.ckpt`.** `val/loss` is
+  computed from mean-field logits, so the selected epoch differs even though the
+  per-epoch weights do not. Use `last.ckpt` (epoch 249), as the rest of this page already
+  recommends.
+- **Do not report these at the pinned `mean_field_factor = 7.5`.** A logistic weight
+  shrinks the precision accumulator ~50× on a converged CIFAR-100 classifier, so the
+  predictive variance — and the correction — inflate by about as much. Start from
+  `scripts/metrics/cifar100_mean_field_sweep.py` (free, offline).

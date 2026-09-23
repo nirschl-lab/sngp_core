@@ -28,7 +28,11 @@ cd "$(dirname "$0")/../.."
 if [[ -f .env ]]; then set -a; . ./.env; set +a; fi
 : "${EXPERIMENTS_HOME:?}" "${PROJECT_NAME:?}"
 
-STAMP="$(date +%Y-%m-%d_%H-%M-%S)"
+# Passed down to the re-exec'd child. Deriving it twice (as cifar100_overnight.sh does)
+# makes the child's TAG one or two seconds later than the one the parent prints, so the
+# run dirs and the per-run logs land under a stamp that was never reported.
+STAMP="${TRACE_LOGISTIC_STAMP:-$(date +%Y-%m-%d_%H-%M-%S)}"
+export TRACE_LOGISTIC_STAMP="${STAMP}"
 ROOT="${EXPERIMENTS_HOME}/${PROJECT_NAME}"
 LOGS="${ROOT}/tmux_logs/cifar100_trace_logistic_${STAMP}"
 TAG="trace_logistic_${STAMP}"
@@ -38,7 +42,7 @@ mkdir -p "${LOGS}"
 if [[ "${1:-}" != "--run" ]]; then
   command -v tmux >/dev/null || { echo "tmux is not installed." >&2; exit 1; }
   SESSION="cifar100_trace_logistic_${STAMP}"
-  tmux new-session -d -s "${SESSION}" "bash '$0' --run 2>&1 | tee '${LOGS}/driver.log'"
+  tmux new-session -d -s "${SESSION}" -e "TRACE_LOGISTIC_STAMP=${STAMP}" "bash '$0' --run 2>&1 | tee '${LOGS}/driver.log'"
   echo "Launched '${SESSION}'."
   echo "  Attach:   tmux attach -t ${SESSION}"
   echo "  Driver:   tail -f ${LOGS}/driver.log"
