@@ -325,6 +325,7 @@ class TestExperimentProtocolConsistency:
         "output_bias",
         "random_feature_type",
         "scale_random_features",
+        "feature_map",
         "n_power_iterations_sn",
     )
 

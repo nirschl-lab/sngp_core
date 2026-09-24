@@ -532,6 +532,74 @@ class TestSimplexRandomFeatures:
         torch.testing.assert_close(torch.stack(estimates).mean(0), exact, atol=0.03, rtol=0)
 
 
+class TestFeatureMap:
+    """`feature_map` swaps cos RFFs for positive (FAVOR+) or hyperbolic random features.
+    All three must be unbiased for the same RBF kernel, and keep the feature count (so the
+    classifier and precision shapes) at rff_dim."""
+
+    def test_cos_is_the_default(self):
+        assert make_gp().feature_map == "cos"
+
+    @pytest.mark.parametrize("feature_map", ["cos", "positive", "hyperbolic"])
+    def test_feature_count_is_rff_dim(self, feature_map):
+        gp = make_gp(rff_dim=128, feature_map=feature_map)
+        assert gp._features(torch.randn(5, 64)).shape == (5, 128)
+        assert gp.precision_accum.shape == (128, 128)
+
+    def test_hyperbolic_draws_half_the_directions(self):
+        assert make_gp(rff_dim=128, feature_map="hyperbolic").W.shape == (64, 64)
+
+    def test_hyperbolic_rejects_odd_rff_dim(self):
+        with pytest.raises(ValueError, match="even rff_dim"):
+            make_gp(rff_dim=127, feature_map="hyperbolic")
+
+    def test_rejects_unknown_feature_map(self):
+        with pytest.raises(ValueError, match="Unsupported feature_map"):
+            make_gp(feature_map="laplace")
+
+    def test_positive_features_are_positive(self):
+        assert (make_gp(feature_map="positive")._features(torch.randn(5, 64)) > 0).all()
+
+    @pytest.mark.parametrize("feature_map", ["positive", "hyperbolic"])
+    @pytest.mark.parametrize("coupling", ["orf", "simrf"])
+    def test_approximates_the_rbf_kernel(self, feature_map, coupling):
+        """phi(x).phi(y) ~= exp(-||x-y||^2 / 2l^2) at rho = ||x||/l ~ 0.5, where the
+        positive maps are well-behaved."""
+        torch.manual_seed(0)
+        d, length_scale = 16, 8.0
+        x = torch.randn(6, d)  # ||x|| ~ 4 -> rho ~ 0.5
+        exact = torch.exp(-torch.cdist(x, x) ** 2 / (2 * length_scale**2))
+        estimates = []
+        for _ in range(8):
+            gp = make_gp(
+                in_dim=d, rff_dim=4096, length_scale=length_scale, normalize_input=False,
+                random_feature_type=coupling, feature_map=feature_map,
+            )
+            phi = gp._features(x)
+            estimates.append(phi @ phi.T)
+        torch.testing.assert_close(torch.stack(estimates).mean(0), exact, atol=0.02, rtol=0)
+
+    @pytest.mark.parametrize("feature_map", ["cos", "positive", "hyperbolic"])
+    def test_unscaled_is_the_same_multiple_of_the_kernel_for_every_map(self, feature_map):
+        """Unscaled phi.phi ~= (m/2) k for all maps, so ridge and lambda mean the same thing."""
+        torch.manual_seed(0)
+        x = torch.zeros(1, 16)  # k(x, x) = 1 exactly; positive maps are exact at x = 0
+        gp = make_gp(in_dim=16, rff_dim=2048, normalize_input=False, scale_random_features=False, feature_map=feature_map)
+        phi = gp._features(x)
+        assert (phi @ phi.T).item() == pytest.approx(2048 / 2, rel=0.05)
+
+    def test_positive_head_survives_state_dict(self):
+        gp = train_steps(make_gp(feature_map="positive", length_scale=16.0), 3)
+        gp.eval()
+        x = torch.randn(4, 64)
+        expected = gp(x)
+        rebuilt = make_gp(feature_map="positive", length_scale=16.0)
+        rebuilt.load_state_dict(gp.state_dict())
+        rebuilt.eval()
+        for a, b in zip(rebuilt(x), expected):
+            torch.testing.assert_close(a, b)
+
+
 class TestScaleRandomFeatures:
     """`scale_random_features` controls the `sqrt(2/rff_dim)` factor on phi.
 

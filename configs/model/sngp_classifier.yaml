@@ -59,6 +59,11 @@ net:
   # renormalizes per parameter, but under plain SGD it trains the backbone ~22x too
   # slowly. See docs/models/CIFAR100_BENCHMARK.md.
   scale_random_features: true
+  # Random-feature map for the RBF kernel: cos (reference) | positive | hyperbolic. The
+  # positive maps need rho = ||x||/length_scale <~ 1 -- fine for the CIFAR-100 recipe
+  # (no input norm, l = 20, rho ~ 0.57), unusable with LayerNorm + l = sqrt(2) (rho ~ 16).
+  # Off-protocol; see docs/results/CIFAR100_RF_HEAD_SWAP_RESULTS.md.
+  feature_map: cos
   n_power_iterations_sn: 1
 
 # optimizer and scheduler

@@ -236,3 +236,22 @@ def test_spec_without_scale_random_features_rebuilds_unchanged():
     rebuilt = build_net(legacy_spec)
     assert rebuilt.gp_head.scale_random_features is True
     assert rebuilt.gp_head.rff_scale == net.gp_head.rff_scale
+
+
+def test_spec_without_feature_map_rebuilds_as_cos():
+    """`feature_map` was added after checkpoints existed; a spec without it is a cos head."""
+    from src.models.registry import build_net
+
+    net = SNGPClassifier(num_classes=4, arch="resnet18", pretrained=False, rff_dim=64)
+    assert net.spec["feature_map"] == "cos"
+    legacy_spec = {k: v for k, v in net.spec.items() if k != "feature_map"}
+    assert build_net(legacy_spec).gp_head.feature_map == "cos"
+
+
+def test_feature_map_survives_the_spec():
+    from src.models.registry import build_net
+
+    net = SNGPClassifier(num_classes=4, arch="resnet18", pretrained=False, rff_dim=64, feature_map="hyperbolic")
+    rebuilt = build_net(net.spec)
+    assert rebuilt.gp_head.feature_map == "hyperbolic"
+    assert rebuilt.gp_head.W.shape == net.gp_head.W.shape == (512, 32)

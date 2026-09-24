@@ -144,6 +144,9 @@ poor sweep target — changing it is better done as a named arm than as an HPO d
 Gaussian) and `simrf` (simplex random features, Reid et al. 2023, arXiv:2301.13856). Set
 them per run via `model.net.random_feature_type=...`. SimRF's MSE-optimality proof covers
 positive random features, not the cos features SNGP uses, so treat it as an experiment.
+`feature_map` (`cos` | `positive` | `hyperbolic`) is the matching off-protocol knob for the
+feature map itself; the positive maps need `||x|| / length_scale <~ 1`, so they only make
+sense with the CIFAR-100 head recipe, not with LayerNorm + `length_scale = sqrt(2)`.
 
 `SNGPClassifier`'s constructor defaults equal these (so `deep_ensemble_sngp_*` members,
 built from the spec, get them too), except `spectral_norm_bound`, whose ctor default stays

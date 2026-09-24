@@ -35,6 +35,9 @@ PROBIT_MEAN_FIELD_FACTOR = math.pi / 8
 SUPPORTED_LIKELIHOODS = ("gaussian", "binary_logistic", "trace_logistic")
 PER_CLASS_LIKELIHOOD = "per_class_logistic"
 
+# Random-feature maps for the RBF kernel; see `RandomFeatureGaussianProcess._features`.
+FEATURE_MAPS = ("cos", "positive", "hyperbolic")
+
 _PER_CLASS_MSG = (
     "likelihood='per_class_logistic' is not supported yet. Its [B, K] weight needs a "
     "[num_classes, rff_dim, rff_dim] precision accumulator and yields a [B, K] predictive "
@@ -63,7 +66,8 @@ class RandomFeatureGaussianProcess(nn.Module):
     Uncertainty Estimation with Deterministic Deep Learning via Distance Awareness")
     and the `edward2` reference implementation.
 
-      - Fixed random Fourier features phi(x) = sqrt(2/m) * cos(Wx + b)
+      - Fixed random Fourier features phi(x) = sqrt(2/m) * cos(Wx + b), or positive /
+        hyperbolic random features (`feature_map`, see `_features`)
       - Linear classifier over phi(x), trained with standard CE on the *raw* logits
       - Laplace precision matrix accumulated over one epoch of training
       - Mean-field logit correction applied **at inference only**
@@ -114,6 +118,7 @@ class RandomFeatureGaussianProcess(nn.Module):
         output_bias: bool = False,
         random_feature_type: str = "orf",
         scale_random_features: bool = True,
+        feature_map: str = "cos",
         dtype: torch.dtype = torch.float32,
     ):
         super().__init__()
@@ -127,6 +132,10 @@ class RandomFeatureGaussianProcess(nn.Module):
             )
         if random_feature_type == "simrf" and in_dim < 2:
             raise ValueError(f"random_feature_type='simrf' needs in_dim >= 2 (a simplex needs 2+ vertices), got {in_dim}")
+        if feature_map not in FEATURE_MAPS:
+            raise ValueError(f"Unsupported feature_map: {feature_map!r}. Use one of {FEATURE_MAPS}.")
+        if feature_map == "hyperbolic" and rff_dim % 2:
+            raise ValueError(f"feature_map='hyperbolic' needs an even rff_dim (two features per direction), got {rff_dim}")
         if ridge_penalty <= 0:
             raise ValueError(f"ridge_penalty must be > 0 (it seeds the precision matrix), got {ridge_penalty}")
 
@@ -143,6 +152,7 @@ class RandomFeatureGaussianProcess(nn.Module):
         self.output_bias = output_bias
         self.random_feature_type = random_feature_type
         self.scale_random_features = scale_random_features
+        self.feature_map = feature_map
 
         # LayerNorm on the GP input ("similar to applying ARD", per the reference's own
         # description) -- also keeps the RFF kernel well-scaled as backbone feature
@@ -152,7 +162,12 @@ class RandomFeatureGaussianProcess(nn.Module):
         # Random Fourier feature parameters (fixed, not learned)
         # b ~ Uniform(0, 2pi); W columns are random directions with chi-distributed
         # norms => RBF kernel with length-scale l.
-        W = self._sample_projection(in_dim, rff_dim, random_feature_type, dtype) / length_scale
+        # `hyperbolic` emits two features per direction, so it draws rff_dim/2 directions
+        # and the feature count -- hence the classifier and precision -- stays rff_dim.
+        # `b` is only used by `cos`, but is always drawn and stored so state_dict keys and
+        # the RNG stream stay the same across feature maps.
+        n_directions = rff_dim // 2 if feature_map == "hyperbolic" else rff_dim
+        W = self._sample_projection(in_dim, n_directions, random_feature_type, dtype) / length_scale
         b = 2 * math.pi * torch.rand(rff_dim, dtype=dtype)
         self.register_buffer("W", W)
         self.register_buffer("b", b)
@@ -178,7 +193,16 @@ class RandomFeatureGaussianProcess(nn.Module):
         # the backbone. Adam rescales that away per-parameter, so it is invisible under
         # the project's AdamW protocol; plain SGD at a fixed lr just trains the backbone
         # ~22x too slowly. Default stays True so existing checkpoints are untouched.
-        self.rff_scale = math.sqrt(2.0 / rff_dim) if scale_random_features else 1.0
+        #
+        # Scaled, every feature map satisfies phi(x).phi(y) ~= k(x, y): sqrt(2/m) for cos,
+        # sqrt(1/m) for positive / hyperbolic (m = rff_dim features in all three). Unscaled
+        # multiplies each by sqrt(m/2), so phi.phi ~= (m/2) k for every map -- 1.0 for cos,
+        # as before -- which keeps the ridge prior and the mean-field factor on the same
+        # footing whichever map is chosen.
+        if scale_random_features:
+            self.rff_scale = math.sqrt((2.0 if feature_map == "cos" else 1.0) / rff_dim)
+        else:  # written out, not derived, so an unscaled cos head stays exactly 1.0
+            self.rff_scale = 1.0 if feature_map == "cos" else math.sqrt(0.5)
 
     # -- random feature map --------------------------------------------------
 
@@ -323,16 +347,32 @@ class RandomFeatureGaussianProcess(nn.Module):
     # -- forward -------------------------------------------------------------
 
     def _features(self, x: torch.Tensor) -> torch.Tensor:
-        """Compute RFFs: phi(x) = sqrt(2/m) * cos(x W + b), or cos(x W + b) when
-        `scale_random_features` is off.
+        """Random features for the RBF kernel k(x, y) = exp(-||x - y||^2 / 2 l^2), times
+        `rff_scale`. W is already divided by l, so ||x / l||^2 = ||x||^2 / l^2.
+
+          cos         cos(x W + b)                                       (Rahimi & Recht)
+          positive    exp(x W - ||x/l||^2)                               (FAVOR+)
+          hyperbolic  [exp(x W - ||x/l||^2), exp(-x W - ||x/l||^2)]      (FAVOR+ "++")
+
+        All three are unbiased. The positive maps pair with `simrf`, whose MSE optimality
+        (Reid et al. 2023) is proven for positive features, and in the kernel study
+        (`scripts/metrics/random_feature_kernel_mse.py`) SimRF cut positive-feature MSE to
+        ~0.1x ORF at rho = ||x||/l = 0.5 while tying ORF for cos. Positive features need
+        rho <~ 1: their variance grows like exp(||x + y||^2 / l^2), and past rho ~ 2 the
+        estimate collapses to ~0 (and float32 underflows at rho ~ 16, the LayerNorm +
+        l = sqrt(2) protocol). The CIFAR-100 recipe (no input norm, l = 20) sits at rho ~ 0.57.
 
         x: [B, in_dim] -> [B, rff_dim]
         """
         if self.input_norm is not None:
             x = self.input_norm(x)
-        proj = x @ self.W  # [B, rff_dim]
-        proj = proj + self.b  # broadcast
-        return torch.cos(proj) * self.rff_scale
+        proj = x @ self.W  # [B, rff_dim], or [B, rff_dim/2] for hyperbolic
+        if self.feature_map == "cos":
+            return torch.cos(proj + self.b) * self.rff_scale
+        sq = x.pow(2).sum(dim=-1, keepdim=True) / self.length_scale**2
+        if self.feature_map == "positive":
+            return torch.exp(proj - sq) * self.rff_scale
+        return torch.cat([torch.exp(proj - sq), torch.exp(-proj - sq)], dim=-1) * self.rff_scale
 
     def predictive_variance(self, phi: torch.Tensor) -> torch.Tensor:
         """var(x) = phi(x)^T (ridge*I + sum_i w_i phi_i phi_i^T)^-1 phi(x). [B, 1]"""
@@ -428,6 +468,7 @@ class SNGPClassifier(nn.Module):
         scale_random_features: bool = True,
         spectral_norm_bound: Optional[float] = None,
         use_spectral_norm: bool = True,
+        feature_map: str = "cos",
     ):
         super().__init__()
         self.num_classes = num_classes
@@ -445,6 +486,7 @@ class SNGPClassifier(nn.Module):
         self.output_bias = output_bias
         self.random_feature_type = random_feature_type
         self.scale_random_features = bool(scale_random_features)
+        self.feature_map = feature_map
         self.spectral_norm_bound = None if spectral_norm_bound is None else float(spectral_norm_bound)
         self.use_spectral_norm = bool(use_spectral_norm)
 
@@ -480,6 +522,7 @@ class SNGPClassifier(nn.Module):
             output_bias=output_bias,
             random_feature_type=random_feature_type,
             scale_random_features=scale_random_features,
+            feature_map=feature_map,
         )
 
     def reset_precision(self) -> None:
@@ -506,6 +549,7 @@ class SNGPClassifier(nn.Module):
             "output_bias": self.output_bias,
             "random_feature_type": self.random_feature_type,
             "scale_random_features": self.scale_random_features,
+            "feature_map": self.feature_map,
             "spectral_norm_bound": self.spectral_norm_bound,
             "use_spectral_norm": self.use_spectral_norm,
         }
