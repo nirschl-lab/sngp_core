@@ -538,3 +538,30 @@ numbers exactly (SNGP 0.7912 / 0.0685, SpecReg 0.7739 / 0.0609). The grid was ex
 `logspace(-1, 3.5, 28)` to `logspace(-2, 3.5, 34)` -- 34, not 30, because that keeps the log10
 step at exactly 1/6, making the new grid a strict superset of the old one so every λ already
 quoted on the results page is still a grid point.
+
+### Random-feature head swap (2026-09-24)
+
+GP head retrained on frozen SpecReg (matched) backbones, seeds 12345 / 1 / 2 (`last.ckpt`), for
+feature map {cos, positive, hyperbolic} x coupling {orf, simrf} x l {10, 20, 40}. Results:
+[results/CIFAR100_RF_HEAD_SWAP_RESULTS.md](results/CIFAR100_RF_HEAD_SWAP_RESULTS.md). No `infer/`
+directories: the backbone features are cached once and every head is scored from that cache.
+
+```bash
+# feature cache, ~300 MB per seed: train_view{0..3}, val, test, cifar10, svhn, original_gp_head.pt
+/data1/maheswararao/experiments/uncertainty-aware-ml/feature_cache/cifar100_rf_head_swap/seed{12345,1,2}/
+```
+
+Reproduce (extract: one GPU per seed, a few minutes; sweep: one GPU, ~15 min for 54 heads plus the
+9-config LR x weight-decay pick on the control):
+```bash
+for s in 12345 1 2; do CUDA_VISIBLE_DEVICES=... uv run python scripts/metrics/cifar100_rf_head_swap.py extract --seeds $s & done; wait
+uv run python scripts/metrics/cifar100_rf_head_swap.py sweep
+# -> figures/cifar100_rf_head_swap/cifar100_rf_head_swap_{per_seed,summary}.csv
+uv run python src/visualization/cifar100_rf_head_swap.py
+# -> figures/cifar100_rf_head_swap/cifar100_rf_head_swap.{png,pdf}
+```
+
+Gate: the `original_head` rows must reproduce the SpecReg arm's validation-fitted lambda (~35.3) and
+its NLL (0.7472 +/- 0.0100). `extract` must log no "No ... augmentations provided" warning: without
+the `cifar32` preset the datamodule silently falls back to ImageNet normalization and an
+unaugmented train split.
