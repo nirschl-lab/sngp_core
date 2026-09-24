@@ -50,7 +50,7 @@ rootutils.setup_root(__file__, indicator=".project-root", pythonpath=True)
 # the metric helpers rather than restating them is the point: these scripts must not drift
 # on which run directory belongs to which arm, nor on how a metric is computed.
 sys.path.insert(0, str(Path(__file__).parent))
-from cifar100_overnight_report import ARMS, LABEL_COLS, LEGACY_ARMS, _infer_dir  # noqa: E402
+from cifar100_overnight_report import ARMS, LABEL_COLS, LEGACY_ARMS, TRACE_ARMS, _infer_dir  # noqa: E402
 from cifar100_predictive_links import _collect, _id_metrics, _msp  # noqa: E402
 
 from src.metrics.auc import AUROC  # noqa: E402
@@ -62,22 +62,32 @@ from src.metrics.uncertainty import dempster_shafer  # noqa: E402
 PRODUCTION_LAMBDA = 7.5
 OOD_DATASETS = ("cifar10", "svhn")
 
-# 0 (no correction) plus a log grid out to ~3e3. The GP variance is near-identical across
-# both arms and all seeds (mean 0.023-0.024, p99 ~ 0.07), so one grid serves every arm. The
-# mean shrink factor sqrt(1 + lambda*var) runs 1.0 -> ~8x over this range; the pinned 7.5 is
-# a 1.09x shrink, which is why it barely moves anything. Past ~1e3 the correction is
+# 0 (no correction) plus a log grid out to ~3e3. The gaussian arms' GP variance is
+# near-identical across seeds (mean 0.023-0.024, p99 ~ 0.07); the `trace_logistic` arm's is
+# ~65x larger (mean ~1.5), because its Laplace weight 1 - ||p||^2 collapses to ~0.015 on a
+# converged classifier and the precision accumulator shrinks with it. One grid still serves
+# every arm -- lambda and the variance enter only as the product lambda*var, so the larger
+# variance simply slides that arm's curve ~65x to the left. The low end is 1e-2 rather than
+# 1e-1 so the left edge is genuinely "no correction" for the trace arm too (at 1e-1 it is
+# already a 1.07x shrink) and its optimum sits in the interior rather than on the boundary.
+# 34 points, not 30: that keeps the log10 step at exactly 1/6, so the extended grid is a
+# strict SUPERSET of the original logspace(-1, 3.5, 28) and every lambda already quoted in
+# docs/results/CIFAR100_RESULTS.md (31.6, 46.4, 147, 1000, 3162) is still a grid point.
+# The mean shrink factor sqrt(1 + lambda*var) runs 1.0 -> ~8x over this range for the
+# gaussian arms; the pinned 7.5 is a 1.09x shrink there, which is why it barely moves
+# anything -- and a 3.5x shrink on the trace arm, which is why it moves a great deal. Past ~1e3 the correction is
 # asymptotically a per-example temperature proportional to 1/sigma, so the curve shape stops
 # changing and only its scale does -- that is the natural right-hand end of the sweep.
 # The production value is spliced in rather than left to the nearest grid point (6.81), so
 # the sweep's `lambda = 7.5` row reproduces the committed headline numbers exactly and the
 # curve can be read against them.
 LAMBDA_GRID: Sequence[float] = tuple(
-    sorted({0.0, PRODUCTION_LAMBDA} | {float(x) for x in np.logspace(-1, 3.5, 28)})
+    sorted({0.0, PRODUCTION_LAMBDA} | {float(x) for x in np.logspace(-2, 3.5, 34)})
 )
 
 # Arms with a GP variance to sweep. Baseline has neither `raw_logits` nor `uncertainty`, so
 # it has no lambda axis at all and is emitted once as a flat reference instead.
-SWEEP_GROUPS = ("sngp", "specreg")
+SWEEP_GROUPS = ("sngp", "specreg", "specreg_trace")
 
 
 def _ds_scores(raw: torch.Tensor, var: torch.Tensor, lam: float) -> np.ndarray:
@@ -240,6 +250,21 @@ def main() -> None:
     ap.add_argument("--out", default=None, help="optional markdown summary at a few lambdas")
     ap.add_argument("--infer-root", default=None, help="defaults to $EXPERIMENTS_HOME/$PROJECT_NAME/infer")
     ap.add_argument("--include-seed-12345", action="store_true")
+    ap.add_argument(
+        "--extra-lambda",
+        type=float,
+        nargs="+",
+        default=None,
+        help="additional lambda values to evaluate, spliced into the grid. Use it to put an "
+             "arm's validation-fitted lambda on the curve, so a 'fitted on val, reported on "
+             "test' table can be read straight from this CSV instead of interpolated.",
+    )
+    ap.add_argument(
+        "--trace-tag",
+        default=None,
+        help="tag of the trace_logistic run tree (e.g. trace_logistic_2026-09-23_17-06-47); "
+             "adds the SpecReg trace-logistic arm, which lives under its own tag rather than --tag",
+    )
     args = ap.parse_args()
 
     root = Path(
@@ -249,6 +274,12 @@ def main() -> None:
     entries = [(args.tag, label, display, group) for label, (display, group) in ARMS.items()]
     if args.include_seed_12345:
         entries += [("", label, display, group) for label, (display, group) in LEGACY_ARMS.items()]
+    if args.trace_tag:
+        entries += [(args.trace_tag, label, display, group) for label, (display, group) in TRACE_ARMS.items()]
+
+    lambdas = LAMBDA_GRID
+    if args.extra_lambda:
+        lambdas = tuple(sorted(set(lambdas) | {float(x) for x in args.extra_lambda}))
 
     rows: List[Dict[str, object]] = []
     gates: List[str] = []
@@ -265,8 +296,8 @@ def main() -> None:
         if arm is None:
             continue
         gates.append(f"  {label:16s} max |delta prob| = {_gate(arm)['probs']:.2e}")
-        print(f"sweeping {label} ({len(LAMBDA_GRID)} lambdas) ...", flush=True)
-        rows.extend(_sweep_rows(arm, LAMBDA_GRID))
+        print(f"sweeping {label} ({len(lambdas)} lambdas) ...", flush=True)
+        rows.extend(_sweep_rows(arm, lambdas))
 
     if not rows:
         raise SystemExit(f"No arms found under {root}. Wrong --tag or --infer-root?")

@@ -33,7 +33,7 @@ LABEL_COLS = ("label", "target", "ground_truth", "true_label")
 OOD_DATASETS = (("c10", "cifar10"), ("svhn", "svhn"))
 # (score_mode, bucket suffix, column header prefix)
 SCORE_MODES = (("msp", "msp", "MSP"), ("dempster_shafer", "ds", "DS"))
-GROUP_ORDER = ("baseline", "sngp", "sngp_c41", "specreg", "literal")
+GROUP_ORDER = ("baseline", "sngp", "sngp_c41", "specreg", "specreg_trace", "literal")
 
 # label -> (display name, group key for seed aggregation). These live under the
 # overnight tag prefix: <root>/<tag>_<label>__<dataset>.
@@ -56,6 +56,20 @@ LEGACY_ARMS = {
     "cifar100last_baseline": ("Baseline", "baseline"),
     "cifar100last_sngp": ("SNGP (c=6.0)", "sngp"),
     "cifar100last_specreg": ("SpecReg (matched)", "specreg"),
+}
+
+# The `trace_logistic` Laplace-weight arm (scripts/tmux/cifar100_trace_logistic.sh). Its own
+# dict rather than more `ARMS` entries because it was trained under a different tag, and
+# `--tag` is pasted onto every `ARMS` entry -- same reason `LEGACY_ARMS` is separate. Opt-in
+# via `--trace-tag <its tag>`; all three seeds are in the one tag, so unlike the gaussian
+# arms no seed needs a second convention.
+#
+# The display string must be IDENTICAL across the three labels: the sweep figure aggregates
+# on `(group, display, lambda)`, so a per-seed display would split one arm into three curves.
+TRACE_ARMS = {
+    "tl_specreg_s12345": ("SpecReg (trace-logistic)", "specreg_trace"),
+    "tl_specreg_s1": ("SpecReg (trace-logistic)", "specreg_trace"),
+    "tl_specreg_s2": ("SpecReg (trace-logistic)", "specreg_trace"),
 }
 
 

@@ -52,6 +52,7 @@ PRODUCTION_LAMBDA = 7.5
 GROUP_TO_MODEL: Dict[str, str] = {
     "sngp": "SNGP",
     "specreg": "SNGP + Spectral Reg",
+    "specreg_trace": "SNGP + Spectral Reg (trace-logistic)",
     "baseline": "Baseline Classifier",
 }
 
@@ -200,7 +201,7 @@ def plot_mean_field_sweep(
 ) -> Figure:
     """Eight panels of metric-vs-lambda. Returns the figure; saves nothing."""
     set_default_style()
-    groups = [g for g in ("sngp", "specreg") if g in set(agg["group"])]
+    groups = [g for g in ("sngp", "specreg", "specreg_trace") if g in set(agg["group"])]
 
     fig, axes = plt.subplots(2, 4, figsize=(21.0, 9.5))
     for ax, (metric, title) in zip(axes.flat, PANELS):
@@ -217,10 +218,16 @@ def plot_mean_field_sweep(
         center = float(acc_vals.mean())
         acc_ax.set_ylim(center - 0.05, center + 0.05)
 
-    fig.tight_layout(rect=(0, 0.10, 1, 0.95 if suptitle else 1.0))
+    # Bottom margin fits a two-row legend under the x-label. One row was enough while the
+    # figure had two arms; a third pushes the legend into the label at this width.
+    fig.tight_layout(rect=(0, 0.15, 1, 0.95 if suptitle else 1.0))
     if suptitle:
         fig.suptitle(suptitle, fontsize=16)
-    fig.supxlabel("mean-field factor $\\lambda$   (log scale; $\\lambda=0.1$ is effectively no correction)", y=0.055)
+    fig.supxlabel(
+        "mean-field factor $\\lambda$   (log scale; at the left edge, $\\lambda=10^{-2}$, no arm is "
+        "meaningfully corrected)",
+        y=0.095,
+    )
 
     # One legend for the whole figure, de-duplicated: every panel draws the same series, and
     # the asymptote entry appears once per arm.
@@ -233,7 +240,7 @@ def plot_mean_field_sweep(
         list(seen.keys()),
         frameon=False,
         loc="lower center",
-        ncol=min(len(seen), 5),
+        ncol=min(len(seen), 3),
         bbox_to_anchor=(0.5, 0.0),
     )
     return fig

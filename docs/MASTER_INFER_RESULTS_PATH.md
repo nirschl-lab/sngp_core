@@ -484,3 +484,57 @@ reproduce the committed headline numbers (they do, to four decimals, including t
 Dempster-Shafer columns -- which is what proves DS was recomputed from the rescaled logits
 rather than read from the persisted `dempster_shafer` column, a value that is constant in λ),
 and the accuracy column must not move at all.
+
+### `trace_logistic` likelihood arm (2026-09-24)
+
+Three SpecReg seeds retrained with the GP head's Laplace weight set to `1 - ||p||^2`
+(`model.net.likelihood=trace_logistic`); training and checkpoints:
+[checkpoints/CIFAR_CHECKPOINTS.md](checkpoints/CIFAR_CHECKPOINTS.md), results: the
+"`mean_field_factor` sweep" section of
+[results/CIFAR100_RESULTS.md](results/CIFAR100_RESULTS.md). `last.ckpt` only -- `val/loss`
+reads mean-field logits, so `best.ckpt` selects a different epoch here than in the gaussian
+arms despite identical per-epoch weights.
+
+```bash
+/data1/maheswararao/experiments/uncertainty-aware-ml/infer/trace_logistic_2026-09-23_17-06-47_tl_specreg_{s12345,s1,s2}__{cifar100,cifar10,svhn}
+```
+
+Reproduce the inference (3 GPU lanes, one seed each, ~1 min):
+```bash
+scripts/tmux/cifar100_trace_logistic_infer.sh trace_logistic_2026-09-23_17-06-47
+```
+
+The sweep then takes both tags at once. `--tag` is pasted onto every `ARMS` entry, so the
+trace arm -- trained under its own tag -- comes in through `--trace-tag` instead, the same
+shape as `--include-seed-12345`. `--extra-lambda` splices each arm's validation-fitted λ into
+the grid, so the "fitted on val, reported on test" table is read from this CSV rather than
+interpolated:
+```bash
+uv run python scripts/metrics/cifar100_mean_field_sweep.py \
+    --tag overnight_2026-09-20_21-38-42 --include-seed-12345 \
+    --trace-tag trace_logistic_2026-09-23_17-06-47 \
+    --extra-lambda 32.4973 35.3162 0.654703 \
+    --csv figures/mean_field_sweep/cifar100_mean_field_sweep_per_seed.csv \
+    --out $L/SWEEP_MEAN_FIELD.md
+
+uv run python src/visualization/cifar100_mean_field_sweep.py \
+    --sweep-csv figures/mean_field_sweep/cifar100_mean_field_sweep_per_seed.csv
+# -> figures/mean_field_sweep/cifar100_calibration_and_ood_vs_mean_field_factor.{csv,png,pdf}
+```
+
+Those three `--extra-lambda` values are the per-arm means of a per-seed validation fit. The
+fit needs no inference of its own: `calibrate_checkpoint.py` does its own forward pass over
+the split, and `--dry-run` preserves the CIFAR convention of carrying no
+`best.calibrated.ckpt`:
+```bash
+uv run python scripts/checkpoints/calibrate_checkpoint.py \
+    --ckpt <run>/checkpoints/last.ckpt --experiment sngp_specreg_cifar100 \
+    --split val --dry-run
+# -> "fitted mean_field_factor=..."   9 arms (3 groups x 3 seeds), ~1 min each on one GPU
+```
+
+Gate: the `λ = 7.5` rows for the two gaussian arms must still reproduce the committed headline
+numbers exactly (SNGP 0.7912 / 0.0685, SpecReg 0.7739 / 0.0609). The grid was extended from
+`logspace(-1, 3.5, 28)` to `logspace(-2, 3.5, 34)` -- 34, not 30, because that keeps the log10
+step at exactly 1/6, making the new grid a strict superset of the old one so every λ already
+quoted on the results page is still a grid point.

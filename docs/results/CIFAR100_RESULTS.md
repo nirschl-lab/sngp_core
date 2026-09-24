@@ -226,18 +226,27 @@ OOD detection, epoch 249:
 ## `mean_field_factor` sweep
 
 λ is pinned at 7.5 for every arm and was never fitted (caveat 1). Swept offline from the
-persisted `raw_logits` + GP variance over `{0} ∪ logspace(-1, 3.5, 28)` plus 7.5 — 30 points,
-3 seeds, no re-inference. Reproduce:
+persisted `raw_logits` + GP variance over `{0} ∪ logspace(-2, 3.5, 34)` plus 7.5 and each
+arm's validation-fitted λ — 39 points, 3 seeds, no re-inference. Reproduce:
 [../MASTER_INFER_RESULTS_PATH.md](../MASTER_INFER_RESULTS_PATH.md).
+
+A third arm appears here and nowhere else on this page: **SpecReg (trace-logistic)**, the
+matched SpecReg recipe with the GP head's Laplace weight changed from the reference's unit
+weight to `1 − ‖p‖²`. It is not in the headline tables, because `likelihood` is an
+inference-only knob and at the pinned λ = 7.5 its numbers are an artifact of that pinning
+rather than a property of the model — see [What the Laplace weight changes](#what-the-laplace-weight-changes).
 
 ![Calibration and OOD AUROC vs. the mean-field factor, CIFAR-100](../../figures/mean_field_sweep/cifar100_calibration_and_ood_vs_mean_field_factor.png)
 
-Reading notes: λ = 0.1 is effectively no correction (mean shrink 1.001), so the left edge is
-the uncorrected model; the pinned 7.5 is only a **1.09×** shrink. Accuracy is a control — the
-correction divides every logit of an example by one positive scalar, so argmax is invariant
-and that panel must be flat. The dotted lines are the λ→∞ limit, where the MSP ranking
-becomes logit-margin / σ. The calibration panels are y-clipped; all three rise steeply past
-λ ≈ 100.
+Reading notes: the left edge, λ = 0.01, is effectively no correction for every arm, so that is
+the uncorrected model. **The arms are not at comparable λ.** The trace-logistic arm's GP
+variance is ~65× larger than the gaussian arms', and λ enters only through the product
+`λ·var`, so its whole curve is shifted ~50× to the left — the pinned 7.5 is a 1.09× shrink on
+the gaussian arms and a 3.5× shrink on it. Accuracy is a control: the correction divides every
+logit of an example by one positive scalar, so argmax is invariant and that panel must be flat
+(measured range across all λ: exactly 0 for all three arms). The dotted lines are the λ→∞
+limit, where the MSP ranking becomes logit-margin / σ. The calibration panels are y-clipped;
+all three rise steeply past their own optimum.
 
 ### Where each metric optimises
 
@@ -253,9 +262,18 @@ becomes logit-margin / σ. The calibration panels are y-clipped; all three rise 
 | SpecReg | MSP AUROC vs CIFAR-10 | 0.8111 | 0.8113 | 0.1 | +0.0002 |
 | SpecReg | MSP AUROC vs SVHN | 0.7857 | 0.8126 | 3162 | **+0.0268** |
 | SpecReg | DS AUROC vs SVHN | 0.8267 | 0.8370 | 147 | +0.0104 |
+| SpecReg (trace) | NLL | 1.6755 | 0.7440 | 0.68 | **−0.9315** |
+| SpecReg (trace) | smECE | 0.4122 | 0.0165 | 1.0 | **−0.3957** |
+| SpecReg (trace) | MSP AUROC vs CIFAR-10 | 0.7630 | 0.8106 | 0 | **+0.0476** |
+| SpecReg (trace) | MSP AUROC vs SVHN | 0.7917 | 0.7917 | 10 | +0.0001 |
+| SpecReg (trace) | DS AUROC vs SVHN | 0.7945 | 0.8182 | 1.5 | +0.0237 |
+
+The trace arm's Δ column is large only because 7.5 is a badly wrong λ *for it*; read its
+"best" column against the other arms', not its Δ. Its optima sit at λ ≈ 0.7–1.5, ~50× below
+the gaussian arms' — the `λ·var` shift, not a different shape.
 
 Sweep range, as a measure of how much λ is worth: smECE 0.49, far-OOD MSP AUROC 0.052 (SNGP)
-/ 0.030 (SpecReg), near-OOD MSP AUROC 0.028 / 0.037. Accuracy 0.000.
+/ 0.030 (SpecReg), near-OOD MSP AUROC 0.028 / 0.037 / 0.081 (trace). Accuracy 0.000.
 
 **Calibration and far-OOD want different λ.** Calibration bottoms out at λ ≈ 30–50; far-OOD
 AUROC is monotone to the end of the sweep and near-OOD is flat then falls. λ ≈ 50 is the
@@ -283,11 +301,81 @@ Each λ was also compared against a *global* temperature of the same average str
 | SpecReg | smECE | **0.0245** | 0.0305 |
 | SpecReg | MSP AUROC vs SVHN | 0.8126 | **0.8175** |
 | SpecReg | MSP AUROC vs CIFAR-10 | 0.8113 | **0.8219** |
+| SpecReg (trace) | NLL | **0.7440** | 0.7539 |
+| SpecReg (trace) | smECE | **0.0165** | 0.0297 |
+| SpecReg (trace) | MSP AUROC vs SVHN | 0.7917 | **0.7941** |
+| SpecReg (trace) | MSP AUROC vs CIFAR-10 | 0.8106 | **0.8211** |
 
 The per-example variance earns its place on calibration only, and by a small margin. On OOD
 a plain temperature is better in three of the four arm × dataset cells — including *both*
 near-OOD cells, by ~0.011. On this benchmark the mean-field correction is doing much less
-epistemic work than its form suggests.
+epistemic work than its form suggests. The trace arm is the one exception worth noting: its
+margin over a global temperature is roughly twice the gaussian arms' on both calibration
+metrics (smECE 0.0165 vs 0.0297, a gap of 0.013 against their 0.006), so under that weight the
+per-example variance does carry more information than a single scalar. It still loses on all
+four OOD cells.
+
+### What the Laplace weight changes
+
+`likelihood` selects how the multinomial Hessian `diag(p) − p pᵀ` is reduced to the single
+scalar `w` in `P = ridge·I + Σ wᵢ φᵢ φᵢᵀ`
+([SNGP_GUIDE.md](../models/SNGP_GUIDE.md#the-laplace-weight-likelihood)). The `trace-logistic`
+arm uses `w = 1 − ‖p‖²` instead of the reference's `w = 1`. It is **inference-only**: the
+weight feeds the precision accumulator and never the loss, so this arm and the matched gaussian
+one train the same model. Accuracy confirms it — 0.8047 vs 0.8048, and NLL on raw logits
+(λ = 0) 0.7958 vs 0.7962.
+
+What it does change:
+
+| | gaussian | trace-logistic |
+|---|---:|---:|
+| mean Laplace weight over the last epoch | 1.0 | ~0.015 |
+| precision-matrix trace | 2.02e7 | 2.99e5 |
+| mean GP variance (test) | 0.0228 | 1.489 |
+| shrink `√(1 + 7.5·var)` at the pinned λ | 1.08× | 3.50× |
+
+`w = 1 − ‖p‖²` collapses as the classifier saturates (train accuracy 0.9995), so the
+accumulator shrinks ~67× and the variance grows ~65×. That is the whole of the λ = 7.5 gap:
+λ and the variance enter only as the product `λ·var`, and the validation-fitted λ moves by the
+same factor (35.3 → 0.655, a ratio of 54).
+
+**Not a pure rescale, though.** Re-accumulating both weights from the *same* checkpoint over
+the same features — so training nondeterminism is excluded — gives a Spearman correlation of
+**0.675** between the two variances. The weight genuinely reorders which examples look
+uncertain. Whether that reordering is worth anything is what the next table answers.
+
+#### λ fitted on validation, metrics reported on test
+
+The sweep above is a test-split sensitivity analysis, so reading each arm's best λ off it is
+test-optimistic — and doubly so here, where the arms' optima differ ~50×. λ is therefore
+fitted on the **validation** split
+(`scripts/checkpoints/calibrate_checkpoint.py --split val`, per seed, then averaged) and every
+metric below is on **test**:
+
+| Arm | λ\* (val) | NLL | smECE | Brier | MSP C-10 | MSP SVHN | DS SVHN |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| SNGP (`c = 6.0`) | 32.50 | 0.7600 ± 0.0065 | 0.0348 ± 0.0021 | 0.2795 ± 0.0039 | 0.8059 ± 0.0030 | 0.7620 ± 0.0052 | 0.8047 ± 0.0032 |
+| SpecReg (matched) | 35.32 | 0.7472 ± 0.0100 | 0.0299 ± 0.0039 | 0.2768 ± 0.0023 | **0.8092 ± 0.0015** | **0.7948 ± 0.0059** | **0.8330 ± 0.0068** |
+| SpecReg (trace-logistic) | 0.655 | **0.7439 ± 0.0013** | **0.0281 ± 0.0021** | **0.2761 ± 0.0023** | 0.8059 ± 0.0023 | 0.7769 ± 0.0383 | 0.8154 ± 0.0320 |
+
+λ\* is stable within an arm across seeds (SNGP 32.44/32.48/32.57, SpecReg 35.40/34.74/35.81,
+trace 0.670/0.656/0.638), so one value per arm is a fair summary rather than a per-seed fit.
+Accuracy at λ\* is 0.8025 / 0.8048 / 0.8047 — unchanged, as it must be.
+
+**Verdict: the trace weight is not worth adopting on this benchmark.**
+
+- **Calibration**: better, but not distinguishably. NLL −0.0033 and smECE −0.0018 against the
+  matched gaussian arm, both well inside its seed spread (±0.0100, ±0.0039). Note the smECE
+  0.0165 in the table above was a *test-selected* λ; fitting λ honestly on validation gives
+  0.0281, which is most of that apparent win gone.
+- **OOD**: worse on all three columns — far-OOD MSP −0.018, DS −0.018, near-OOD −0.003.
+- **Stability**: far-OOD AUROC has **6× the seed spread** (±0.038 vs ±0.006 MSP, ±0.032 vs
+  ±0.007 DS). Calibration is *more* stable under the trace weight (NLL ±0.0013 vs ±0.0100) and
+  OOD much less so — the reordering is real but not consistent across seeds, which is what a
+  reordering that is not tracking a stable signal looks like.
+
+Three seeds is too few to call the OOD gap decisively, but nothing here argues for changing
+`likelihood` off `gaussian`, and the configs stay pinned there.
 
 ---
 
@@ -384,10 +472,17 @@ already in the codebase, currently pinned at a value that is not its optimum.
   calibration columns understate every SNGP arm, and the baseline — which has no such knob —
   is being compared against arms held at an arbitrary setting. Note the sweep is evaluated on
   **test**; it is a sensitivity analysis, not a fitting protocol, and a λ chosen from it would
-  have to be fitted on validation before any number is re-quoted. Re-running the headline
-  tables calibrated is outstanding work, not a finished result.
+  have to be fitted on validation before any number is re-quoted. That validation fit now
+  exists, but only for the three-arm comparison in
+  [λ fitted on validation](#λ-fitted-on-validation-metrics-reported-on-test) — re-running the
+  headline tables calibrated is still outstanding work, not a finished result.
 - **λ has no single optimum.** Calibration wants λ ≈ 30–50, far-OOD AUROC is still improving
   at λ = 3162, and near-OOD degrades past ≈ 50. Any single pinned value is a choice between
   them, so the arms' relative ranking on OOD is partly a function of that choice.
-- **No figures yet** — reliability curves, DS histograms and the OOD-AUROC comparison
-  plot still need generating via `src/visualization/`.
+- **The trace-logistic arm is a single likelihood variant at three seeds.** It shows the
+  Laplace weight reorders the GP variance (Spearman 0.675) without helping at a fitted λ, but
+  the other two reductions (`binary_logistic`, `per_class_logistic`) were not run, and its
+  far-OOD seed spread is large enough that the OOD gap is suggestive rather than settled.
+- **Figures are partial** — the mean-field sweep panel above exists; reliability curves, DS
+  histograms and the OOD-AUROC comparison plot still need generating via
+  `src/visualization/`.

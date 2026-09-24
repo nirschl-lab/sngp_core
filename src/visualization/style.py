@@ -27,6 +27,7 @@ MODEL_ROW_ORDER: list[str] = [
     "SNGP",
     "SNGP Ensemble",
     "SNGP + Spectral Reg",
+    "SNGP + Spectral Reg (trace-logistic)",
 ]
 
 # One fixed color per model variant, from the same Wong 2011 palette as `DATASET_COLORS`,
@@ -48,6 +49,10 @@ METHOD_COLORS: dict[str, str] = {
     "SNGP": "#0173B2",
     "SNGP Ensemble": "#56B4E9",
     "SNGP + Spectral Reg": "#D55E00",
+    # Same model as the line above, differing only in the GP head's Laplace weight, so it
+    # keeps a distinct hue rather than a shade of #D55E00: the two are compared directly and
+    # a near-identical orange would read as the same series in the mean-field sweep figure.
+    "SNGP + Spectral Reg (trace-logistic)": "#029E73",
 }
 
 
