@@ -121,8 +121,12 @@ class RandomFeatureGaussianProcess(nn.Module):
             raise NotImplementedError(_PER_CLASS_MSG)
         if likelihood not in SUPPORTED_LIKELIHOODS:
             raise ValueError(f"Unsupported likelihood: {likelihood!r}. Use one of {SUPPORTED_LIKELIHOODS}.")
-        if random_feature_type not in ("rff", "orf"):
-            raise ValueError(f"Unsupported random_feature_type: {random_feature_type!r}. Use 'rff' or 'orf'.")
+        if random_feature_type not in ("rff", "orf", "simrf"):
+            raise ValueError(
+                f"Unsupported random_feature_type: {random_feature_type!r}. Use 'rff', 'orf' or 'simrf'."
+            )
+        if random_feature_type == "simrf" and in_dim < 2:
+            raise ValueError(f"random_feature_type='simrf' needs in_dim >= 2 (a simplex needs 2+ vertices), got {in_dim}")
         if ridge_penalty <= 0:
             raise ValueError(f"ridge_penalty must be > 0 (it seeds the precision matrix), got {ridge_penalty}")
 
@@ -191,9 +195,24 @@ class RandomFeatureGaussianProcess(nn.Module):
         within a block no longer partially duplicate each other, which lowers the
         variance of the kernel approximation at a given `rff_dim`. Cost is paid once,
         at construction; the forward pass is unchanged.
+
+        `"simrf"` (simplex random features, Reid et al. 2023, arXiv:2301.13856) goes one
+        step further: each block's directions are the vertices of a regular simplex under
+        a Haar rotation, so every pair has dot product -1/(in_dim-1) instead of 0. Norms
+        and per-column marginals are the same as for `"orf"`, so the estimate stays
+        unbiased. The paper proves SimRF has the minimum MSE for *positive* random
+        features; for the cos features used here that guarantee does not carry over, and
+        any gain over `"orf"` has to be measured.
         """
         if kind == "rff":
             return torch.randn(in_dim, rff_dim, dtype=dtype)
+
+        if kind == "simrf":
+            # Centred standard basis, normalised: in_dim unit vectors summing to zero,
+            # pairwise dot -1/(in_dim-1). Equals the paper's explicit simplex matrix up to
+            # a fixed rotation, which the Haar Q below absorbs.
+            simplex = torch.eye(in_dim, dtype=dtype) - 1.0 / in_dim
+            simplex = simplex / simplex.norm(dim=0, keepdim=True)
 
         blocks = []
         remaining = rff_dim
@@ -201,7 +220,8 @@ class RandomFeatureGaussianProcess(nn.Module):
             # `torch.linalg.qr` of a square Gaussian gives Q with orthonormal columns,
             # Haar-distributed over the orthogonal group.
             q, _ = torch.linalg.qr(torch.randn(in_dim, in_dim, dtype=dtype))
-            blocks.append(q[:, :min(in_dim, remaining)])
+            block = q @ simplex if kind == "simrf" else q
+            blocks.append(block[:, :min(in_dim, remaining)])
             remaining -= in_dim
         directions = torch.cat(blocks, dim=1)
 

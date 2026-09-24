@@ -140,6 +140,11 @@ inference-only in the strictest sense: it feeds the precision accumulator and ne
 loss, so two runs differing only in `likelihood` train the same model. That makes it a
 poor sweep target — changing it is better done as a named arm than as an HPO dimension.
 
+`random_feature_type` likewise has two off-protocol alternatives to `orf`: `rff` (i.i.d.
+Gaussian) and `simrf` (simplex random features, Reid et al. 2023, arXiv:2301.13856). Set
+them per run via `model.net.random_feature_type=...`. SimRF's MSE-optimality proof covers
+positive random features, not the cos features SNGP uses, so treat it as an experiment.
+
 `SNGPClassifier`'s constructor defaults equal these (so `deep_ensemble_sngp_*` members,
 built from the spec, get them too), except `spectral_norm_bound`, whose ctor default stays
 `None` (stock hard normalization) so checkpoints written before the bound existed rebuild

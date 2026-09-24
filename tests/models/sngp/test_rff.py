@@ -472,6 +472,56 @@ class TestRandomFeatureType:
             make_gp(random_feature_type="sobol")
 
 
+class TestSimplexRandomFeatures:
+    """SimRF (Reid et al. 2023) couples each block's directions as a regular simplex
+    (pairwise dot -1/(d-1)) and keeps ORF's chi norms, so the kernel estimate stays
+    unbiased. No test asserts SimRF beats ORF: the paper's MSE optimality is for
+    positive random features, not the cos features used here."""
+
+    def test_pairwise_angles_are_simplex(self):
+        d = 32
+        gp = make_gp(in_dim=d, rff_dim=d, random_feature_type="simrf")
+        directions = gp.W / gp.W.norm(dim=0, keepdim=True)
+        gram = directions.T @ directions
+        off_diagonal = gram[~torch.eye(d, dtype=torch.bool)]
+        torch.testing.assert_close(off_diagonal, torch.full_like(off_diagonal, -1.0 / (d - 1)), atol=1e-5, rtol=0)
+        assert directions.sum(dim=1).abs().max() < 1e-4
+
+    def test_handles_rff_dim_larger_than_in_dim(self):
+        gp = make_gp(in_dim=16, rff_dim=40, random_feature_type="simrf")
+        assert gp.W.shape == (16, 40)
+
+    def test_handles_rff_dim_smaller_than_in_dim(self):
+        gp = make_gp(in_dim=64, rff_dim=8, random_feature_type="simrf")
+        assert gp.W.shape == (64, 8)
+
+    def test_column_norms_match_the_gaussian_marginal(self):
+        torch.manual_seed(0)
+        in_dim = 64
+        simrf = make_gp(in_dim=in_dim, rff_dim=2048, random_feature_type="simrf")
+        rff = make_gp(in_dim=in_dim, rff_dim=2048, random_feature_type="rff")
+        assert simrf.W.norm(dim=0).mean() == pytest.approx(rff.W.norm(dim=0).mean(), rel=0.05)
+
+    def test_rejects_in_dim_one(self):
+        with pytest.raises(ValueError, match="in_dim >= 2"):
+            make_gp(in_dim=1, random_feature_type="simrf")
+
+    def test_approximates_the_rbf_kernel(self):
+        """phi(x).phi(y) ~= exp(-||x-y||^2 / 2l^2), averaged over a few draws of W."""
+        torch.manual_seed(0)
+        d, length_scale = 16, 2.0
+        x = torch.randn(6, d)
+        exact = torch.exp(-torch.cdist(x, x) ** 2 / (2 * length_scale**2))
+        estimates = []
+        for _ in range(8):
+            gp = make_gp(
+                in_dim=d, rff_dim=4096, length_scale=length_scale, normalize_input=False, random_feature_type="simrf"
+            )
+            phi = gp._features(x)
+            estimates.append(phi @ phi.T)
+        torch.testing.assert_close(torch.stack(estimates).mean(0), exact, atol=0.03, rtol=0)
+
+
 class TestScaleRandomFeatures:
     """`scale_random_features` controls the `sqrt(2/rff_dim)` factor on phi.
 

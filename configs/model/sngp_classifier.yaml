@@ -51,7 +51,7 @@ net:
   # `model.net.likelihood=...`. Inference-only: the weight never reaches the loss.
   likelihood: gaussian
   output_bias: false # reference uses a fixed zero GP output bias
-  random_feature_type: orf # orthogonal random features (Yu et al. 2016)
+  random_feature_type: orf # orf (Yu et al. 2016) | rff | simrf (simplex, Reid et al. 2023; off-protocol)
   # Scale the random features by sqrt(2/rff_dim) (~0.044 at 1024). True is the edward2
   # default and what every checkpoint in this project was trained with. The reference
   # CIFAR baseline sets it False, because the factor also multiplies the gradient
