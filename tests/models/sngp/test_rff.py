@@ -460,6 +460,16 @@ class TestRandomFeatureType:
         rff = make_gp(in_dim=in_dim, rff_dim=2048, random_feature_type="rff", length_scale=1.0)
         assert orf.W.norm(dim=0).mean() == pytest.approx(rff.W.norm(dim=0).mean(), rel=0.05)
 
+    @pytest.mark.parametrize("kind", ["orf", "simrf"])
+    def test_block_rotations_are_haar(self, kind):
+        """Uncorrected `torch.linalg.qr` skews column k's k-th coordinate negative (mean
+        ~ -0.29 at d=8). A Haar rotation leaves every direction coordinate mean-zero."""
+        torch.manual_seed(0)
+        d = 8
+        W = torch.stack([RandomFeatureGaussianProcess._sample_projection(d, d, kind, torch.float64) for _ in range(4000)])
+        directions = W / W.norm(dim=1, keepdim=True)  # [draws, d, d], unit columns
+        assert directions.mean(0).abs().max() < 0.05
+
     def test_length_scale_still_divides_the_projection(self):
         torch.manual_seed(0)
         wide = make_gp(in_dim=32, rff_dim=64, length_scale=4.0)

@@ -217,9 +217,14 @@ class RandomFeatureGaussianProcess(nn.Module):
         blocks = []
         remaining = rff_dim
         while remaining > 0:
-            # `torch.linalg.qr` of a square Gaussian gives Q with orthonormal columns,
-            # Haar-distributed over the orthogonal group.
-            q, _ = torch.linalg.qr(torch.randn(in_dim, in_dim, dtype=dtype))
+            # QR of a square Gaussian gives Q with orthonormal columns. It is Haar-distributed
+            # over the orthogonal group only once each column is multiplied by sign(R_kk)
+            # (Mezzadri 2007): LAPACK's sign convention otherwise skews column k's k-th
+            # coordinate negative. The cos features are even in w, so that skew never biased
+            # them; positive random features are not, so it biased ORF there.
+            q, r = torch.linalg.qr(torch.randn(in_dim, in_dim, dtype=dtype))
+            signs = torch.sign(torch.diagonal(r))
+            q = q * torch.where(signs == 0, torch.ones_like(signs), signs)
             block = q @ simplex if kind == "simrf" else q
             blocks.append(block[:, :min(in_dim, remaining)])
             remaining -= in_dim
