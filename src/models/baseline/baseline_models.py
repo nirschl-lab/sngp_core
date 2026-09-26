@@ -28,7 +28,7 @@ class BaselineClassifier(nn.Module):
     default `1.0` -- and is fit afterwards on validation NLL by
     `scripts/checkpoints/calibrate_checkpoint.py`, which writes the fitted value into the
     checkpoint's `net_spec` so inference picks it up without a config edit. It is the
-    counterpart of SNGP's `mean_field_factor` (the paper's kernel amplitude sigma), so the
+    counterpart of SNGP's `mean_field_factor` (the reference's collapsed lambda * sigma^2), so the
     two families are compared with the same one-scalar post-hoc freedom. Applied
     unconditionally (train, eval and MC-Dropout passes alike): `/ 1.0` is bit-exact, and a
     single code path means `mc_forward_samples` inherits the fitted temperature too.

@@ -12,7 +12,8 @@ name: sngp_classifier
 #                          value below is the family default for datasets that have not
 #                          been re-swept; a dataset with a swept winner pins it in
 #                          configs/experiment/sngp_<dataset>.yaml (see sngp_acevedo).
-#   mean_field_factor   -- the paper's kernel amplitude sigma; fit POST-HOC on validation
+#   mean_field_factor   -- the reference's collapse of the paper's mean-field lambda (eq. 19)
+#                          and kernel amplitude sigma^2 (Table 10); fit POST-HOC on validation
 #                          NLL (scripts/checkpoints/calibrate_checkpoint.py), never trained
 #                          or swept. Counterpart of Baseline/DE `temperature`.
 net:
@@ -31,8 +32,8 @@ net:
   # (configs/model/sngp_specreg_classifier.yaml), which bounds sigma through a loss term
   # instead -- never combine the two. spectral_norm_bound is ignored when false.
   use_spectral_norm: true
-  # Mean-field factor = kernel amplitude sigma. 1.0 (ImageNet reference) until fit
-  # post-hoc; the CIFAR reference uses 20. pi/8 is the textbook probit constant but is
+  # Mean-field factor = the reference's gp_mean_field_factor (lambda * sigma^2 collapsed).
+  # 1.0 (ImageNet reference) until fit post-hoc; the CIFAR-10 reference uses 20. pi/8 is the textbook probit constant but is
   # nearly inert at realistic dataset sizes.
   mean_field_factor: 1.0
   rff_dim: 1024
@@ -64,6 +65,11 @@ net:
   # (no input norm, l = 20, rho ~ 0.57), unusable with LayerNorm + l = sqrt(2) (rho ~ 16).
   # Off-protocol; see docs/results/CIFAR100_RF_HEAD_SWAP_RESULTS.md.
   feature_map: cos
+  # Kernel amplitude sigma^2 in the feature map itself (paper eq. 8/10): phi is multiplied
+  # by sqrt(sigma^2), so it changes training, unlike mean_field_factor. 1.0 = what every
+  # existing checkpoint was trained with. Off-protocol; when set, pair it with the paper's
+  # mean_field_factor = pi/8 rather than Table 10's collapsed value, or it double-counts.
+  kernel_amplitude: 1.0
   n_power_iterations_sn: 1
 
 # optimizer and scheduler

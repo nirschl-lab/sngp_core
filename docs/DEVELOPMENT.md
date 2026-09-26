@@ -141,11 +141,13 @@ each covered by a test in `tests/models/sngp/`:
 
 1. **Mean-field is applied at inference only.** In train mode `forward` returns the raw
    logits and `variance is None`; the correction `logits / sqrt(1 + lambda * var)`
-   happens in eval mode only. `lambda` (`mean_field_factor`) is the paper's **kernel
-   amplitude sigma** (Table 10: 20 for CIFAR, 1.0 for ImageNet, 0.1 for CLINC), which the
-   reference implementation collapses into the single tunable `gp_mean_field_factor`; the
-   paper's own recommendation is to estimate sigma on held-out data by minimizing the log
-   score. `pi/8` is the textbook probit value but is nearly inert at realistic dataset
+   happens in eval mode only. `lambda` (`mean_field_factor`) is the paper's eq. 19 factor
+   (pi/8 there) *collapsed with* the **kernel amplitude sigma^2**: the reference
+   implementation never exposes sigma^2 and reports Table 10's "kernel amplitude" (20 for
+   CIFAR-10, 7.5 for CIFAR-100, 1.0 for ImageNet) as its single tunable
+   `gp_mean_field_factor`; the paper's own recommendation is to estimate sigma on held-out
+   data by minimizing the log score. The paper's literal sigma^2 -- inside the feature map,
+   acting on training too -- is the separate, off-protocol `kernel_amplitude` knob. `pi/8` is the textbook probit value but is nearly inert at realistic dataset
    sizes. It is therefore fit post-hoc, on validation NLL, by
    `scripts/checkpoints/calibrate_checkpoint.py`, which writes the fitted value into a
    sibling checkpoint's `net_spec` -- inference-only, so no retraining, and it cannot move

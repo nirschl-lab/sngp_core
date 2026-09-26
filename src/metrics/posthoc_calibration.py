@@ -5,8 +5,8 @@ Every model family in this project gets exactly one scalar calibration knob that
 
   * Baseline / Deep Ensemble: a temperature ``T`` -- ``logits / T`` (Guo et al. 2017).
   * SNGP: the mean-field factor ``lambda`` -- ``raw_logits / sqrt(1 + lambda * variance)``
-    (Liu et al. 2022 eq. 19). This is the paper's "kernel amplitude" sigma: the reference
-    implementation collapses sigma into the single tunable ``gp_mean_field_factor``, and
+    (Liu et al. 2022 eq. 19). The reference implementation collapses this lambda and the
+    paper's "kernel amplitude" sigma^2 into the single tunable ``gp_mean_field_factor``, and
     the paper recommends estimating it on held-out data by minimizing the log score.
 
 Both knobs divide every logit of an example by one positive scalar, so accuracy and

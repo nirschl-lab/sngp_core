@@ -6,8 +6,9 @@ cannot move the training fit (docs/HPO_GUIDE.md):
 
   * `baseline_classifier` / `deep_ensemble`: a temperature `T` -- `logits / T`.
   * `sngp_classifier`: the mean-field factor -- `raw_logits / sqrt(1 + factor * variance)`.
-    This is Liu et al.'s kernel amplitude sigma, which the reference implementation
-    collapses into `gp_mean_field_factor`, and the paper's own recommendation is to
+    This is Liu et al.'s mean-field lambda, which the reference implementation collapses
+    with the kernel amplitude sigma^2 into `gp_mean_field_factor`, and the paper's own
+    recommendation is to
     estimate it on held-out data by minimizing the log score.
 
 What each metric can actually respond to

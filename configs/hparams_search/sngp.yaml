@@ -13,7 +13,7 @@
 # trial under a minimized NLL).
 #
 # Objective: validation NLL after post-hoc calibration, minimized (docs/HPO_GUIDE.md).
-# For SNGP the knob is the mean-field factor (the paper's kernel amplitude sigma), refit
+# For SNGP the knob is the mean-field factor (the reference's collapsed lambda * sigma^2), refit
 # each epoch on the val set as raw_logits / sqrt(1 + factor * variance) -- i.e. the
 # selection sees what scripts/checkpoints/calibrate_checkpoint.py will report.
 # hparams_search/baseline.yaml uses a temperature the same way, so families are

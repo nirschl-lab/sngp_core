@@ -248,6 +248,27 @@ def test_spec_without_feature_map_rebuilds_as_cos():
     assert build_net(legacy_spec).gp_head.feature_map == "cos"
 
 
+def test_spec_without_kernel_amplitude_rebuilds_unchanged():
+    """`kernel_amplitude` was added after checkpoints existed; a spec without it is sigma^2 = 1."""
+    from src.models.registry import build_net
+
+    net = SNGPClassifier(num_classes=4, arch="resnet18", pretrained=False, rff_dim=64)
+    assert net.spec["kernel_amplitude"] == 1.0
+    legacy_spec = {k: v for k, v in net.spec.items() if k != "kernel_amplitude"}
+    rebuilt = build_net(legacy_spec)
+    assert rebuilt.gp_head.kernel_amplitude == 1.0
+    assert rebuilt.gp_head.rff_scale == net.gp_head.rff_scale
+
+
+def test_kernel_amplitude_survives_the_spec():
+    from src.models.registry import build_net
+
+    net = SNGPClassifier(num_classes=4, arch="resnet18", pretrained=False, rff_dim=64, kernel_amplitude=7.5)
+    rebuilt = build_net(net.spec)
+    assert rebuilt.gp_head.kernel_amplitude == 7.5
+    assert rebuilt.gp_head.rff_scale == net.gp_head.rff_scale
+
+
 def test_feature_map_survives_the_spec():
     from src.models.registry import build_net
 

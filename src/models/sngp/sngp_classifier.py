@@ -10,13 +10,18 @@ from src.models.components.spectral_norm import apply_spectral_norm, assert_spec
 from src.models.outputs import ModelOutput
 from src.models.registry import register_net
 
-# Mean-field multiplicative factor. This is the paper's "kernel amplitude" sigma (Liu et
-# al. 2022, Table 10): the reference implementation collapses it into the single tunable
-# `gp_mean_field_factor` -- 1.0 in the ImageNet SNGP baseline, 20.0 in the CIFAR one --
-# so this default matches ImageNet (the closer setting to 224px resnets) and is meant to
-# be fit post-hoc on validation NLL, exactly as the paper recommends for sigma. pi/8 is
-# the textbook probit constant, but at realistic dataset sizes it makes the correction
-# nearly inert (~2% logit shrink); see scripts/checkpoints/calibrate_checkpoint.py.
+# Mean-field multiplicative factor: the lambda in `logits / sqrt(1 + lambda * var)` (Liu
+# et al. 2022, eq. 19), which the paper sets to pi/8. The reference implementation does
+# NOT expose the paper's kernel amplitude sigma^2 (eq. 8/10) at all; it collapses lambda
+# and sigma^2 into the single post-hoc `gp_mean_field_factor` -- 1.0 in the ImageNet SNGP
+# baseline, 20.0 in the CIFAR one -- and Table 10's "kernel amplitude" column reports that
+# collapsed value. The collapse is exact only where the ridge prior dominates the
+# precision (far from the data); in general sigma^2 in the feature map is equivalent to
+# ridge -> ridge / sigma^2 and also changes training. `kernel_amplitude` (below) is the
+# paper's sigma^2 itself. This default matches ImageNet (the closer setting to 224px
+# resnets) and is meant to be fit post-hoc on validation NLL. pi/8 is the paper's
+# constant, but with sigma^2 = 1 it makes the correction nearly inert at realistic
+# dataset sizes (~2% logit shrink); see scripts/checkpoints/calibrate_checkpoint.py.
 DEFAULT_MEAN_FIELD_FACTOR = 1.0
 PROBIT_MEAN_FIELD_FACTOR = math.pi / 8
 
@@ -119,6 +124,7 @@ class RandomFeatureGaussianProcess(nn.Module):
         random_feature_type: str = "orf",
         scale_random_features: bool = True,
         feature_map: str = "cos",
+        kernel_amplitude: float = 1.0,
         dtype: torch.dtype = torch.float32,
     ):
         super().__init__()
@@ -138,6 +144,8 @@ class RandomFeatureGaussianProcess(nn.Module):
             raise ValueError(f"feature_map='hyperbolic' needs an even rff_dim (two features per direction), got {rff_dim}")
         if ridge_penalty <= 0:
             raise ValueError(f"ridge_penalty must be > 0 (it seeds the precision matrix), got {ridge_penalty}")
+        if kernel_amplitude <= 0:
+            raise ValueError(f"kernel_amplitude must be > 0 (it is the GP prior variance sigma^2), got {kernel_amplitude}")
 
         self.in_dim = in_dim
         self.num_classes = num_classes
@@ -153,6 +161,7 @@ class RandomFeatureGaussianProcess(nn.Module):
         self.random_feature_type = random_feature_type
         self.scale_random_features = scale_random_features
         self.feature_map = feature_map
+        self.kernel_amplitude = kernel_amplitude
 
         # LayerNorm on the GP input ("similar to applying ARD", per the reference's own
         # description) -- also keeps the RFF kernel well-scaled as backbone feature
@@ -203,6 +212,13 @@ class RandomFeatureGaussianProcess(nn.Module):
             self.rff_scale = math.sqrt((2.0 if feature_map == "cos" else 1.0) / rff_dim)
         else:  # written out, not derived, so an unscaled cos head stays exactly 1.0
             self.rff_scale = 1.0 if feature_map == "cos" else math.sqrt(0.5)
+        # Kernel amplitude sigma^2 (paper eq. 8/10: phi = sqrt(2 sigma^2 / m) cos(Wx + b)), so
+        # phi.phi ~= sigma^2 k scaled and (m/2) sigma^2 k unscaled -- the unscaled base already
+        # carries an implicit m/2. It multiplies the features themselves, so it acts on the
+        # training logits and the backbone gradient as well as on the variance; it is not a
+        # post-hoc knob like `mean_field_factor`. Skipped at 1.0 so existing heads stay exact.
+        if kernel_amplitude != 1.0:
+            self.rff_scale *= math.sqrt(kernel_amplitude)
 
     # -- random feature map --------------------------------------------------
 
@@ -469,6 +485,7 @@ class SNGPClassifier(nn.Module):
         spectral_norm_bound: Optional[float] = None,
         use_spectral_norm: bool = True,
         feature_map: str = "cos",
+        kernel_amplitude: float = 1.0,
     ):
         super().__init__()
         self.num_classes = num_classes
@@ -487,6 +504,7 @@ class SNGPClassifier(nn.Module):
         self.random_feature_type = random_feature_type
         self.scale_random_features = bool(scale_random_features)
         self.feature_map = feature_map
+        self.kernel_amplitude = float(kernel_amplitude)
         self.spectral_norm_bound = None if spectral_norm_bound is None else float(spectral_norm_bound)
         self.use_spectral_norm = bool(use_spectral_norm)
 
@@ -523,6 +541,7 @@ class SNGPClassifier(nn.Module):
             random_feature_type=random_feature_type,
             scale_random_features=scale_random_features,
             feature_map=feature_map,
+            kernel_amplitude=self.kernel_amplitude,
         )
 
     def reset_precision(self) -> None:
@@ -550,6 +569,7 @@ class SNGPClassifier(nn.Module):
             "random_feature_type": self.random_feature_type,
             "scale_random_features": self.scale_random_features,
             "feature_map": self.feature_map,
+            "kernel_amplitude": self.kernel_amplitude,
             "spectral_norm_bound": self.spectral_norm_bound,
             "use_spectral_norm": self.use_spectral_norm,
         }

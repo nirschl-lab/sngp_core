@@ -600,6 +600,41 @@ class TestFeatureMap:
             torch.testing.assert_close(a, b)
 
 
+class TestKernelAmplitude:
+    """`kernel_amplitude` is the paper's sigma^2 (Liu et al. 2022 eq. 8/10), inside the
+    feature map: phi -> sqrt(sigma^2) phi, so phi.phi ~= sigma^2 * (base multiple) * k. It
+    is not the reference's `gp_mean_field_factor`, which only rescales the variance
+    post-hoc; this one also changes the training logits."""
+
+    def test_default_is_one_and_leaves_the_scale_untouched(self):
+        assert make_gp().kernel_amplitude == 1.0
+        assert make_gp(rff_dim=128).rff_scale == math.sqrt(2.0 / 128)
+        assert make_gp(scale_random_features=False).rff_scale == 1.0
+
+    @pytest.mark.parametrize("feature_map", ["cos", "positive", "hyperbolic"])
+    @pytest.mark.parametrize("scale_random_features", [True, False])
+    def test_features_scale_by_exactly_sqrt_sigma2(self, feature_map, scale_random_features):
+        kw = dict(feature_map=feature_map, scale_random_features=scale_random_features, length_scale=16.0)
+        torch.manual_seed(0)
+        base = make_gp(**kw)
+        torch.manual_seed(0)
+        amp = make_gp(kernel_amplitude=7.5, **kw)
+        x = torch.randn(4, 64)
+        torch.testing.assert_close(amp._features(x), base._features(x) * math.sqrt(7.5))
+
+    def test_kernel_gets_the_amplitude(self):
+        """Unscaled cos at x = y: phi.phi ~= sigma^2 * m/2."""
+        torch.manual_seed(0)
+        gp = make_gp(in_dim=16, rff_dim=2048, normalize_input=False, scale_random_features=False, kernel_amplitude=7.5)
+        phi = gp._features(torch.zeros(1, 16))
+        assert (phi @ phi.T).item() == pytest.approx(7.5 * 2048 / 2, rel=0.05)
+
+    @pytest.mark.parametrize("value", [0.0, -1.0])
+    def test_rejects_non_positive(self, value):
+        with pytest.raises(ValueError, match="kernel_amplitude must be > 0"):
+            make_gp(kernel_amplitude=value)
+
+
 class TestScaleRandomFeatures:
     """`scale_random_features` controls the `sqrt(2/rff_dim)` factor on phi.
 
