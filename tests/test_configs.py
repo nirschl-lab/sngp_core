@@ -257,6 +257,7 @@ class TestExperimentProtocolConsistency:
             "sngp_cifar100",
             "sngp_specreg_cifar100",
             "sngp_specreg_cifar100_literal",
+            "sngp_specreg_cifar100_rf",
         ],
     }
     _ALL_EXPERIMENTS = sorted(e for group in _EXPERIMENTS_BY_DATASET.values() for e in group)
@@ -283,9 +284,9 @@ class TestExperimentProtocolConsistency:
     # a 50-epoch burn-in (the paper's recipe), so patience-based stopping is disabled. See
     # configs/experiment/sngp_specreg_acevedo.yaml for the reasoning behind each choice.
     #
-    # The four *_cifar100* experiments reproduce the SNGP CIFAR benchmark, whose recipe
+    # The *_cifar100* experiments reproduce the SNGP CIFAR benchmark, whose recipe
     # trains a fixed 250-epoch budget and reports on plain validation loss with no
-    # calibration-aware selection. All four share the rule, so the SNGP-vs-spectral-reg
+    # calibration-aware selection. All of them share the rule, so the SNGP-vs-spectral-reg
     # comparison does not turn on it. See docs/models/CIFAR100_BENCHMARK.md.
     _SELECTION_OVERRIDES = {
         "sngp_specreg_acevedo": {"monitor": "val/nll", "early_stopping": None},
@@ -293,14 +294,17 @@ class TestExperimentProtocolConsistency:
         "sngp_cifar100": {"monitor": "val/loss", "early_stopping": None},
         "sngp_specreg_cifar100": {"monitor": "val/loss", "early_stopping": None},
         "sngp_specreg_cifar100_literal": {"monitor": "val/loss", "early_stopping": None},
+        "sngp_specreg_cifar100_rf": {"monitor": "val/loss", "early_stopping": None},
     }
 
     # sngp_specreg_* experiments normally must have weight_decay == 0, so the spectral
     # penalty is the only weight regularizer. `sngp_specreg_cifar100` is the deliberate
     # exception: it is a controlled comparison against `sngp_cifar100`, so it holds
     # everything but the regularizer fixed -- including that arm's weight decay. (Its
-    # companion, sngp_specreg_cifar100_literal, keeps 0 and is not exempt.)
-    _SPECREG_WD_EXEMPT = frozenset({"sngp_specreg_cifar100"})
+    # companion, sngp_specreg_cifar100_literal, keeps 0 and is not exempt. The rf_e2e_l2
+    # study, sngp_specreg_cifar100_rf, changes only the GP head of the matched arm, so it
+    # inherits the exemption.)
+    _SPECREG_WD_EXEMPT = frozenset({"sngp_specreg_cifar100", "sngp_specreg_cifar100_rf"})
 
     # The Liu et al. (2022) Table 9 constants, as pinned in configs/model/sngp_classifier.yaml.
     #
@@ -326,6 +330,7 @@ class TestExperimentProtocolConsistency:
         "random_feature_type",
         "scale_random_features",
         "feature_map",
+        "kernel_amplitude",
         "n_power_iterations_sn",
     )
 

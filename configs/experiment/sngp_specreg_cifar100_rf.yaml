@@ -1,0 +1,120 @@
+# @package _global_
+
+# to execute this experiment run:
+# python train.py experiment=sngp_specreg_cifar100_rf
+#
+# End-to-end random-feature study on CIFAR-100 / WideResNet-28-10 (study `rf_e2e_l2`,
+# launched by scripts/tmux/cifar100_rf_e2e.sh over feature_map x random_feature_type).
+# It follows up the frozen-backbone head swap (docs/results/CIFAR100_RF_HEAD_SWAP_RESULTS.md),
+# which made no end-to-end claim.
+#
+# Identical to sngp_specreg_cifar100.yaml (backbone, SGD recipe, 250 epochs, weight decay,
+# spectral penalty, selection rule) EXCEPT the GP head, which takes the SNGP paper's own
+# reading (Liu et al. 2022, JMLR) instead of the reference implementation's:
+#   * length_scale 2.0 -- Table 9's value, not the reference's 20 (= 1/stddev 0.05);
+#   * kernel_amplitude 7.5 -- Table 10's CIFAR-100 sigma^2, applied where eq. 10 puts it:
+#     inside the feature map, phi -> sqrt(sigma^2) phi, so it acts on training too. It
+#     multiplies the unscaled base (phi.phi ~= (m/2) k), kept for the SGD gradient reason
+#     in sngp_cifar100.yaml;
+#   * mean_field_factor pi/8 -- eq. 19's lambda. The reference instead folds sigma^2 into
+#     `gp_mean_field_factor` = 7.5, so pinning both at 7.5 would double-count.
+# Numbers are therefore NOT directly comparable with the 7.5-pinned arms at the pinned
+# factor; compare at last.ckpt after a mean-field sweep.
+#
+# Risk: at l = 2 the GP input sits at rho = ||x|| / l ~ 5.8 on a trained SpecReg backbone
+# (||x|| ~ 11.6), past where positive / hyperbolic features degrade (rho ~ 2). The
+# launcher's --smoke mode exists to check that every arm trains before the full budget.
+#
+# Protocol deviations are the parent's, mirrored in tests/test_configs.py
+# (_SELECTION_OVERRIDES, _SPECREG_WD_EXEMPT).
+
+defaults:
+  - override /data: cifar100
+  - override /model: sngp_specreg_classifier
+  - override /callbacks: default
+  - override /trainer: default
+
+name: "cifar100_sngp_specreg_rf_wrn28x10"
+WANDB_PROJECT: ${oc.env:PROJECT_NAME}
+tags: ["sngp_specreg", "sngp", "rep-spectral", "rf_e2e_l2", "cifar100", "wide_resnet28_10", "benchmark", "training"]
+
+seed: 12345
+
+num_classes: 100
+
+trainer:
+  min_epochs: 250
+  max_epochs: 250
+  accelerator: "gpu"
+
+model:
+  optimizer:
+    _target_: torch.optim.SGD
+    _partial_: true
+    lr: 0.04
+    momentum: 0.9
+    nesterov: true
+    weight_decay: 6e-4   # matched to sngp_specreg_cifar100.yaml
+  net:
+    arch: wide_resnet28_10
+    num_classes: ${num_classes}
+    pretrained: false
+    # use_spectral_norm / spectral_norm_bound come from the model config (false / null).
+    # GP head: the paper's reading (see header); ridge / input norm / scaling as the parent.
+    length_scale: 2.0
+    kernel_amplitude: 7.5
+    mean_field_factor: 0.39269908 # pi/8
+    scale_random_features: false
+    ridge_penalty: 1.0
+    normalize_input: false
+    # The study grid; the launcher overrides both per arm.
+    feature_map: cos
+    random_feature_type: orf
+  # Regularized from epoch 1 -- spectral normalization is active from step 0 in the SNGP
+  # arm, so anything longer would compare a regularized model against an unregularized
+  # one for most of training. (1 rather than 0 because the checkpoint gate below ranks
+  # epochs >= start_epoch, and the guard requires 0 < burn-in < max_epochs.)
+  spec_reg_burnin_epochs: 1
+  # The rep-spectral paper's gamma, kept after the 20-epoch pilot confirmed it is active
+  # on this backbone rather than assumed to transfer from its ResNet18/CIFAR-10 setting.
+  # Pilot at 20 epochs, gamma 0.01 vs 0.0025: sum(sigma^2) 227 vs 314, sigma_max 4.06 vs
+  # 4.88 -- so 0.01 measurably constrains the spectrum -- while CE (1.250 vs 1.238) and
+  # train accuracy (0.634 vs 0.632) are unchanged. A lower gamma buys nothing here.
+  spec_reg_coef: 0.01
+  spec_reg_every_n_steps: 24
+  spec_reg_conv_mode: operator
+  spec_reg_n_power_iterations: 1
+  compile: false
+  scheduler:
+    _target_: src.models.components.schedulers.warmup_piecewise_lr
+    _partial_: true
+    decay_epochs: [60, 120, 160]
+    reference_epochs: 200
+    gamma: 0.2
+    warmup_epochs: 1
+    warmup_start_factor: 0.1
+  num_classes: ${num_classes}
+
+data:
+  datamodule:
+    batch_size: 128
+
+logger:
+  wandb:
+    project: "${WANDB_PROJECT}"
+    tags: "${tags_with:${tags},${data.datamodule.institution}}"
+    group: "CIFAR100"
+    name: ${name}
+    log_model: True
+  aim:
+    experiment: ""
+
+callbacks:
+  model_checkpoint:
+    _target_: src.callbacks.model_checkpoint_from_epoch.ModelCheckpointFromEpoch
+    monitor: "val/loss"
+    mode: "min"
+    start_epoch: ${model.spec_reg_burnin_epochs}
+  early_stopping: null
+  test_artifacts:
+    hist_bins: 10
