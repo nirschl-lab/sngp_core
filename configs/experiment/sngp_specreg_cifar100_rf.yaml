@@ -3,8 +3,9 @@
 # to execute this experiment run:
 # python train.py experiment=sngp_specreg_cifar100_rf
 #
-# End-to-end random-feature study on CIFAR-100 / WideResNet-28-10 (study `rf_e2e_l2`,
-# launched by scripts/tmux/cifar100_rf_e2e.sh over feature_map x random_feature_type).
+# End-to-end random-feature study on CIFAR-100 / WideResNet-28-10 (study `rf_e2e`, launched
+# by scripts/tmux/cifar100_rf_e2e.sh). Only the cos arms (x {orf, simrf}) run on this head:
+# positive / hyperbolic sit at chance at l = 2 and run on the l = 20 recipe head instead.
 # It follows up the frozen-backbone head swap (docs/results/CIFAR100_RF_HEAD_SWAP_RESULTS.md),
 # which made no end-to-end claim.
 #
@@ -39,7 +40,7 @@ defaults:
 
 name: "cifar100_sngp_specreg_rf_wrn28x10"
 WANDB_PROJECT: ${oc.env:PROJECT_NAME}
-tags: ["sngp_specreg", "sngp", "rep-spectral", "rf_e2e_l2", "cifar100", "wide_resnet28_10", "benchmark", "training"]
+tags: ["sngp_specreg", "sngp", "rep-spectral", "rf_e2e", "cifar100", "wide_resnet28_10", "benchmark", "training"]
 
 seed: 12345
 
