@@ -13,9 +13,12 @@
 # reading (Liu et al. 2022, JMLR) instead of the reference implementation's:
 #   * length_scale 2.0 -- Table 9's value, not the reference's 20 (= 1/stddev 0.05);
 #   * kernel_amplitude 7.5 -- Table 10's CIFAR-100 sigma^2, applied where eq. 10 puts it:
-#     inside the feature map, phi -> sqrt(sigma^2) phi, so it acts on training too. It
-#     multiplies the unscaled base (phi.phi ~= (m/2) k), kept for the SGD gradient reason
-#     in sngp_cifar100.yaml;
+#     inside the feature map, phi = sqrt(2 sigma^2 / m) cos(Wx + b), so it acts on training
+#     too. That is the SCALED base (scale_random_features true, phi.phi ~= sigma^2 k), unlike
+#     the parent's unscaled one. The unscaled base was tried first and collapsed: there
+#     sqrt(7.5) multiplies an already-unit scale, so logits and the backbone gradient grow
+#     ~2.7x under SGD (3-epoch smoke, cos/l=20: val/acc 0.227 at sigma^2 = 1 vs 0.073 at 7.5);
+#   * ridge_penalty 1.0 -- eq. 13's identity prior, which is the paper's on the scaled base;
 #   * mean_field_factor pi/8 -- eq. 19's lambda. The reference instead folds sigma^2 into
 #     `gp_mean_field_factor` = 7.5, so pinning both at 7.5 would double-count.
 # Numbers are therefore NOT directly comparable with the 7.5-pinned arms at the pinned
@@ -60,11 +63,11 @@ model:
     num_classes: ${num_classes}
     pretrained: false
     # use_spectral_norm / spectral_norm_bound come from the model config (false / null).
-    # GP head: the paper's reading (see header); ridge / input norm / scaling as the parent.
+    # GP head: the paper's reading (see header); no input norm, as the parent.
     length_scale: 2.0
     kernel_amplitude: 7.5
     mean_field_factor: 0.39269908 # pi/8
-    scale_random_features: false
+    scale_random_features: true
     ridge_penalty: 1.0
     normalize_input: false
     # The study grid; the launcher overrides both per arm.
