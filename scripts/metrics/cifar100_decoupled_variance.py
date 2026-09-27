@@ -16,7 +16,10 @@ Per SpecReg (matched) backbone seed, from the head-swap feature cache
     from one augmented train pass (`train_view0`, what the final training epoch accumulates);
   * variance-only OOD score: AUROC and FPR@95%TPR vs CIFAR-10 and SVHN;
   * combined: the original head's raw logits with the NEW variance in the mean-field
-    correction, lambda* fitted on val NLL, reported on test (NLL, smECE, MSP / DS AUROC).
+    correction, lambda* fitted on val NLL, reported on test (NLL, smECE, MSP / DS AUROC);
+  * rank average: the original head's MSP uncertainty (1 - MSP at its own lambda*) and the new
+    variance, ranked over the pooled ID + OOD set and averaged -- parameter-free, so nothing is
+    tuned on OOD data -- to test whether the variance adds to MSP rather than only rivals it.
 One `original` row per seed scores the trained head with its own variance -- the gate: it
 must reproduce the head-swap page's original-head numbers (lambda* ~35.3, var SVHN ~0.41).
 
@@ -31,11 +34,13 @@ import time
 from pathlib import Path
 from typing import Dict, List, Tuple
 
+import numpy as np
 import pandas as pd
 import rootutils
 import torch
 import torch.nn.functional as F
 from loguru import logger
+from scipy.stats import rankdata
 
 ROOT = rootutils.setup_root(__file__, indicator=".project-root", pythonpath=True, dotenv=True)
 sys.path.insert(0, str(Path(__file__).parent))
@@ -56,8 +61,8 @@ from src.metrics.smooth_ece import smECE_fast_compat  # noqa: E402
 from src.metrics.uncertainty import dempster_shafer  # noqa: E402
 from src.models.sngp.sngp_classifier import RandomFeatureGaussianProcess  # noqa: E402
 
-LENGTH_SCALES = (1.0, 2.0, 5.0, 10.0, 20.0)
-RFF_DIMS = (1024, 4096)
+LENGTH_SCALES = (1.0, 1.5, 2.0, 3.0, 4.0, 5.0, 10.0, 20.0)
+RFF_DIMS = (1024, 4096, 16384)
 
 
 def _variance_head(length_scale: float, rff_dim: int, seed: int, device: str) -> RandomFeatureGaussianProcess:
@@ -66,6 +71,21 @@ def _variance_head(length_scale: float, rff_dim: int, seed: int, device: str) ->
         in_dim=640, num_classes=100, rff_dim=rff_dim, length_scale=length_scale, ridge_penalty=1.0,
         normalize_input=False, scale_random_features=False, cov_momentum=-1.0, random_feature_type="orf",
     ).to(device)
+
+
+@torch.no_grad()
+def _invert_precision_fp64(head: RandomFeatureGaussianProcess) -> None:
+    """Posterior covariance via a float64 Cholesky, cached on the head.
+
+    At large rff_dim and large l the precision's top eigenvalues reach ~1e8 against the unit
+    ridge, so the head's own float32 Cholesky fails and it falls back to a float64 `pinv` --
+    an SVD that takes many minutes at rff_dim 16384. The precision is positive definite
+    (ridge > 0), so a float64 Cholesky gives the same inverse in seconds.
+    """
+    eye = torch.eye(head.rff_dim, dtype=torch.float64, device=head.precision_accum.device)
+    precision = head.ridge * eye + head.precision_accum.double()
+    head.covariance.copy_(torch.cholesky_inverse(torch.linalg.cholesky(precision)).to(head.covariance.dtype))
+    head._cov_stale.fill_(False)
 
 
 def _score(
@@ -98,6 +118,23 @@ def _score(
     return row
 
 
+def _msp_uncertainty(raw: Dict[str, torch.Tensor], var: Dict[str, torch.Tensor], lam: float) -> Dict[str, np.ndarray]:
+    """1 - MSP of the mean-field predictive, per split. Higher = more OOD."""
+    return {n: 1.0 - mean_field_scale(raw[n], var[n].unsqueeze(1), lam).softmax(1).max(1).values.numpy() for n in raw}
+
+
+def _rank_average(msp_u: Dict[str, np.ndarray], var: Dict[str, torch.Tensor]) -> dict:
+    row = {}
+    for ood in OOD_SETS:
+        n_id = len(msp_u["test"])
+        a = rankdata(np.concatenate([msp_u["test"], msp_u[ood]]))
+        b = rankdata(np.concatenate([var["test"].numpy(), var[ood].numpy()]))
+        comb = (a + b) / 2
+        row[f"auroc_rank_{ood}"] = AUROC(comb[:n_id], comb[n_id:], score_is_uncertainty=True)
+        row[f"fpr95_rank_{ood}"] = fpr_at_95_tpr(-comb[:n_id], -comb[n_id:])
+    return row
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--cache-dir", default=str(default_cache_dir()))
@@ -122,27 +159,34 @@ def main() -> None:
         raw, own_var = {}, {}
         for name, (h, _) in data.items():
             raw[name], own_var[name], _ = _raw_and_var(original, h)
-        rows.append(dict(seed=seed, variance="original", length_scale=20.0, rff_dim=1024, **_score(raw, own_var, y_val, y_test)))
+        orig_row = _score(raw, own_var, y_val, y_test)
+        msp_u = _msp_uncertainty(raw, own_var, orig_row["lam"])
+        for ood in OOD_SETS:
+            orig_row[f"fpr95_msp_{ood}"] = fpr_at_95_tpr(-msp_u["test"], -msp_u[ood])
+        rows.append(dict(seed=seed, variance="original", length_scale=20.0, rff_dim=1024, **orig_row))
         logger.info(f"seed {seed} original: lam {rows[-1]['lam']:.3g} nll {rows[-1]['nll']:.4f} var SVHN {rows[-1]['auroc_var_svhn']:.4f}  (median ||x|| {rho:.2f})")
 
         for m in args.rff_dims:
             for l in args.length_scales:
                 head = _variance_head(l, m, seed, device)
                 _finalize_precision(head, h_train)
+                _invert_precision_fp64(head)
                 var = {name: _raw_and_var(head, h)[1] for name, (h, _) in data.items()}
-                row = dict(seed=seed, variance="decoupled", length_scale=l, rff_dim=m, **_score(raw, var, y_val, y_test))
+                row = dict(seed=seed, variance="decoupled", length_scale=l, rff_dim=m, **_score(raw, var, y_val, y_test), **_rank_average(msp_u, var))
                 rows.append(row)
                 logger.info(
                     f"seed {seed} m={m:5d} l={l:4g} (rho {rho / l:5.2f}): var C10 {row['auroc_var_cifar10']:.4f} "
                     f"SVHN {row['auroc_var_svhn']:.4f} | lam {row['lam']:.3g} nll {row['nll']:.4f} smece {row['smece']:.4f} "
-                    f"MSP SVHN {row['auroc_msp_svhn']:.4f} DS SVHN {row['auroc_ds_svhn']:.4f} ({time.time() - t0:.0f}s)"
+                    f"MSP SVHN {row['auroc_msp_svhn']:.4f} DS SVHN {row['auroc_ds_svhn']:.4f} | rank SVHN {row['auroc_rank_svhn']:.4f} ({time.time() - t0:.0f}s)"
                 )
 
     df = pd.DataFrame(rows)
     args.csv.parent.mkdir(parents=True, exist_ok=True)
     df.to_csv(args.csv, index=False)
-    metrics = ["auroc_var_cifar10", "auroc_var_svhn", "fpr95_var_svhn", "lam", "acc", "nll", "smece",
-               "auroc_msp_cifar10", "auroc_msp_svhn", "auroc_ds_svhn"]
+    metrics = ["auroc_var_cifar10", "auroc_var_svhn", "fpr95_var_cifar10", "fpr95_var_svhn",
+               "auroc_rank_cifar10", "auroc_rank_svhn", "fpr95_rank_cifar10", "fpr95_rank_svhn",
+               "fpr95_msp_cifar10", "fpr95_msp_svhn", "lam", "acc", "nll", "smece",
+               "auroc_msp_cifar10", "auroc_msp_svhn", "auroc_ds_cifar10", "auroc_ds_svhn"]
     summary = df.groupby(["variance", "rff_dim", "length_scale"])[metrics].agg(["mean", "std"])
     summary.columns = [f"{a}_{b}" for a, b in summary.columns]
     summary.reset_index().to_csv(args.csv.with_name(args.csv.stem.replace("_per_seed", "") + "_summary.csv"), index=False)

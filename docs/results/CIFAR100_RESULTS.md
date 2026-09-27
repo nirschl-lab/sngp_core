@@ -15,6 +15,7 @@ Acevedo pilot ([ACEVEDO_SPECREG_RESULTS.md](ACEVEDO_SPECREG_RESULTS.md)).
 | Inference dirs, reproduce commands | [../MASTER_INFER_RESULTS_PATH.md](../MASTER_INFER_RESULTS_PATH.md) |
 | Random-feature head swap (positive / hyperbolic × ORF / SimRF, SpecReg backbones) | [CIFAR100_RF_HEAD_SWAP_RESULTS.md](CIFAR100_RF_HEAD_SWAP_RESULTS.md) |
 | Random-feature heads trained end-to-end (`rf_e2e`, one seed) | [CIFAR100_RF_E2E_RESULTS.md](CIFAR100_RF_E2E_RESULTS.md) |
+| GP variance at a decoupled length scale (post hoc, frozen SpecReg backbones) | [CIFAR100_DECOUPLED_VARIANCE_RESULTS.md](CIFAR100_DECOUPLED_VARIANCE_RESULTS.md) |
 
 ## Read this first
 

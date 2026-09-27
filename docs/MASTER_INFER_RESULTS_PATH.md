@@ -592,3 +592,23 @@ uv run python src/visualization/cifar100_rf_e2e.py
 Gate: at each run's trained λ, the offline softmax reproduces the written `class_probs`
 (max |Δ| ≤ 1e-6). The control's λ = 7.5 row reproduces the committed mean-field sweep row
 exactly (NLL 0.77705).
+
+### Decoupled GP variance (2026-09-27)
+
+Logits from the trained ℓ = 20 SpecReg head, with the variance from a second random-feature map
+fit post hoc at ℓ ∈ {1 … 20} × rff_dim ∈ {1024, 4096, 16384}, 3 seeds. Results:
+[results/CIFAR100_DECOUPLED_VARIANCE_RESULTS.md](results/CIFAR100_DECOUPLED_VARIANCE_RESULTS.md).
+There are no `infer/` directories: everything is scored from the head-swap feature cache
+(`feature_cache/cifar100_rf_head_swap/seed{12345,1,2}/`, section "Random-feature head swap").
+
+Reproduce (one GPU, ~5 min):
+```bash
+uv run python scripts/metrics/cifar100_decoupled_variance.py \
+    --csv figures/cifar100_decoupled_variance/cifar100_decoupled_variance_per_seed.csv
+# -> figures/cifar100_decoupled_variance/cifar100_decoupled_variance_{per_seed,summary}.csv
+uv run python src/visualization/cifar100_decoupled_variance.py
+# -> figures/cifar100_decoupled_variance/cifar100_decoupled_variance.{png,pdf}
+```
+
+Gate: the `original` rows reproduce the head-swap page's original head (λ* 35.31, NLL 0.7472,
+variance AUROC on SVHN 0.410).
