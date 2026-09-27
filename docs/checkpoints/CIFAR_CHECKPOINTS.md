@@ -92,6 +92,24 @@ Shares the directory above; **its checkpoint is the `-v1` one** (`spec_reg_burni
 /data1/maheswararao/experiments/uncertainty-aware-ml/train/sngp_specreg_classifier_cifar100/runs/2026-09-20_18-06-59/checkpoints/best-v1.ckpt
 ```
 
+## rf_e2e — SpecReg per random-feature head, seed 12345 (2026-09-26)
+
+`scripts/tmux/cifar100_rf_e2e.sh`. `l2paper_*` = `sngp_specreg_cifar100_rf` (ℓ 2, σ² 7.5,
+λ π/8); `l20recipe_*` = `sngp_specreg_cifar100` + `feature_map` / `random_feature_type`
+overrides. Compare at `last.ckpt` (epoch 249). `best.ckpt` epochs: l2paper cos orf/simrf
+240 / 220, l20recipe positive 75 / 76, hyperbolic 76 / 75. Results:
+[../results/CIFAR100_RF_E2E_RESULTS.md](../results/CIFAR100_RF_E2E_RESULTS.md).
+
+```bash
+/data1/maheswararao/experiments/uncertainty-aware-ml/train/rf_e2e/2026-09-26_16-55-28/l2paper_cos_orf/checkpoints/last.ckpt
+/data1/maheswararao/experiments/uncertainty-aware-ml/train/rf_e2e/2026-09-26_16-55-28/l2paper_cos_simrf/checkpoints/last.ckpt
+/data1/maheswararao/experiments/uncertainty-aware-ml/train/rf_e2e/2026-09-26_16-55-28/l20recipe_positive_orf/checkpoints/last.ckpt
+/data1/maheswararao/experiments/uncertainty-aware-ml/train/rf_e2e/2026-09-26_16-55-28/l20recipe_positive_simrf/checkpoints/last.ckpt
+/data1/maheswararao/experiments/uncertainty-aware-ml/train/rf_e2e/2026-09-26_16-55-28/l20recipe_hyperbolic_orf/checkpoints/last.ckpt
+/data1/maheswararao/experiments/uncertainty-aware-ml/train/rf_e2e/2026-09-26_16-55-28/l20recipe_hyperbolic_simrf/checkpoints/last.ckpt
+# best.ckpt alongside each
+```
+
 Verify any entry before use:
 
 ```bash

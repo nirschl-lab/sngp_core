@@ -565,3 +565,30 @@ Gate: the `original_head` rows must reproduce the SpecReg arm's validation-fitte
 its NLL (0.7472 +/- 0.0100). `extract` must log no "No ... augmentations provided" warning: without
 the `cifar32` preset the datamodule silently falls back to ImageNet normalization and an
 unaugmented train split.
+
+### rf_e2e: random-feature heads trained end-to-end (2026-09-27)
+
+SpecReg, seed 12345, `last.ckpt`. Six runs of `scripts/tmux/cifar100_rf_e2e.sh` (training), plus the
+existing ℓ20 cos/orf control `cifar100last_specreg__*`. Results:
+[results/CIFAR100_RF_E2E_RESULTS.md](results/CIFAR100_RF_E2E_RESULTS.md).
+
+```bash
+# <label> in l2paper_cos_{orf,simrf}, l20recipe_{positive,hyperbolic}_{orf,simrf}; <ds> in cifar100, cifar10, svhn
+/data1/maheswararao/experiments/uncertainty-aware-ml/infer/rf_e2e_2026-09-26_16-55-28_<label>__<ds>/
+# validation lambda fits (calibrate_checkpoint.py --dry-run logs), incl. lambda_control_specreg_s12345.log
+/data1/maheswararao/experiments/uncertainty-aware-ml/tmux_logs/rf_e2e_infer_2026-09-26_16-55-28/lambda_<label>.log
+```
+
+Reproduce (inference + val λ fits on 4 GPUs, ~10 min; report and figure on CPU):
+```bash
+scripts/tmux/cifar100_rf_e2e_infer.sh 2026-09-26_16-55-28
+uv run python scripts/metrics/cifar100_rf_e2e_report.py --tag rf_e2e_2026-09-26_16-55-28 \
+    --lambda-logs $EXPERIMENTS_HOME/$PROJECT_NAME/tmux_logs/rf_e2e_infer_2026-09-26_16-55-28 \
+    --csv figures/cifar100_rf_e2e/cifar100_rf_e2e.csv
+uv run python src/visualization/cifar100_rf_e2e.py
+# -> figures/cifar100_rf_e2e/cifar100_rf_e2e.{csv,png,pdf}
+```
+
+Gate: at each run's trained λ, the offline softmax reproduces the written `class_probs`
+(max |Δ| ≤ 1e-6). The control's λ = 7.5 row reproduces the committed mean-field sweep row
+exactly (NLL 0.77705).
