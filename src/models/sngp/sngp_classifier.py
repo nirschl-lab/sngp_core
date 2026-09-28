@@ -13,12 +13,15 @@ from src.models.registry import register_net
 # Mean-field multiplicative factor: the lambda in `logits / sqrt(1 + lambda * var)` (Liu
 # et al. 2022, eq. 19), which the paper sets to pi/8. The reference implementation does
 # NOT expose the paper's kernel amplitude sigma^2 (eq. 8/10) at all; it collapses lambda
-# and sigma^2 into the single post-hoc `gp_mean_field_factor` -- 1.0 in the ImageNet SNGP
-# baseline, 20.0 in the CIFAR one -- and Table 10's "kernel amplitude" column reports that
-# collapsed value. The collapse is exact only where the ridge prior dominates the
-# precision (far from the data); in general sigma^2 in the feature map is equivalent to
-# ridge -> ridge / sigma^2 and also changes training. `kernel_amplitude` (below) is the
-# paper's sigma^2 itself. This default matches ImageNet (the closer setting to 224px
+# and sigma^2 into the single post-hoc `gp_mean_field_factor` -- 1.0 for ImageNet, 20.0 for
+# CIFAR-10, 7.5 for CIFAR-100 -- and Table 10's "kernel amplitude" column reports that
+# collapsed value, swept on validation NLL after training (appendix C.1). Only the product
+# lambda * sigma^2 is identifiable at inference, so it is ONE post-hoc knob: this one. The
+# project protocol keeps sigma^2 = 1 in the features and fits only this factor.
+# `kernel_amplitude` (below) puts sigma^2 inside the feature map, where eq. 10 writes it and
+# where it also changes training. That is not equivalent to this factor: it matches it only
+# where the ridge prior dominates the precision (far from the data), and in general it acts
+# like ridge -> ridge / sigma^2. This default matches ImageNet (the closer setting to 224px
 # resnets) and is meant to be fit post-hoc on validation NLL. pi/8 is the paper's
 # constant, but with sigma^2 = 1 it makes the correction nearly inert at realistic
 # dataset sizes (~2% logit shrink); see scripts/checkpoints/calibrate_checkpoint.py.
@@ -216,7 +219,9 @@ class RandomFeatureGaussianProcess(nn.Module):
         # phi.phi ~= sigma^2 k scaled and (m/2) sigma^2 k unscaled -- the unscaled base already
         # carries an implicit m/2. It multiplies the features themselves, so it acts on the
         # training logits and the backbone gradient as well as on the variance; it is not a
-        # post-hoc knob like `mean_field_factor`. Skipped at 1.0 so existing heads stay exact.
+        # post-hoc knob like `mean_field_factor`. Off-protocol: keep it at 1.0, and do not feed
+        # it Table 10's values, which are post-hoc factors. Skipped at 1.0 so existing heads
+        # stay exact.
         if kernel_amplitude != 1.0:
             self.rff_scale *= math.sqrt(kernel_amplitude)
 

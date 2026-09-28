@@ -67,8 +67,10 @@ net:
   feature_map: cos
   # Kernel amplitude sigma^2 in the feature map itself (paper eq. 8/10): phi is multiplied
   # by sqrt(sigma^2), so it changes training, unlike mean_field_factor. 1.0 = what every
-  # existing checkpoint was trained with. Off-protocol; when set, pair it with the paper's
-  # mean_field_factor = pi/8 rather than Table 10's collapsed value, or it double-counts.
+  # existing checkpoint was trained with, and the protocol value: the paper tuned its
+  # "kernel amplitude" post hoc (Table 10 = the reference's gp_mean_field_factor), and that
+  # role belongs to mean_field_factor alone. Off-protocol, and Table 10's values are not
+  # sigma^2 values for this knob.
   kernel_amplitude: 1.0
   n_power_iterations_sn: 1
 

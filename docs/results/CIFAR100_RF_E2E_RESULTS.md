@@ -7,7 +7,7 @@ End-to-end follow-up to the frozen-backbone
 |---|---|
 | Runs | SpecReg (matched), seed 12345, 250 epochs, `last.ckpt` (epoch 249), [../checkpoints/CIFAR_CHECKPOINTS.md](../checkpoints/CIFAR_CHECKPOINTS.md) |
 | ℓ20 recipe head | `sngp_specreg_cifar100`: ℓ = 20, unscaled features, σ² = 1; {positive, hyperbolic} × {orf, simrf} |
-| ℓ2 paper head | `sngp_specreg_cifar100_rf`: ℓ = 2, σ² = 7.5 in the feature map (Liu et al. eq. 10), scaled base; cos × {orf, simrf} |
+| ℓ2 head (off-protocol) | `sngp_specreg_cifar100_rf`: ℓ = 2, σ² = 7.5 in the feature map, scaled base, λ = π/8; cos × {orf, simrf}. Run label `l2paper`, but it is not the paper's head (see below) |
 | Control | ℓ20 cos/orf, the existing SpecReg seed-12345 run |
 | λ | mean-field factor fitted on **val** per run, every number on **test**; OOD vs CIFAR-10 (10,000) and SVHN (26,032) |
 | Data, commands | [../MASTER_INFER_RESULTS_PATH.md](../MASTER_INFER_RESULTS_PATH.md), section "rf_e2e" |
@@ -17,6 +17,11 @@ End-to-end follow-up to the frozen-backbone
 - The ℓ2 rows change ℓ, σ², the feature scaling and λ together, so they are a head comparison,
   not a feature-map one. Positive and hyperbolic features did not train at ℓ = 2 (chance
   accuracy in a 3-epoch smoke).
+- **The ℓ2 head is not the SNGP paper's.** The paper's Table 10 "kernel amplitude" (7.5 for
+  CIFAR-100) was swept on validation NLL after training (Liu et al. appendix C.1). It is the
+  reference's post-hoc `gp_mean_field_factor`, so the paper never trained with σ² = 7.5 in the
+  features. Table 9's ℓ = 2.0 is √2 in this code, and the paper's CIFAR runs used ℓ = 20. The
+  project protocol keeps σ² = 1 and fits only λ post hoc, so this head is off-protocol.
 
 ## Results, λ\* fitted on val
 
@@ -31,7 +36,7 @@ End-to-end follow-up to the frozen-backbone
 | cos / simrf | ℓ2 | 0.8096 | 0.8046 | 0.0327 | 0 | 0.7867 | 0.7370 | 0.7552 | 0.7504 |
 
 - **ℓ20 positive/hyperbolic vs control:** lower accuracy, worse NLL, and no consistent OOD gain.
-- **ℓ2 paper head:** higher accuracy, and the GP variance becomes an SVHN detector (0.80 vs
+- **ℓ2 head:** higher accuracy, and the GP variance becomes an SVHN detector (0.80 vs
   0.46). NLL and near-OOD are worse. λ\* = 0: validation prefers no mean-field correction.
 - **orf vs simrf:** gaps of up to 0.08 on SVHN change sign between heads, which is consistent
   with single-seed noise.

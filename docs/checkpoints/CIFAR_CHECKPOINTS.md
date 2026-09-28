@@ -95,7 +95,7 @@ Shares the directory above; **its checkpoint is the `-v1` one** (`spec_reg_burni
 ## rf_e2e — SpecReg per random-feature head, seed 12345 (2026-09-26)
 
 `scripts/tmux/cifar100_rf_e2e.sh`. `l2paper_*` = `sngp_specreg_cifar100_rf` (ℓ 2, σ² 7.5,
-λ π/8); `l20recipe_*` = `sngp_specreg_cifar100` + `feature_map` / `random_feature_type`
+λ π/8; an off-protocol head despite the label, see its config header); `l20recipe_*` = `sngp_specreg_cifar100` + `feature_map` / `random_feature_type`
 overrides. Compare at `last.ckpt` (epoch 249). `best.ckpt` epochs: l2paper cos orf/simrf
 240 / 220, l20recipe positive 75 / 76, hyperbolic 76 / 75. Results:
 [../results/CIFAR100_RF_E2E_RESULTS.md](../results/CIFAR100_RF_E2E_RESULTS.md).

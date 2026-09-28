@@ -146,8 +146,10 @@ each covered by a test in `tests/models/sngp/`:
    implementation never exposes sigma^2 and reports Table 10's "kernel amplitude" (20 for
    CIFAR-10, 7.5 for CIFAR-100, 1.0 for ImageNet) as its single tunable
    `gp_mean_field_factor`; the paper's own recommendation is to estimate sigma on held-out
-   data by minimizing the log score. The paper's literal sigma^2 -- inside the feature map,
-   acting on training too -- is the separate, off-protocol `kernel_amplitude` knob. `pi/8` is the textbook probit value but is nearly inert at realistic dataset
+   data by minimizing the log score. Only the product lambda * sigma^2 is identifiable, so
+   this is SNGP's one post-hoc knob. `kernel_amplitude` puts sigma^2 inside the feature map,
+   where eq. 10 writes it and where it acts on training too. It is off-protocol and stays
+   at 1.0, and Table 10's values are not sigma^2 values for it. `pi/8` is the textbook probit value but is nearly inert at realistic dataset
    sizes. It is therefore fit post-hoc, on validation NLL, by
    `scripts/checkpoints/calibrate_checkpoint.py`, which writes the fitted value into a
    sibling checkpoint's `net_spec` -- inference-only, so no retraining, and it cannot move

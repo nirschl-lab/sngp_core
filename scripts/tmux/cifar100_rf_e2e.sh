@@ -2,8 +2,10 @@
 # Study `rf_e2e`: CIFAR-100 / WRN-28-10 spectral-regularization arm trained END-TO-END with
 # different random-feature maps, following up the frozen-backbone head swap in
 # docs/results/CIFAR100_RF_HEAD_SWAP_RESULTS.md. Two GP heads:
-#   l2paper   -- configs/experiment/sngp_specreg_cifar100_rf.yaml, the SNGP paper's head
-#                (l = 2, sigma^2 = 7.5 on the scaled base, lambda = pi/8); cos x {orf, simrf}.
+#   l2paper   -- configs/experiment/sngp_specreg_cifar100_rf.yaml, a literal reading of the
+#                paper's equations (l = 2, sigma^2 = 7.5 on the scaled base, lambda = pi/8);
+#                cos x {orf, simrf}. Off-protocol, and not the paper's head: its 7.5 is a
+#                post-hoc value (see the config header). The label is kept for the run dirs.
 #   l20recipe -- configs/experiment/sngp_specreg_cifar100.yaml, the reference CIFAR head
 #                (l = 20, unscaled, sigma^2 = 1, lambda = 7.5); {positive, hyperbolic} x {orf, simrf}.
 # Positive / hyperbolic are only run at l = 20: at l = 2 they sit at chance in a 3-epoch smoke

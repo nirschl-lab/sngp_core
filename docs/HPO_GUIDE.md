@@ -20,7 +20,7 @@ accuracy, or macro-F1 (it divides every logit of an example by one positive scal
 | Family | Knob | Applied as | Origin |
 |---|---|---|---|
 | Baseline, Deep Ensemble | `temperature` | `logits / T` | temperature scaling (Guo et al. 2017) |
-| SNGP | `mean_field_factor` | `raw_logits / sqrt(1 + factor * variance)` | the paper's mean-field lambda (eq. 19) collapsed with its kernel amplitude sigma^2, as the reference's `gp_mean_field_factor` does (the literal sigma^2 is the separate `kernel_amplitude` knob), and the paper estimates it on held-out data by minimizing the log score |
+| SNGP | `mean_field_factor` | `raw_logits / sqrt(1 + factor * variance)` | the paper's mean-field lambda (eq. 19) collapsed with its kernel amplitude sigma^2, as the reference's `gp_mean_field_factor` does; only the product is identifiable, so this is the family's one post-hoc knob, and the paper estimates it on held-out data by minimizing the log score. σ² inside the feature map (`kernel_amplitude`) stays 1.0 |
 
 Why the *calibrated* NLL rather than the raw one: it is the quantity a post-hoc-calibrated
 final model actually reports, and raw NLL rises with late-training overconfidence in a
@@ -147,9 +147,13 @@ positive random features, not the cos features SNGP uses, so treat it as an expe
 `feature_map` (`cos` | `positive` | `hyperbolic`) is the matching off-protocol knob for the
 feature map itself; the positive maps need `||x|| / length_scale <~ 1`, so they only make
 sense with the CIFAR-100 head recipe, not with LayerNorm + `length_scale = sqrt(2)`.
-`kernel_amplitude` (default `1.0`) is the paper's literal sigma^2 (eq. 8/10): it multiplies
-the features by `sqrt(sigma^2)`, so unlike `mean_field_factor` it changes training. Pair it
-with the paper's `mean_field_factor = pi/8`; setting both to Table 10's value double-counts.
+`kernel_amplitude` (default `1.0`) puts sigma^2 where eq. 8/10 writes it: it multiplies
+the features by `sqrt(sigma^2)`, so unlike `mean_field_factor` it changes training. The
+protocol keeps it at `1.0`. The paper tuned its kernel amplitude post hoc on validation NLL
+(appendix C.1), and Table 10's values are the reference's `gp_mean_field_factor`, a role this
+project gives to `mean_field_factor` alone. So Table 10's numbers are not sigma^2 values for
+this knob. The one run that set it (`sngp_specreg_cifar100_rf`, σ² = 7.5) is an off-protocol
+experiment.
 
 `SNGPClassifier`'s constructor defaults equal these (so `deep_ensemble_sngp_*` members,
 built from the spec, get them too), except `spectral_norm_bound`, whose ctor default stays
