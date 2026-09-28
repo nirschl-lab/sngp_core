@@ -36,6 +36,9 @@ Usage:
 
     # 1. cache features (GPU, ~minutes per seed)
     uv run python scripts/metrics/cifar100_rf_head_swap.py extract
+    # ... or cache another arm's backbones into their own cache dir
+    uv run python scripts/metrics/cifar100_rf_head_swap.py extract --cache-dir <dir> \\
+        --ckpts 12345=<last.ckpt> 1=<last.ckpt> 2=<last.ckpt>
     # 2. retrain heads and score them (GPU)
     uv run python scripts/metrics/cifar100_rf_head_swap.py sweep \\
         --csv figures/cifar100_rf_head_swap/cifar100_rf_head_swap_per_seed.csv
@@ -119,15 +122,28 @@ def _features(net, loader, device: str) -> Tuple[torch.Tensor, torch.Tensor]:
     return torch.cat(feats), torch.cat(labels)
 
 
+def _parse_ckpts(items: List[str]) -> Dict[int, str]:
+    """`seed=path` pairs -> {seed: path}, for caching backbones other than `SPECREG_CKPTS`."""
+    out: Dict[int, str] = {}
+    for item in items:
+        seed, sep, path = item.partition("=")
+        if not sep or not Path(path).is_file():
+            raise SystemExit(f"--ckpts expects seed=<existing checkpoint>, got {item!r}")
+        out[int(seed)] = path
+    return out
+
+
 def extract(args) -> None:
     device = "cuda"
     cache = Path(args.cache_dir)
+    ckpts = _parse_ckpts(args.ckpts) if args.ckpts else SPECREG_CKPTS
+    seeds = list(ckpts) if args.ckpts else args.seeds
     train_dm, test_dm = _datamodule("cifar100", "fit"), _datamodule("cifar100", "test")
     ood_dms = {ds: _datamodule(ds, "test") for ds in OOD_SETS}
-    for seed in args.seeds:
+    for seed in seeds:
         out = cache / f"seed{seed}"
         out.mkdir(parents=True, exist_ok=True)
-        net = load_net(SPECREG_CKPTS[seed], device=device).eval()
+        net = load_net(ckpts[seed], device=device).eval()
         l = net.length_scale
         splits: Dict[str, Tuple[torch.Tensor, torch.Tensor]] = {}
         for k in range(args.train_views):
@@ -335,6 +351,10 @@ def main() -> None:
         p.add_argument("--cache-dir", default=str(default_cache_dir()))
         p.add_argument("--seeds", type=int, nargs="+", default=list(SPECREG_CKPTS))
         p.add_argument("--train-views", type=int, default=4, help="augmented views of the train set to cache / cycle")
+    sub.choices["extract"].add_argument(
+        "--ckpts", nargs="+", default=None,
+        help="seed=path pairs to cache instead of SPECREG_CKPTS (use a separate --cache-dir); overrides --seeds",
+    )
     sp = sub.choices["sweep"]
     sp.add_argument("--csv", default=str(ROOT / "figures" / "cifar100_rf_head_swap" / "cifar100_rf_head_swap_per_seed.csv"))
     sp.add_argument("--feature-maps", nargs="+", default=list(FEATURE_MAPS))
