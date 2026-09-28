@@ -612,3 +612,23 @@ uv run python src/visualization/cifar100_decoupled_variance.py
 
 Gate: the `original` rows reproduce the head-swap page's original head (λ* 35.31, NLL 0.7472,
 variance AUROC on SVHN 0.410).
+
+### Length-scale evidence (2026-09-27)
+
+Type-II GP evidence over ℓ on the frozen SpecReg backbones (computed on branch `sngp-learnable-length-scale`, code now on `sngp-spectral-reg`),
+same feature map and seeds as the decoupled-variance study, joined to its variance AUROC.
+Results: [results/CIFAR100_LENGTH_SCALE_EVIDENCE_RESULTS.md](results/CIFAR100_LENGTH_SCALE_EVIDENCE_RESULTS.md).
+No `infer/` directories: scored from the head-swap feature cache.
+
+Reproduce (one GPU; ~2 min for 1024/4096, ~20 min for 16384):
+```bash
+uv run python scripts/metrics/cifar100_length_scale_evidence.py \
+    --csv figures/cifar100_length_scale_evidence/cifar100_length_scale_evidence_per_seed.csv
+uv run python scripts/metrics/cifar100_length_scale_evidence.py --rff-dims 16384 --length-scales 2 3 4 5 7 10 \
+    --csv figures/cifar100_length_scale_evidence/cifar100_length_scale_evidence_16384_per_seed.csv
+# -> figures/cifar100_length_scale_evidence/*_{per_seed,summary}.csv
+uv run python src/visualization/cifar100_length_scale_evidence.py
+# -> figures/cifar100_length_scale_evidence/cifar100_length_scale_evidence.{png,pdf}
+```
+
+Gate: the joined AUROC reproduces the decoupled page (rff_dim 1024, ℓ = 3: SVHN 0.717).
