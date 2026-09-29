@@ -149,6 +149,33 @@ test accuracy and second-worst on the selection metric `val/nll_cal_best` (0.088
 hyperparameters jointly, so this is not on its own grounds to re-pin — settling it needs
 multiple seeds per bound.
 
+### Selecting `c` on validation (n = 1,709)
+
+Same 8 `best.ckpt`s, run on the Acevedo val split. `c*` is the bounded run with the
+lowest val NLL (the protocol's selection metric). `None` is a reference line, not a candidate.
+
+![Val NLL, accuracy, F1, precision and recall vs. spectral norm bound, c* marked](../../figures/spectral_norm_bound_ablation/acevedo_val_metrics_vs_spectral_norm_bound.png)
+
+*Acevedo val metrics vs. `c`, laid out as in the test figure above. The star marks
+`c* = 6.0`. Error bars are ±1 SEM on NLL and accuracy only.*
+
+| `spectral_norm_bound` | val NLL (×10⁻²) ↓ | val Accuracy ↑ | val F1 ↑ | val Precision ↑ | val Recall ↑ |
+|---|---:|---:|---:|---:|---:|
+| 0.9 | 7.70 ± 0.95 | 0.9748 ± 0.0038 | 0.9730 | 0.9716 | 0.9749 |
+| 0.95 | 9.65 ± 1.16 | 0.9690 ± 0.0042 | 0.9661 | 0.9676 | 0.9659 |
+| 1.0 | 5.82 ± 1.07 | 0.9813 ± 0.0033 | 0.9809 | 0.9818 | 0.9804 |
+| 2.0 | 5.41 ± 1.04 | 0.9830 ± 0.0031 | 0.9827 | 0.9832 | 0.9824 |
+| 4.0 (pinned) | 8.92 ± 1.29 | 0.9760 ± 0.0037 | 0.9719 | 0.9749 | 0.9710 |
+| **6.0** (`c*`) | **5.37 ± 0.97** | 0.9824 ± 0.0032 | 0.9827 | 0.9824 | 0.9832 |
+| 8.0 | 5.78 ± 1.00 | 0.9813 ± 0.0033 | 0.9826 | 0.9840 | 0.9814 |
+| None (unbounded, σ ≡ 1) | 6.74 ± 1.01 | 0.9789 ± 0.0035 | 0.9766 | 0.9760 | 0.9776 |
+
+**`c*` = 6.0 on test:** NLL 4.54 ± 0.61 (×10⁻²), accuracy 0.9874 ± 0.0019, F1 0.9860,
+precision 0.9861, recall 0.9862.
+
+`c = 6.0` and `c = 2.0` differ by 0.0004 val NLL, against an SEM of about 0.010, so `c*`
+is a near tie among {1, 2, 6, 8}. The single-seed caveat above still applies.
+
 ---
 
 ## Notes

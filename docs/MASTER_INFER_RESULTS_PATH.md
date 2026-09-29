@@ -317,6 +317,39 @@ single key gives a one-panel figure named after it rather than `metrics`. Only
 
 ---
 
+**Acevedo SNGP spectral-norm-bound ablation, val split (2026-09-29).** The same 8
+checkpoints run on `fold=val` (n = 1,709), used to select `c*` by min val NLL. Figure and
+table are in [results/ACEVEDO_RESULTS.md](results/ACEVEDO_RESULTS.md) under "Selecting `c`
+on validation". These outputs need the val-augmentation fix in `src/inference/infer.py`
+(commit `498b65a`). Earlier `fold=val` runs fell back to bare ToTensor + Normalize and are
+invalid.
+
+sngp_acevedo_snb_ablation_val:
+```bash
+/data1/maheswararao/experiments/uncertainty-aware-ml/infer/sngp_classifier_acevedo_snb_ablation_val/2026-09-17_15-06-32
+```
+
+Reproduce:
+```bash
+SWEEP=/data1/maheswararao/experiments/uncertainty-aware-ml/train/sngp_classifier_acevedo/multiruns/2026-09-17_15-06-32_spectral_norm_bound_ablation
+for CKPT_DIR in "${SWEEP}"/spectral_norm_bound_*; do
+    uv run src/inference/infer.py \
+        ckpt_path="${CKPT_DIR}/checkpoints/best.ckpt" \
+        data=acevedo fold=val \
+        infer.save.run_name="sngp_classifier_acevedo_snb_ablation_val/2026-09-17_15-06-32/$(basename "${CKPT_DIR}")"
+done
+```
+
+Figure, tidy CSV and `c*`'s test metrics (`..._selected.csv`):
+```bash
+uv run src/visualization/spectral_norm_bound_curve.py \
+    --run-dir /data1/maheswararao/experiments/uncertainty-aware-ml/infer/sngp_classifier_acevedo_snb_ablation_val/2026-09-17_15-06-32 \
+    --dataset acevedo --fold val --metrics nll acc f1 precision recall --select-by nll \
+    --test-run-dir /data1/maheswararao/experiments/uncertainty-aware-ml/infer/sngp_classifier_acevedo_snb_ablation/2026-09-17_15-06-32
+```
+
+---
+
 **Acevedo SNGP + spectral regularization pilot (2026-09-18), uncalibrated.** The three
 settings for one checkpoint -- `sngp_specreg_acevedo_v1` in
 [MASTER_CHECKPONT_PATHS.md](MASTER_CHECKPONT_PATHS.md), `best.ckpt` as saved, no post-hoc

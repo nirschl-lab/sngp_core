@@ -27,10 +27,22 @@ have no per-sample decomposition, and deliberately get none -- they are drawn as
 lines rather than given a resampled stand-in. A sweep at one seed also carries no
 run-to-run spread, so even where bars exist they are within-checkpoint only.
 
+`--select-by <metric>` picks `c*`, the arg-best bound on that metric (`--select-mode`
+`min` by default, i.e. NLL-style), among the **bounded** runs only -- `None` is a
+different regime (above), not a candidate on the `c` grid. `c*` is marked in every panel.
+Point `--run-dir` at a validation sweep so the choice is not made on test, and pass the
+matching test sweep as `--test-run-dir` to report `c*`'s held-out numbers in a
+`<stem>_selected.csv`.
+
 Usage:
     uv run src/visualization/spectral_norm_bound_curve.py \\
         --run-dir /data1/.../infer/sngp_classifier_acevedo_snb_ablation/2026-09-17_15-06-32 \\
         --dataset acevedo --fold test
+
+    uv run src/visualization/spectral_norm_bound_curve.py \\
+        --run-dir /data1/.../infer/sngp_classifier_acevedo_snb_ablation_val/2026-09-17_15-06-32 \\
+        --dataset acevedo --fold val --metrics nll acc f1 precision recall --select-by nll \\
+        --test-run-dir /data1/.../infer/sngp_classifier_acevedo_snb_ablation/2026-09-17_15-06-32
 """
 
 from __future__ import annotations
@@ -56,6 +68,7 @@ _BOUND_DIR_PATTERN = re.compile(r"^spectral_norm_bound_(None|[0-9.]+)$")
 
 BOUNDED_COLOR = "#0173B2"
 UNBOUNDED_COLOR = "#D55E00"
+SELECTED_COLOR = "#029E73"
 
 DEFAULT_METRICS = ["acc", "f1", "precision", "recall"]
 METRIC_LABELS = {
@@ -114,9 +127,24 @@ def load_sweep_metrics(
     return pd.DataFrame(rows).sort_values("bound", na_position="last").reset_index(drop=True)
 
 
-def _draw_panel(ax, df: pd.DataFrame, metric: str) -> None:
+def select_best_bound(df: pd.DataFrame, metric: str, mode: str = "min") -> float:
+    """`c*`: the bounded run that is best on `metric` (`mode` `min` or `max`). The
+    unbounded (`bound=None`) run is excluded -- it is not a point on the `c` grid."""
+    if mode not in ("min", "max"):
+        raise ValueError(f"mode must be 'min' or 'max', got {mode!r}")
+    bounded = df[df["bound"].notna()]
+    if bounded.empty:
+        raise ValueError("No bounded runs to select from")
+    idx = bounded[metric].idxmin() if mode == "min" else bounded[metric].idxmax()
+    return float(bounded.loc[idx, "bound"])
+
+
+def _draw_panel(
+    ax, df: pd.DataFrame, metric: str, best_bound: Optional[float] = None, best_label: str = ""
+) -> None:
     """One metric's curve: the bounded runs over evenly-spaced grid positions, plus the
-    unbounded (`sigma == 1`) run as a horizontal reference band."""
+    unbounded (`sigma == 1`) run as a horizontal reference band. `best_bound`, when
+    given, is marked with a vertical guide and a highlighted point."""
     sem_col = f"{metric}_sem"
     bounded = df[df["bound"].notna()].sort_values("bound")
     unbounded = df[df["bound"].isna()]
@@ -132,6 +160,23 @@ def _draw_panel(ax, df: pd.DataFrame, metric: str) -> None:
         color=BOUNDED_COLOR,
         label="Bounded spectral norm ($\\sigma \\leq c$)",
     )
+
+    if best_bound is not None:
+        best_pos = list(bounded["bound"]).index(best_bound)
+        best_value = float(bounded[metric].iloc[best_pos])
+        ax.axvline(best_pos, color=SELECTED_COLOR, linestyle=":", linewidth=1.2, zorder=0)
+        ax.plot(
+            best_pos,
+            best_value,
+            marker="*",
+            markersize=16,
+            color=SELECTED_COLOR,
+            markeredgecolor="black",
+            markeredgewidth=0.6,
+            linestyle="none",
+            zorder=5,
+            label=best_label,
+        )
 
     if not unbounded.empty:
         value = float(unbounded[metric].iloc[0])
@@ -155,6 +200,8 @@ def plot_bound_curves(
     df: pd.DataFrame,
     metrics: Sequence[str] = tuple(DEFAULT_METRICS),
     suptitle: Optional[str] = None,
+    best_bound: Optional[float] = None,
+    best_label: str = "",
 ) -> Figure:
     """A row of metric-vs-`c` panels, one per metric, in the order given.
 
@@ -167,13 +214,15 @@ def plot_bound_curves(
 
     Each panel keeps its own y scale: the metrics share a range here but need not, and a
     shared axis would flatten whichever one varies least.
+
+    `best_bound` (see `select_best_bound`) is marked in every panel under `best_label`.
     """
     set_default_style()
     fig, axes = plt.subplots(1, len(metrics), figsize=(4.6 * len(metrics), 5.0), squeeze=False)
     axes = axes[0]
 
     for ax, metric in zip(axes, metrics):
-        _draw_panel(ax, df, metric)
+        _draw_panel(ax, df, metric, best_bound=best_bound, best_label=best_label)
 
     if suptitle:
         fig.suptitle(suptitle)
@@ -191,7 +240,7 @@ def plot_bound_curves(
         [labels[i] for i in order],
         frameon=False,
         loc="lower center",
-        ncol=2,
+        ncol=len(labels),
         bbox_to_anchor=(0.5, 0.0),
     )
     return fig
@@ -219,22 +268,66 @@ def main() -> None:
     parser.add_argument(
         "--figures-dir", default=str(ROOT / "figures" / "spectral_norm_bound_ablation")
     )
+    parser.add_argument(
+        "--select-by",
+        default=None,
+        help="metrics.json key to pick c* on (bounded runs only), marked in every panel.",
+    )
+    parser.add_argument(
+        "--select-mode",
+        choices=["min", "max"],
+        default="min",
+        help="Whether --select-by is lower-is-better (min, e.g. nll) or higher (max, e.g. acc).",
+    )
+    parser.add_argument(
+        "--test-run-dir",
+        default=None,
+        help="Held-out sweep root with the same layout; c*'s metrics from it go to "
+        "<stem>_selected.csv. Requires --select-by.",
+    )
     args = parser.parse_args()
+    if args.test_run_dir and not args.select_by:
+        parser.error("--test-run-dir requires --select-by")
 
-    df = load_sweep_metrics(Path(args.run_dir), metrics=args.metrics)
+    load_metrics = list(args.metrics)
+    if args.select_by and args.select_by not in load_metrics:
+        load_metrics.append(args.select_by)
+    df = load_sweep_metrics(Path(args.run_dir), metrics=load_metrics)
     figures_dir = Path(args.figures_dir)
     figures_dir.mkdir(parents=True, exist_ok=True)
 
     metric_stem = args.metrics[0] if len(args.metrics) == 1 else "metrics"
     stem = f"{args.dataset}_{args.fold}_{metric_stem}_vs_spectral_norm_bound"
+
+    best_bound, best_label, title_note = None, "", ""
+    if args.select_by:
+        best_bound = select_best_bound(df, args.select_by, args.select_mode)
+        select_label = METRIC_LABELS.get(args.select_by, args.select_by)
+        criterion = f"{args.select_mode} {args.fold} {select_label}"
+        best_label = f"$c^* = {best_bound:g}$ ({criterion})"
+        title_note = f", $c^* = {best_bound:g}$"
+        df["is_selected"] = df["bound"] == best_bound
     df.to_csv(figures_dir / f"{stem}.csv", index=False)
+
+    if args.test_run_dir:
+        test_df = load_sweep_metrics(Path(args.test_run_dir), metrics=load_metrics)
+        selected = test_df[test_df["bound"] == best_bound].copy()
+        if selected.empty:
+            raise FileNotFoundError(
+                f"No run with spectral_norm_bound={best_bound:g} under {args.test_run_dir}"
+            )
+        selected.insert(0, "selected_by", f"{args.select_mode} {args.fold} {args.select_by}")
+        selected.to_csv(figures_dir / f"{stem}_selected.csv", index=False)
+        print(f"c* = {best_bound:g}; held-out metrics:\n{selected.to_string(index=False)}")
 
     n_samples = df["n_samples"].dropna()
     n_note = f" (n = {int(n_samples.iloc[0]):,})" if not n_samples.empty else ""
     fig = plot_bound_curves(
         df,
         metrics=args.metrics,
-        suptitle=f"SNGP on {args.dataset.capitalize()} {args.fold}{n_note}",
+        suptitle=f"SNGP on {args.dataset.capitalize()} {args.fold}{n_note}{title_note}",
+        best_bound=best_bound,
+        best_label=best_label,
     )
     fig.savefig(figures_dir / f"{stem}.png", dpi=300, bbox_inches="tight")
     fig.savefig(figures_dir / f"{stem}.pdf", bbox_inches="tight")
