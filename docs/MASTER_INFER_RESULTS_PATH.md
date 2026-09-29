@@ -421,6 +421,49 @@ uv run src/visualization/spectral_reg_training_curves.py \
 
 ---
 
+**Acevedo calibrated comparison, SNGP `c* = 6.0` vs SNGP + Spectral Reg (2026-09-29).**
+Both models get `mean_field_factor` fit on val NLL, then the 7-dataset suite runs with no
+artifact arms. The same suite also runs on `c* = 6.0`'s uncalibrated `best.ckpt`, since
+before this only its `fold=test` run existed. Tables are in
+[results/ACEVEDO_SPECREG_RESULTS.md](results/ACEVEDO_SPECREG_RESULTS.md), under "Calibrated
+comparison".
+
+sngp_acevedo_snb_c6_calibrated / sngp_specreg_acevedo_v1_calibrated / sngp_acevedo_snb_c6 (uncalibrated):
+```bash
+/data1/maheswararao/experiments/uncertainty-aware-ml/infer/sngp_classifier_acevedo_snb_ablation_calibrated/2026-09-17_15-06-32/spectral_norm_bound_6.0/{acevedo,jung,kather2016,kather2018,nirschl2018,tang,wong}
+/data1/maheswararao/experiments/uncertainty-aware-ml/infer/sngp_specreg_classifier_acevedo_calibrated/2026-09-18_14-11-49/{acevedo,jung,kather2016,kather2018,nirschl2018,tang,wong}
+/data1/maheswararao/experiments/uncertainty-aware-ml/infer/sngp_classifier_acevedo_snb_ablation_ood/2026-09-17_15-06-32/spectral_norm_bound_6.0/{acevedo,jung,kather2016,kather2018,nirschl2018,tang,wong}
+```
+The uncalibrated SpecReg rows reuse `sngp_specreg_acevedo_v1` above. Its OOD CSV
+re-computes byte-identically.
+
+Reproduce. The `c* = 6.0` prefixes are explicit because a `multiruns/` ckpt path has no
+derivable `<model>_<dataset>` run name:
+```bash
+C6=/data1/maheswararao/experiments/uncertainty-aware-ml/train/sngp_classifier_acevedo/multiruns/2026-09-17_15-06-32_spectral_norm_bound_ablation/spectral_norm_bound_6.0/checkpoints
+SR=/data1/maheswararao/experiments/uncertainty-aware-ml/train/sngp_specreg_classifier_acevedo/runs/2026-09-18_14-11-49/checkpoints
+uv run scripts/checkpoints/calibrate_checkpoint.py --ckpt $C6/best.ckpt --experiment sngp_acevedo --split val
+uv run scripts/checkpoints/calibrate_checkpoint.py --ckpt $SR/best.ckpt --experiment sngp_specreg_acevedo --split val
+export LEVELS=""   # datasets only, no artifact arms
+scripts/inference/run_eval_suite_parallel.sh $C6/best.calibrated.ckpt \
+    sngp_classifier_acevedo_snb_ablation_calibrated/2026-09-17_15-06-32/spectral_norm_bound_6.0 0 1 2 3 -- data.datamodule.num_workers=8
+scripts/inference/run_eval_suite_parallel.sh $SR/best.calibrated.ckpt \
+    sngp_specreg_classifier_acevedo_calibrated/2026-09-18_14-11-49 0 1 2 3 -- data.datamodule.num_workers=8
+scripts/inference/run_eval_suite_parallel.sh $C6/best.ckpt \
+    sngp_classifier_acevedo_snb_ablation_ood/2026-09-17_15-06-32/spectral_norm_bound_6.0 0 1 2 3 -- data.datamodule.num_workers=8
+```
+
+OOD AUROC (`csv/` is gitignored):
+```bash
+I=/data1/maheswararao/experiments/uncertainty-aware-ml/infer
+OOD="--indist acevedo --outdist jung kather2016 kather2018 nirschl2018 tang wong --out-dir csv/ood_metrics"
+uv run src/metrics/calculate_ood_metrics.py --run-dir $I/sngp_classifier_acevedo_snb_ablation_calibrated/2026-09-17_15-06-32/spectral_norm_bound_6.0 $OOD --name sngp_c6_acevedo_calibrated
+uv run src/metrics/calculate_ood_metrics.py --run-dir $I/sngp_specreg_classifier_acevedo_calibrated/2026-09-18_14-11-49 $OOD --name sngp_specreg_acevedo_v1_calibrated
+uv run src/metrics/calculate_ood_metrics.py --run-dir $I/sngp_classifier_acevedo_snb_ablation_ood/2026-09-17_15-06-32/spectral_norm_bound_6.0 $OOD --name sngp_c6_acevedo
+```
+
+---
+
 ## CIFAR-100 / WideResNet-28-10 benchmark (2026-09-20)
 
 Four arms x {`best.ckpt`, `last.ckpt`} x {CIFAR-100 ID, CIFAR-10 OOD, SVHN OOD}. Results:

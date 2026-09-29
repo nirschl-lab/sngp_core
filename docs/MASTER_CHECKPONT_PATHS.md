@@ -104,6 +104,14 @@ sngp_acevedo_snb_ablation (8 runs, one subdirectory per bound):
 /data1/maheswararao/experiments/uncertainty-aware-ml/train/sngp_classifier_acevedo/multiruns/2026-09-17_15-06-32_spectral_norm_bound_ablation/spectral_norm_bound_<c>/checkpoints/best.ckpt
 ```
 
+sngp_acevedo_snb_c6_calibrated (2026-09-29). The one exception to "uncalibrated only" is
+`c* = 6.0`, the val-selected bound, with `mean_field_factor` 0.4909 fit on val NLL. It is
+used in the calibrated comparison of
+[results/ACEVEDO_SPECREG_RESULTS.md](results/ACEVEDO_SPECREG_RESULTS.md):
+```bash
+/data1/maheswararao/experiments/uncertainty-aware-ml/train/sngp_classifier_acevedo/multiruns/2026-09-17_15-06-32_spectral_norm_bound_ablation/spectral_norm_bound_6.0/checkpoints/best.calibrated.ckpt
+```
+
 Note that `configs/experiment/sngp_acevedo.yaml` pins `spectral_norm_bound: 4.0` from the
 W&B re-sweep, but 4.0 is the *worst* bound in this grid on both Acevedo test accuracy and
 the `val/nll_cal_best` selection metric -- see the ablation section in
@@ -131,6 +139,12 @@ sngp_specreg_acevedo_v1 (epoch 88 of 0-99, val/nll 0.0732):
 sngp_specreg_acevedo_v1_last (epoch 99, the paper-style end-of-training model):
 ```bash
 /data1/maheswararao/experiments/uncertainty-aware-ml/train/sngp_specreg_classifier_acevedo/runs/2026-09-18_14-11-49/checkpoints/last.ckpt
+```
+
+sngp_specreg_acevedo_v1_calibrated (2026-09-29, `mean_field_factor` 0.2455 fit on val NLL). This
+is used only by the calibrated comparison section of the results doc:
+```bash
+/data1/maheswararao/experiments/uncertainty-aware-ml/train/sngp_specreg_classifier_acevedo/runs/2026-09-18_14-11-49/checkpoints/best.calibrated.ckpt
 ```
 
 The sibling run directories `2026-09-18_13-59-*` and `2026-09-18_14-01-*` under the same

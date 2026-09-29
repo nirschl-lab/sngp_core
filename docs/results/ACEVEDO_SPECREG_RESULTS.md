@@ -1,4 +1,4 @@
-# Acevedo — SNGP + spectral regularization pilot (uncalibrated)
+# Acevedo — SNGP + spectral regularization pilot
 
 The rep-spectral variant of SNGP (Yang, Zavatone-Veth & Pehlevan 2024,
 [arXiv 2405.17181](https://arxiv.org/abs/2405.17181)): the backbone's top singular values
@@ -18,10 +18,15 @@ W&B run `5bnnbxdb` (group `SpectralReg`).
   so the spectral penalty is the only weight regularizer;
 - `best.ckpt` = min raw `val/nll` over the regularized epochs only (epoch 88 of 0–99;
   `ModelCheckpointFromEpoch`), not `val/nll_cal`;
-- **no post-hoc calibration** — every number below is `best.ckpt` as saved
-  (`mean_field_factor 1.0`), so it is comparable only to the *pre-calibration* rows of
-  [ACEVEDO_RESULTS.md](ACEVEDO_RESULTS.md), and differences to SNGP are confounded by
-  lr / weight decay / selection metric, not attributable to the regularizer alone.
+- **no post-hoc calibration** outside the calibrated comparison section. Every other
+  number is `best.ckpt` as saved (`mean_field_factor 1.0`), so it is comparable only to
+  the *pre-calibration* rows of [ACEVEDO_RESULTS.md](ACEVEDO_RESULTS.md). Differences to
+  SNGP are confounded by lr / weight decay / selection metric, not attributable to the
+  regularizer alone.
+
+The [calibrated comparison](#calibrated-comparison--sngp-c--60-vs-sngp--spectral-reg)
+refits `mean_field_factor` on val for this model and for SNGP at its val-selected bound
+`c* = 6.0`, then compares the two on test and OOD.
 
 Reference rows in the in-distribution and OOD tables (Baseline Classifier, Monte Carlo
 Dropout, SNGP with `spectral_norm_bound 4.0` = `sngp_acevedo_v2`) are copied verbatim from
@@ -103,6 +108,60 @@ fixed seeds of `src/metrics/auc.py`, ≤ 1,000 rows per seed per side.
 
 *SNGP + Spectral Reg: kernel density of predictive entropy (nats) on the Acevedo test split
 (solid) and on each OOD test set (dashed), class-balanced 500-row samples per dataset.*
+
+---
+
+## Calibrated comparison — SNGP `c* = 6.0` vs SNGP + Spectral Reg
+
+SNGP here is the spectral-norm-bound ablation's `c = 6.0` arm, the bound selected by min
+val NLL ([ACEVEDO_RESULTS.md](ACEVEDO_RESULTS.md#selecting-c-on-validation-n--1709)). It is
+not the `c = 4.0` reference row above. Each model gets one post-hoc knob,
+`mean_field_factor`, fit by minimizing Acevedo val NLL with
+`scripts/checkpoints/calibrate_checkpoint.py` (n = 1,709). The knob cannot move the
+argmax, so accuracy, precision, recall and F1 are identical before and after.
+
+### Fitted `mean_field_factor`
+
+| Model | Before | Fitted | val NLL | val smECE |
+|---|---:|---:|---|---|
+| SNGP `c* = 6.0` | 1.0 | 0.4909 | 0.05372 → 0.05363 | 0.01854 → 0.01864 |
+| SNGP + Spectral Reg | 1.0 | 0.2455 | 0.07383 → 0.07375 | 0.02207 → 0.02696 |
+
+### In-distribution — Acevedo test split (n = 3,419)
+
+| Model | Calibration | Accuracy ↑ | Precision ↑ | Recall ↑ | F1 ↑ | AUROC ↑ | AUPRC ↑ | ECE (×10⁻²) ↓ | NLL (×10⁻²) ↓ | Brier (×10⁻²) ↓ |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| SNGP `c* = 6.0` | pre | **0.9874 ± 0.0019** | **0.9861** | **0.9862** | **0.9860** | 0.9997 | 0.9977 | 0.4497 | 4.5363 ± 0.6142 | 2.0209 ± 0.2683 |
+| SNGP `c* = 6.0` | post | **0.9874 ± 0.0019** | **0.9861** | **0.9862** | **0.9860** | **0.9997** | **0.9977** | **0.3889** | **4.5019 ± 0.6343** | **2.0091 ± 0.2710** |
+| SNGP + Spectral Reg | pre | 0.9751 ± 0.0027 | 0.9713 | 0.9680 | 0.9691 | 0.9994 | 0.9954 | 0.4555 | 6.8369 ± 0.6845 | 3.5656 ± 0.3490 |
+| SNGP + Spectral Reg | post | 0.9751 ± 0.0027 | 0.9713 | 0.9680 | 0.9691 | 0.9994 | 0.9955 | 0.6409 | 6.8081 ± 0.7030 | 3.5598 ± 0.3528 |
+
+### Entropy AUROC ↑
+
+| Model | Calibration | Jung | Kather2016 | Kather2018 | Nirschl2018 | Tang | Wong | Mean |
+|---|---|---:|---:|---:|---:|---:|---:|---:|
+| SNGP `c* = 6.0` | pre | 0.9108 ± 0.0020 | 0.8241 ± 0.0024 | **0.9824 ± 0.0022** | **0.9989 ± 0.0006** | **0.9762 ± 0.0018** | 0.9257 ± 0.0044 | 0.9364 |
+| SNGP `c* = 6.0` | post | 0.9050 ± 0.0021 | 0.8234 ± 0.0024 | 0.9805 ± 0.0023 | 0.9977 ± 0.0011 | 0.9723 ± 0.0021 | 0.9208 ± 0.0045 | 0.9333 |
+| SNGP + Spectral Reg | pre | **0.9732 ± 0.0021** | **0.9544 ± 0.0018** | 0.9792 ± 0.0016 | 0.9925 ± 0.0004 | 0.9160 ± 0.0042 | **0.9407 ± 0.0029** | **0.9593** |
+| SNGP + Spectral Reg | post | 0.9688 ± 0.0023 | 0.9488 ± 0.0019 | 0.9750 ± 0.0018 | 0.9920 ± 0.0004 | 0.9045 ± 0.0045 | 0.9348 ± 0.0031 | 0.9540 |
+
+### MSP AUROC ↑ — secondary
+
+| Model | Calibration | Jung | Kather2016 | Kather2018 | Nirschl2018 | Tang | Wong |
+|---|---|---:|---:|---:|---:|---:|---:|
+| SNGP `c* = 6.0` | pre | 0.9054 ± 0.0026 | 0.8200 ± 0.0027 | **0.9777 ± 0.0028** | 0.9897 ± 0.0026 | **0.9695 ± 0.0024** | 0.9203 ± 0.0047 |
+| SNGP `c* = 6.0` | post | 0.8999 ± 0.0027 | 0.8192 ± 0.0027 | 0.9756 ± 0.0030 | 0.9877 ± 0.0028 | 0.9658 ± 0.0027 | 0.9156 ± 0.0048 |
+| SNGP + Spectral Reg | pre | **0.9650 ± 0.0028** | **0.9487 ± 0.0020** | 0.9739 ± 0.0019 | **0.9921 ± 0.0003** | 0.9060 ± 0.0046 | **0.9324 ± 0.0034** |
+| SNGP + Spectral Reg | post | 0.9612 ± 0.0030 | 0.9429 ± 0.0022 | 0.9694 ± 0.0021 | 0.9916 ± 0.0004 | 0.8948 ± 0.0048 | 0.9268 ± 0.0037 |
+
+After calibration, neither model wins outright:
+- **In-distribution:** SNGP `c* = 6.0` is better on every metric (accuracy +0.0123, NLL −2.3 ×10⁻²).
+- **OOD:** SNGP + Spectral Reg separates better on average (mean entropy AUROC 0.954 vs 0.933). It is ahead on Jung, Kather2016 and Wong; SNGP is ahead on Kather2018, Nirschl2018 and Tang.
+- **Effect of calibration:** both fitted factors are below 1, which lowers every OOD AUROC slightly, while val NLL gains only about 0.0001.
+
+Caveats: this compares two training recipes (see the off-protocol list at the top), each
+from a single seed. `c* = 6.0` was selected on in-distribution val NLL, and its OOD
+AUROC on Jung and Kather2016 is well below the `c = 4.0` reference row.
 
 ---
 
@@ -278,9 +337,9 @@ spectral-reg model alone; the severity = 1 tables carry both models, best in bol
 
 ## Notes
 
-- **No calibration.** `best.ckpt` is used as saved. The protocol's `best.calibrated.ckpt`
-  step was skipped by decision, so nothing here should be compared to the post-calibration
-  tables of ACEVEDO_RESULTS.md.
+- **Calibration.** Outside the calibrated comparison section, `best.ckpt` is used as saved,
+  so nothing there should be compared to the post-calibration tables of ACEVEDO_RESULTS.md.
+  The calibrated comparison uses `best.calibrated.ckpt` for both models (fit 2026-09-29).
 - **Selection metric.** `best.ckpt` minimizes raw `val/nll` over epochs ≥ 50 (0.0732 at
   epoch 88); the protocol metric `val/nll_cal` was still logged (0.0738 at the same epoch).
 - **Dispersion.** ± on accuracy / NLL / Brier is the exact per-sample SEM from
