@@ -632,3 +632,39 @@ uv run python src/visualization/cifar100_length_scale_evidence.py
 ```
 
 Gate: the joined AUROC reproduces the decoupled page (rff_dim 1024, ℓ = 3: SVHN 0.717).
+
+### evidence_ls: SpecReg at the evidence-picked ℓ = 7, 4-row benchmark (2026-09-28)
+
+Baseline / SNGP / SNGP + SpecReg / SNGP + SpecReg + ℓ = 7, seeds 12345 / 1 / 2, `last.ckpt`, one
+val-fit knob per row (λ for SNGP arms, T for the baseline), metrics on test.
+Results: [results/CIFAR100_EVIDENCE_LS_RESULTS.md](results/CIFAR100_EVIDENCE_LS_RESULTS.md).
+Checkpoints: [checkpoints/CIFAR_CHECKPOINTS.md](checkpoints/CIFAR_CHECKPOINTS.md), section "evidence_ls".
+
+```bash
+# new arm's predictions (the other 9 checkpoints reuse cifar100last_<arm>__<ds> and
+# overnight_2026-09-20_21-38-42_s{1,2}_<arm>__<ds>)
+/data1/maheswararao/experiments/uncertainty-aware-ml/infer/evidence_ls_2026-09-28_16-10-10_els_specreg_s{12345,1,2}__{cifar100,cifar10,svhn}/
+# val fits for all 12 checkpoints
+/data1/maheswararao/experiments/uncertainty-aware-ml/tmux_logs/cifar100_evidence_ls_2026-09-28_16-10-10_infer/fit_<arm>_s<seed>.log
+```
+
+Reproduce:
+```bash
+scripts/tmux/cifar100_evidence_ls.sh                     # train (3 GPUs, ~2.5 h)
+scripts/tmux/cifar100_evidence_ls_infer.sh evidence_ls_2026-09-28_16-10-10   # inference + 12 val fits (~5 min)
+uv run python scripts/metrics/cifar100_evidence_ls_report.py --tag evidence_ls_2026-09-28_16-10-10 --expect-committed \
+    --fit-logs /data1/maheswararao/experiments/uncertainty-aware-ml/tmux_logs/cifar100_evidence_ls_2026-09-28_16-10-10_infer \
+    --csv figures/cifar100_evidence_ls/cifar100_evidence_ls_per_seed.csv
+uv run python src/visualization/cifar100_evidence_ls.py
+# evidence re-check on the l = 7 backbones
+B=/data1/maheswararao/experiments/uncertainty-aware-ml/overnight/evidence_ls_2026-09-28_16-10-10
+C=/data1/maheswararao/experiments/uncertainty-aware-ml/feature_cache/cifar100_evidence_ls
+uv run python scripts/metrics/cifar100_rf_head_swap.py extract --cache-dir $C --train-views 1 \
+    --ckpts 12345=$B/els_specreg_s12345/checkpoints/last.ckpt 1=$B/els_specreg_s1/checkpoints/last.ckpt 2=$B/els_specreg_s2/checkpoints/last.ckpt
+uv run python scripts/metrics/cifar100_length_scale_evidence.py --cache-dir $C --rff-dims 1024 --no-auroc-join \
+    --csv figures/cifar100_evidence_ls/cifar100_evidence_ls_recheck_per_seed.csv
+```
+
+Gate: the SNGP / SpecReg rows reproduce the val-fit table of results/CIFAR100_RESULTS.md (NLL
+0.7600 / 0.7472); every row's offline softmax at its trained knob reproduces the written
+`class_probs` (max |Δ| ≤ 4e-7).

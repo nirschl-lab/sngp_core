@@ -177,3 +177,22 @@ Two caveats specific to this arm, both from `likelihood` being an inference-only
   shrinks the precision accumulator ~50× on a converged CIFAR-100 classifier, so the
   predictive variance — and the correction — inflate by about as much. Start from
   `scripts/metrics/cifar100_mean_field_sweep.py` (free, offline).
+
+## evidence_ls — SpecReg matched at the evidence-picked ℓ = 7, three seeds (2026-09-28)
+
+`scripts/tmux/cifar100_evidence_ls.sh`: `sngp_specreg_cifar100` + `model.net.length_scale=7.0`,
+nothing else changed (σ² 1, unscaled features, ridge 1.0, `gaussian`). ℓ = 7 is the type-II
+evidence pick at rff_dim 1024
+([../results/CIFAR100_LENGTH_SCALE_EVIDENCE_RESULTS.md](../results/CIFAR100_LENGTH_SCALE_EVIDENCE_RESULTS.md)).
+W&B group `CIFAR100_evidence_ls_2026-09-28_16-10-10`, runs `ep99xl9h` / `3vul5vde` / `c7loebia`.
+Compare at `last.ckpt` (epoch 249). Results:
+[../results/CIFAR100_EVIDENCE_LS_RESULTS.md](../results/CIFAR100_EVIDENCE_LS_RESULTS.md).
+
+```bash
+B=/data1/maheswararao/experiments/uncertainty-aware-ml/overnight/evidence_ls_2026-09-28_16-10-10
+$B/els_specreg_s12345/checkpoints/{best,last}.ckpt   # seed 12345
+$B/els_specreg_s1/checkpoints/{best,last}.ckpt       # seed 1
+$B/els_specreg_s2/checkpoints/{best,last}.ckpt       # seed 2
+```
+
+Verify: `read_meta('<path>').net_spec['length_scale']` → `7.0`.

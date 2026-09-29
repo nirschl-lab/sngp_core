@@ -5,8 +5,9 @@
 # Where l = 7 comes from: docs/results/CIFAR100_LENGTH_SCALE_EVIDENCE_RESULTS.md. Type-II
 # evidence of the random-feature Bayesian linear model on the frozen SpecReg (l = 20) backbones
 # picks l = 7 at the recipe's rff_dim 1024, on all 3 seeds and on train and held-out val alike.
-# It is chosen from in-distribution data only. Post hoc, that l lifts the GP variance's SVHN
-# AUROC from 0.41 to ~0.63; this study asks what training end-to-end at it does.
+# It is chosen from in-distribution data only. Post hoc, neighbouring l lift the GP variance's
+# SVHN AUROC from 0.41 to 0.49 (l = 10) / 0.63 (l = 5); this study asks what training
+# end-to-end at l = 7 does.
 #
 # ONE knob changes against sngp_specreg_cifar100.yaml: `model.net.length_scale=7.0`. It is a
 # launcher override rather than a new experiment config so the diff stays exactly that one

@@ -17,6 +17,7 @@ Acevedo pilot ([ACEVEDO_SPECREG_RESULTS.md](ACEVEDO_SPECREG_RESULTS.md)).
 | Random-feature heads trained end-to-end (`rf_e2e`, one seed) | [CIFAR100_RF_E2E_RESULTS.md](CIFAR100_RF_E2E_RESULTS.md) |
 | GP variance at a decoupled length scale (post hoc, frozen SpecReg backbones) | [CIFAR100_DECOUPLED_VARIANCE_RESULTS.md](CIFAR100_DECOUPLED_VARIANCE_RESULTS.md) |
 | Choosing ℓ by type-II GP evidence (in-distribution only, frozen SpecReg backbones) | [CIFAR100_LENGTH_SCALE_EVIDENCE_RESULTS.md](CIFAR100_LENGTH_SCALE_EVIDENCE_RESULTS.md) |
+| SpecReg retrained at the evidence ℓ = 7; 4-row benchmark with one val-fit knob per row | [CIFAR100_EVIDENCE_LS_RESULTS.md](CIFAR100_EVIDENCE_LS_RESULTS.md) |
 
 ## Read this first
 

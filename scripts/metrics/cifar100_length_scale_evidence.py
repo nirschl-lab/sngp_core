@@ -57,6 +57,11 @@ def main() -> None:
     ap.add_argument("--length-scales", type=float, nargs="+", default=list(LENGTH_SCALES))
     ap.add_argument("--rff-dims", type=int, nargs="+", default=list(RFF_DIMS))
     ap.add_argument("--csv", required=True, type=Path)
+    ap.add_argument(
+        "--no-auroc-join", action="store_true",
+        help="skip joining the decoupled study's variance AUROC, which was measured on the l = 20 "
+             "SpecReg backbones and so does not describe any other --cache-dir",
+    )
     args = ap.parse_args()
 
     device = "cuda"
@@ -101,7 +106,7 @@ def main() -> None:
     summary = ev.groupby(["rff_dim", "length_scale"])[metrics].agg(["mean", "std"])
     summary.columns = [f"{a}_{b}" for a, b in summary.columns]
     summary = summary.reset_index()
-    if DECOUPLED_SUMMARY.exists():
+    if DECOUPLED_SUMMARY.exists() and not args.no_auroc_join:
         dec = pd.read_csv(DECOUPLED_SUMMARY)
         dec = dec[dec.variance == "decoupled"][["rff_dim", "length_scale", "auroc_var_cifar10_mean", "auroc_var_svhn_mean"]]
         summary = summary.merge(dec, on=["rff_dim", "length_scale"], how="left")
