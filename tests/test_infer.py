@@ -47,6 +47,38 @@ def test_infer_datamodule_resolves_paths_interpolations(monkeypatch):
     )
 
 
+def test_infer_datamodule_gets_val_and_test_augmentations(monkeypatch):
+    """`fold=val` reads val_dataloader(), so the val preset must reach the datamodule --
+    otherwise val falls back to bare ToTensor + Normalize and inference is off-protocol."""
+    captured = {}
+
+    def fake_instantiate(cfg, **kwargs):
+        if "_target_" in cfg and cfg["_target_"] == "fake.Aug":
+            return f"aug:{cfg['split']}"
+        captured.update(kwargs)
+        return object()
+
+    monkeypatch.setattr(infer.hydra.utils, "instantiate", fake_instantiate)
+    cfg = OmegaConf.create(
+        {
+            "data": {
+                "datamodule": {"_target_": "fake.DataModule"},
+                "img_augmentations": {
+                    split: {"_target_": "fake.Aug", "split": split}
+                    for split in ("train", "val", "test")
+                },
+            },
+            "infer": {"runtime": {"batch_size_override": None}},
+        }
+    )
+
+    infer._instantiate_datamodule(cfg)
+
+    assert captured["train_augmentations"] is None
+    assert captured["val_augmentations"] == "aug:val"
+    assert captured["test_augmentations"] == "aug:test"
+
+
 def test_extract_ckpt_run_id_finds_the_project_timestamp():
     ckpt_path = (
         "/data1/experiments/uncertaity-aware-ml/train/sngp_classifier_acevedo/"

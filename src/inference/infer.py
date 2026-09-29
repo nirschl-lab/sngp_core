@@ -357,9 +357,16 @@ class ClassificationInferenceRunner(BaseInferenceRunner):
 
 
 def _instantiate_datamodule(cfg: DictConfig):
+    # val as well as test: `fold=val` reads val_dataloader(), and without its preset the
+    # datamodule falls back to bare ToTensor + Normalize -- off-protocol inputs that
+    # silently collapse accuracy. Train stays None; there is no eval-time train transform.
+    val_augmentations = None
     test_augmentations = None
-    if cfg.data.get("img_augmentations") and cfg.data.img_augmentations.get("test"):
-        test_augmentations = hydra.utils.instantiate(cfg.data.img_augmentations.test)
+    img_augmentations = cfg.data.get("img_augmentations")
+    if img_augmentations and img_augmentations.get("val"):
+        val_augmentations = hydra.utils.instantiate(img_augmentations.val)
+    if img_augmentations and img_augmentations.get("test"):
+        test_augmentations = hydra.utils.instantiate(img_augmentations.test)
 
     dm_cfg = cfg.data.get("datamodule")
     if not isinstance(dm_cfg, DictConfig):
@@ -371,7 +378,7 @@ def _instantiate_datamodule(cfg: DictConfig):
     datamodule = hydra.utils.instantiate(
         dm_cfg,
         train_augmentations=None,
-        val_augmentations=None,
+        val_augmentations=val_augmentations,
         test_augmentations=test_augmentations,
     )
     return datamodule
