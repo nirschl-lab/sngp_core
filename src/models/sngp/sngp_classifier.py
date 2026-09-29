@@ -395,6 +395,39 @@ class RandomFeatureGaussianProcess(nn.Module):
             return torch.exp(proj - sq) * self.rff_scale
         return torch.cat([torch.exp(proj - sq), torch.exp(-proj - sq)], dim=-1) * self.rff_scale
 
+    # -- length scale in place (online evidence) --------------------------------
+
+    def _require_cos(self, what: str) -> None:
+        if self.feature_map != "cos":
+            # positive / hyperbolic also divide ||x||^2 by l^2 in `_features`, and `W`
+            # rescaling alone would not keep that term in step.
+            raise NotImplementedError(f"{what} is only wired up for feature_map='cos', got {self.feature_map!r}")
+
+    @torch.no_grad()
+    def features_at(self, x: torch.Tensor, length_scale: float) -> torch.Tensor:
+        """The cos features this head would produce at `length_scale`, on its own random
+        draw, without changing the head. `features_at(x, self.length_scale)` is `_features(x)`.
+
+        x: [B, in_dim] -> [B, rff_dim]
+        """
+        self._require_cos("features_at")
+        if self.input_norm is not None:
+            x = self.input_norm(x)
+        return torch.cos((x @ self.W) * (self.length_scale / length_scale) + self.b) * self.rff_scale
+
+    @torch.no_grad()
+    def set_length_scale(self, length_scale: float) -> None:
+        """Move the kernel to `length_scale` by rescaling `W` (which is stored pre-divided by
+        l), keeping the random draw. `W` is in the state_dict, so a saved head carries the new
+        l with no extra key. The precision accumulated so far belongs to the old kernel: call
+        this at an epoch boundary, before `reset_precision`."""
+        self._require_cos("set_length_scale")
+        if length_scale <= 0:
+            raise ValueError(f"length_scale must be > 0, got {length_scale}")
+        self.W.mul_(self.length_scale / length_scale)
+        self.length_scale = float(length_scale)
+        self._cov_stale.fill_(True)
+
     def predictive_variance(self, phi: torch.Tensor) -> torch.Tensor:
         """var(x) = phi(x)^T (ridge*I + sum_i w_i phi_i phi_i^T)^-1 phi(x). [B, 1]"""
         self._ensure_covariance()
@@ -553,6 +586,15 @@ class SNGPClassifier(nn.Module):
         """Delegate to the GP head; called from `SNGPLitModule.on_train_epoch_start`."""
         self.gp_head.reset_precision()
 
+    def set_length_scale(self, length_scale: float) -> None:
+        """Move the GP head to `length_scale` in place (`OnlineLengthScaleEvidence` drives this).
+
+        `spec` reports the current l, so a checkpoint records the final l, and rebuild-from-spec
+        + `load_state_dict` is exact because the saved `W` already carries it. The Hydra
+        `hyper_parameters` keep the initial l."""
+        self.gp_head.set_length_scale(length_scale)
+        self.length_scale = self.gp_head.length_scale
+
     @property
     def spec(self) -> dict:
         """Plain-data description of this net, sufficient to rebuild it via `build_net`."""
@@ -580,6 +622,12 @@ class SNGPClassifier(nn.Module):
         }
 
     def forward(self, x: torch.Tensor, update_precision: bool = True) -> ModelOutput:
+        feats = self.pooled_features(x)
+        mean_field_logits, raw_logits, pred_var = self.gp_head(feats, update_precision=update_precision)
+        return ModelOutput(logits=mean_field_logits, raw_logits=raw_logits, variance=pred_var)
+
+    def pooled_features(self, x: torch.Tensor) -> torch.Tensor:
+        """The backbone's flat [B, feat_dim] output -- the GP head's input."""
         feats = self.backbone(x)
 
         # Some backbones may return tuples (e.g., aux outputs). Keep the main tensor.
@@ -591,6 +639,4 @@ class SNGPClassifier(nn.Module):
             feats = feats.flatten(1)
         elif feats.dim() == 3:
             feats = feats[:, 0]
-
-        mean_field_logits, raw_logits, pred_var = self.gp_head(feats, update_precision=update_precision)
-        return ModelOutput(logits=mean_field_logits, raw_logits=raw_logits, variance=pred_var)
+        return feats

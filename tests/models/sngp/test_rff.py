@@ -685,3 +685,43 @@ class TestScaleRandomFeatures:
             grads.append(x.grad.norm().item())
 
         assert grads[1] == pytest.approx(grads[0] / math.sqrt(2.0 / 128), rel=1e-4)
+
+
+class TestLengthScaleInPlace:
+    """`features_at` / `set_length_scale`, which `OnlineLengthScaleEvidence` drives."""
+
+    def test_features_at_current_length_scale_is_features(self):
+        gp = make_gp(length_scale=3.0, normalize_input=False)
+        x = torch.randn(16, 64)
+        torch.testing.assert_close(gp.features_at(x, 3.0), gp._features(x))
+
+    def test_set_length_scale_matches_features_at(self):
+        gp = make_gp(length_scale=3.0, normalize_input=False)
+        x = torch.randn(16, 64)
+        expected = gp.features_at(x, 7.5)
+        W_before = gp.W.clone()
+        gp.set_length_scale(7.5)
+        assert gp.length_scale == 7.5
+        torch.testing.assert_close(gp._features(x), expected)
+        # Same random draw: W is only rescaled.
+        torch.testing.assert_close(gp.W, W_before * (3.0 / 7.5))
+
+    def test_set_length_scale_marks_covariance_stale(self):
+        gp = train_steps(make_gp(), 2)
+        gp.eval()
+        gp(torch.randn(4, 64))
+        assert not bool(gp._cov_stale)
+        gp.set_length_scale(2.0)
+        assert bool(gp._cov_stale)
+
+    @pytest.mark.parametrize("feature_map", ["positive", "hyperbolic"])
+    def test_non_cos_maps_refused(self, feature_map):
+        gp = make_gp(feature_map=feature_map)
+        with pytest.raises(NotImplementedError):
+            gp.set_length_scale(2.0)
+        with pytest.raises(NotImplementedError):
+            gp.features_at(torch.randn(2, 64), 2.0)
+
+    def test_rejects_nonpositive(self):
+        with pytest.raises(ValueError):
+            make_gp().set_length_scale(0.0)

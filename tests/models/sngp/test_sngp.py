@@ -276,3 +276,31 @@ def test_feature_map_survives_the_spec():
     rebuilt = build_net(net.spec)
     assert rebuilt.gp_head.feature_map == "hyperbolic"
     assert rebuilt.gp_head.W.shape == net.gp_head.W.shape == (512, 32)
+
+
+class TestSetLengthScale:
+    def test_spec_reports_moved_length_scale_and_rebuild_is_exact(self):
+        from src.models.registry import build_net
+
+        model = SNGPClassifier(num_classes=5, arch="resnet18", rff_dim=64, normalize_input=False, length_scale=20.0)
+        model.train()
+        model(torch.randn(4, 3, 64, 64))
+        model.set_length_scale(7.0)
+        assert model.spec["length_scale"] == 7.0
+        assert model.gp_head.length_scale == 7.0
+
+        rebuilt = build_net(model.spec)
+        rebuilt.load_state_dict(model.state_dict())
+        model.eval()
+        rebuilt.eval()
+        x = torch.randn(3, 3, 64, 64)
+        out, out_rebuilt = model(x), rebuilt(x)
+        torch.testing.assert_close(out_rebuilt.logits, out.logits)
+        torch.testing.assert_close(out_rebuilt.variance, out.variance)
+
+    def test_pooled_features_feed_the_head(self):
+        model = SNGPClassifier(num_classes=5, arch="resnet18", rff_dim=64)
+        model.eval()
+        x = torch.randn(2, 3, 64, 64)
+        logits, _, _ = model.gp_head(model.pooled_features(x))
+        torch.testing.assert_close(logits, model(x).logits)
