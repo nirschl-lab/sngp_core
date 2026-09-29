@@ -462,6 +462,28 @@ uv run src/metrics/calculate_ood_metrics.py --run-dir $I/sngp_specreg_classifier
 uv run src/metrics/calculate_ood_metrics.py --run-dir $I/sngp_classifier_acevedo_snb_ablation_ood/2026-09-17_15-06-32/spectral_norm_bound_6.0 $OOD --name sngp_c6_acevedo
 ```
 
+The procedural artifact axis (`real_baseline` + `severity_{1..5}`) was also run for both
+calibrated checkpoints, under the same two calibrated prefixes. No config (count) arms
+were run for these checkpoints.
+```bash
+/data1/maheswararao/experiments/uncertainty-aware-ml/infer/sngp_classifier_acevedo_snb_ablation_calibrated/2026-09-17_15-06-32/spectral_norm_bound_6.0/acevedo_artifact/{real_baseline,procedural/severity_{1..5}}
+/data1/maheswararao/experiments/uncertainty-aware-ml/infer/sngp_specreg_classifier_acevedo_calibrated/2026-09-18_14-11-49/acevedo_artifact/{real_baseline,procedural/severity_{1..5}}
+```
+Reproduce, then build the NLL-vs-severity figure (`figures/acevedo_calibrated_comparison/`)
+from the sidecar `configs/paper_helpers/acevedo_calibrated_sngp_vs_specreg_artifact_axis_paths.yaml`:
+```bash
+export DATASETS="" AXES=procedural
+scripts/inference/run_eval_suite_parallel.sh $C6/best.calibrated.ckpt \
+    sngp_classifier_acevedo_snb_ablation_calibrated/2026-09-17_15-06-32/spectral_norm_bound_6.0 0 1 2 3 -- data.datamodule.num_workers=8
+scripts/inference/run_eval_suite_parallel.sh $SR/best.calibrated.ckpt \
+    sngp_specreg_classifier_acevedo_calibrated/2026-09-18_14-11-49 0 1 2 3 -- data.datamodule.num_workers=8
+SIDECAR=configs/paper_helpers/acevedo_calibrated_sngp_vs_specreg_artifact_axis_paths.yaml
+uv run src/paper_helpers/ood_metrics/render_artifact_results_tables.py \
+    --config "$SIDECAR" --output-dir csv/artifact_quantification/acevedo_calibrated
+uv run src/visualization/artifact_ablation_curves.py --config "$SIDECAR" \
+    --output-dir csv/artifact_quantification/acevedo_calibrated --figures-dir figures/acevedo_calibrated_comparison
+```
+
 ---
 
 ## CIFAR-100 / WideResNet-28-10 benchmark (2026-09-20)

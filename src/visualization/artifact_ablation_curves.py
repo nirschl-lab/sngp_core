@@ -188,16 +188,18 @@ def main() -> None:
     figures_dir = Path(args.figures_dir)
     figures_dir.mkdir(parents=True, exist_ok=True)
 
-    config_nll = load_nll_curve(output_dir, "config", axis_paths)
-    procedural_nll = load_nll_curve(output_dir, "procedural", axis_paths)
-    coverage = load_pixel_coverage(axis_paths)
+    # A sidecar may sweep only one axis (e.g. procedural-only comparisons); plot what it has.
+    if "config_axis" in axis_paths:
+        config_nll = load_nll_curve(output_dir, "config", axis_paths)
+        coverage = load_pixel_coverage(axis_paths)
+        config_nll.to_csv(figures_dir / "config_axis_nll_vs_count.csv", index=False)
+        coverage.to_csv(figures_dir / "config_axis_pixel_coverage_vs_count.csv", index=False)
+        plot_config_axis(config_nll, coverage, figures_dir)
 
-    config_nll.to_csv(figures_dir / "config_axis_nll_vs_count.csv", index=False)
-    coverage.to_csv(figures_dir / "config_axis_pixel_coverage_vs_count.csv", index=False)
-    procedural_nll.to_csv(figures_dir / "procedural_axis_nll_vs_severity.csv", index=False)
-
-    plot_config_axis(config_nll, coverage, figures_dir)
-    plot_procedural_axis(procedural_nll, figures_dir)
+    if "procedural_axis" in axis_paths:
+        procedural_nll = load_nll_curve(output_dir, "procedural", axis_paths)
+        procedural_nll.to_csv(figures_dir / "procedural_axis_nll_vs_severity.csv", index=False)
+        plot_procedural_axis(procedural_nll, figures_dir)
     print(f"Saved figures and tidy CSVs to: {figures_dir}")
 
 

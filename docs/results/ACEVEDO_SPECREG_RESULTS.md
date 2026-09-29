@@ -159,6 +159,38 @@ After calibration, neither model wins outright:
 - **OOD:** SNGP + Spectral Reg separates better on average (mean entropy AUROC 0.954 vs 0.933). It is ahead on Jung, Kather2016 and Wong; SNGP is ahead on Kather2018, Nirschl2018 and Tang.
 - **Effect of calibration:** both fitted factors are below 1, which lowers every OOD AUROC slightly, while val NLL gains only about 0.0001.
 
+### Procedural axis — calibrated (artifact stream, n = 3,419)
+
+This is the same graded acquisition degradation as the uncalibrated procedural table
+below, run on the two `best.calibrated.ckpt`s. Severity 0 is the clean real stream.
+
+![Procedural axis NLL vs severity, calibrated SNGP c*=6 vs calibrated SNGP + Spectral Reg](../../figures/acevedo_calibrated_comparison/procedural_axis_nll_vs_severity.png)
+
+*Artifact-stream NLL vs. severity. "SNGP" is `c* = 6.0` with `mean_field_factor` 0.4909;
+"SNGP + Spectral Reg" has 0.2455. Tidy CSV: `figures/acevedo_calibrated_comparison/procedural_axis_nll_vs_severity.csv`.*
+
+| Severity | Model | Accuracy ↑ | F1 ↑ | NLL (×10⁻²) ↓ | Brier (×10⁻²) ↓ | ECE (×10⁻²) ↓ |
+|---|---|---:|---:|---:|---:|---:|
+| 0 (real) | SNGP `c* = 6.0` | **0.9874 ± 0.0019** | **0.9860** | **4.50 ± 0.63** | **2.01 ± 0.27** | **0.39** |
+| 0 (real) | SNGP + Spectral Reg | 0.9751 ± 0.0027 | 0.9691 | 6.81 ± 0.70 | 3.56 ± 0.35 | 0.64 |
+| 1 | SNGP `c* = 6.0` | **0.9833 ± 0.0022** | **0.9804** | **5.31 ± 0.67** | **2.54 ± 0.30** | **0.23** |
+| 1 | SNGP + Spectral Reg | 0.9757 ± 0.0026 | 0.9699 | 7.56 ± 0.75 | 3.81 ± 0.37 | 0.66 |
+| 2 | SNGP `c* = 6.0` | **0.9772 ± 0.0026** | **0.9726** | **7.30 ± 0.78** | **3.56 ± 0.36** | **0.57** |
+| 2 | SNGP + Spectral Reg | 0.9678 ± 0.0030 | 0.9614 | 9.83 ± 0.83 | 4.94 ± 0.41 | 0.60 |
+| 3 | SNGP `c* = 6.0` | **0.9523 ± 0.0036** | **0.9438** | **16.94 ± 1.41** | **7.31 ± 0.52** | **1.41** |
+| 3 | SNGP + Spectral Reg | 0.9377 ± 0.0041 | 0.9285 | 18.70 ± 1.16 | 9.29 ± 0.56 | 1.51 |
+| 4 | SNGP `c* = 6.0` | **0.8833 ± 0.0055** | **0.8714** | 50.41 ± 2.77 | **18.44 ± 0.83** | 5.29 |
+| 4 | SNGP + Spectral Reg | 0.8690 ± 0.0058 | 0.8598 | **41.06 ± 1.81** | 18.99 ± 0.79 | **4.39** |
+| 5 | SNGP `c* = 6.0` | 0.7754 ± 0.0071 | 0.7599 | 100.64 ± 3.90 | 33.97 ± 1.07 | 12.18 |
+| 5 | SNGP + Spectral Reg | **0.7833 ± 0.0070** | **0.7694** | **72.79 ± 2.52** | **30.81 ± 0.98** | **9.31** |
+
+The curves cross between severity 3 and 4:
+- **Mild shift (severity 0–3):** SNGP `c* = 6.0` is more accurate and has lower NLL at every level.
+- **Severity 4:** it is still more accurate, but its NLL is higher by 9.4 ×10⁻².
+- **Severity 5:** its NLL is higher by 27.9 ×10⁻², so it is more confident in its mistakes than SNGP + Spectral Reg.
+
+Calibration slightly worsens SpecReg under heavy shift, because its fitted factor is below 1. At severity 5 its NLL rises from 69.98 (uncalibrated, table below) to 72.79.
+
 Caveats: this compares two training recipes (see the off-protocol list at the top), each
 from a single seed. `c* = 6.0` was selected on in-distribution val NLL, and its OOD
 AUROC on Jung and Kather2016 is well below the `c = 4.0` reference row.
