@@ -668,3 +668,41 @@ uv run python scripts/metrics/cifar100_length_scale_evidence.py --cache-dir $C -
 Gate: the SNGP / SpecReg rows reproduce the val-fit table of results/CIFAR100_RESULTS.md (NLL
 0.7600 / 0.7472); every row's offline softmax at its trained knob reproduces the written
 `class_probs` (max |Δ| ≤ 4e-7).
+
+### online_ls: SpecReg with ℓ tuned online by type-II evidence, 5-row benchmark (2026-09-29)
+
+The evidence_ls benchmark plus a 5th row, SNGP + SpecReg + online evidence ℓ, over seeds 12345 / 1 / 2.
+All rows use `last.ckpt` and one val-fit knob per row. Branch `sngp-online-length-scale`.
+Results: [results/CIFAR100_ONLINE_LS_RESULTS.md](results/CIFAR100_ONLINE_LS_RESULTS.md).
+Checkpoints: [checkpoints/CIFAR_CHECKPOINTS.md](checkpoints/CIFAR_CHECKPOINTS.md), section "online_ls".
+
+```bash
+# new arm's predictions (the other 12 rows reuse the evidence_ls section's)
+/data1/maheswararao/experiments/uncertainty-aware-ml/infer/online_ls_2026-09-29_12-07-14_ols_specreg_s{12345,1,2}__{cifar100,cifar10,svhn}/
+# val fits for the 3 new checkpoints
+/data1/maheswararao/experiments/uncertainty-aware-ml/tmux_logs/cifar100_online_ls_2026-09-29_12-07-14_infer/fit_ols_specreg_s<seed>.log
+# per-update l trajectory (grep 'OnlineLengthScaleEvidence epoch')
+/data1/maheswararao/experiments/uncertainty-aware-ml/tmux_logs/cifar100_online_ls_2026-09-29_12-07-14/ols_specreg_s<seed>.log
+```
+
+Reproduce:
+```bash
+scripts/tmux/cifar100_online_ls.sh                                   # train (3 GPUs, ~2.6 h)
+scripts/tmux/cifar100_online_ls_infer.sh online_ls_2026-09-29_12-07-14   # inference + 3 val fits
+T=/data1/maheswararao/experiments/uncertainty-aware-ml/tmux_logs
+uv run python scripts/metrics/cifar100_evidence_ls_report.py --expect-committed \
+    --tag evidence_ls_2026-09-28_16-10-10 --ols-tag online_ls_2026-09-29_12-07-14 \
+    --arms baseline sngp specreg els ols \
+    --fit-logs $T/cifar100_evidence_ls_2026-09-28_16-10-10_infer $T/cifar100_online_ls_2026-09-29_12-07-14_infer \
+    --csv figures/cifar100_online_ls/cifar100_online_ls_per_seed.csv
+# evidence re-check on the online backbones
+B=/data1/maheswararao/experiments/uncertainty-aware-ml/overnight/online_ls_2026-09-29_12-07-14
+C=/data1/maheswararao/experiments/uncertainty-aware-ml/feature_cache/cifar100_online_ls
+uv run python scripts/metrics/cifar100_rf_head_swap.py extract --cache-dir $C --train-views 1 \
+    --ckpts 12345=$B/ols_specreg_s12345/checkpoints/last.ckpt 1=$B/ols_specreg_s1/checkpoints/last.ckpt 2=$B/ols_specreg_s2/checkpoints/last.ckpt
+uv run python scripts/metrics/cifar100_length_scale_evidence.py --cache-dir $C --rff-dims 1024 --no-auroc-join \
+    --csv figures/cifar100_online_ls/cifar100_online_ls_recheck_per_seed.csv
+```
+
+Gate: the same as evidence_ls (the SNGP / SpecReg rows reproduce NLL 0.7600 / 0.7472, and the
+offline softmax reproduces `class_probs`, max |Δ| ≤ 3.4e-7 for the new rows).

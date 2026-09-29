@@ -196,3 +196,21 @@ $B/els_specreg_s2/checkpoints/{best,last}.ckpt       # seed 2
 ```
 
 Verify: `read_meta('<path>').net_spec['length_scale']` → `7.0`.
+
+## online_ls — SpecReg matched, ℓ tuned online by type-II evidence, three seeds (2026-09-29)
+
+`scripts/tmux/cifar100_online_ls.sh` (branch `sngp-online-length-scale`): `sngp_specreg_cifar100`
+starting at ℓ = 20, plus the `OnlineLengthScaleEvidence` callback (updates at epochs 10–155, fixed
+from 160). Nothing else changed. The final ℓ is in each checkpoint's net spec.
+W&B group `CIFAR100_online_ls_2026-09-29_12-07-14`, runs `6najd0ku` / `akc2e5l1` / `0twvirza`.
+Compare at `last.ckpt` (epoch 249). Results:
+[../results/CIFAR100_ONLINE_LS_RESULTS.md](../results/CIFAR100_ONLINE_LS_RESULTS.md).
+
+```bash
+B=/data1/maheswararao/experiments/uncertainty-aware-ml/overnight/online_ls_2026-09-29_12-07-14
+$B/ols_specreg_s12345/checkpoints/{best,last}.ckpt   # seed 12345, final l 5.61
+$B/ols_specreg_s1/checkpoints/{best,last}.ckpt       # seed 1,     final l 5.61
+$B/ols_specreg_s2/checkpoints/{best,last}.ckpt       # seed 2,     final l 5.00
+```
+
+Verify: `read_meta('<path>').net_spec['length_scale']` → `5.612…` / `5.612…` / `5.0`.

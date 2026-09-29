@@ -29,6 +29,15 @@ Gates, all fatal:
         --tag evidence_ls_2026-09-28_16-10-10 \\
         --fit-logs $EXPERIMENTS_HOME/$PROJECT_NAME/tmux_logs/cifar100_evidence_ls_2026-09-28_16-10-10_infer \\
         --csv figures/cifar100_evidence_ls/cifar100_evidence_ls_per_seed.csv
+
+The 5th row, the online-l arm (scripts/tmux/cifar100_online_ls.sh), is opt-in:
+
+    uv run python scripts/metrics/cifar100_evidence_ls_report.py \\
+        --tag evidence_ls_2026-09-28_16-10-10 --ols-tag online_ls_2026-09-29_12-07-14 \\
+        --arms baseline sngp specreg els ols \\
+        --fit-logs $EXPERIMENTS_HOME/$PROJECT_NAME/tmux_logs/cifar100_evidence_ls_2026-09-28_16-10-10_infer \\
+                   $EXPERIMENTS_HOME/$PROJECT_NAME/tmux_logs/cifar100_online_ls_2026-09-29_12-07-14_infer \\
+        --csv figures/cifar100_online_ls/cifar100_online_ls_per_seed.csv
 """
 import argparse
 import csv
@@ -63,6 +72,7 @@ ARMS: Dict[str, str] = {
     "sngp": "SNGP (c = 6.0)",
     "specreg": "SNGP + SpecReg",
     "els": "SNGP + SpecReg + evidence ℓ = 7",
+    "ols": "SNGP + SpecReg + online evidence ℓ",
 }
 # Committed val-fit numbers (CIFAR100_RESULTS.md, "λ fitted on validation"), for the gate.
 COMMITTED_NLL = {"sngp": 0.7600, "specreg": 0.7472}
@@ -79,10 +89,14 @@ FIELDS = [
 ]
 
 
-def _source(arm: str, seed: int, tag: str) -> Tuple[str, str, str]:
+def _source(arm: str, seed: int, tag: str, ols_tag: Optional[str] = None) -> Tuple[str, str, str]:
     """(infer tag, infer label, fit-log row) for one arm x seed."""
     if arm == "els":
         return tag, f"els_specreg_s{seed}", f"els_specreg_s{seed}"
+    if arm == "ols":
+        if ols_tag is None:
+            raise SystemExit("arm 'ols' needs --ols-tag")
+        return ols_tag, f"ols_specreg_s{seed}", f"ols_specreg_s{seed}"
     if seed == 12345:
         return "", f"cifar100last_{arm}", f"{arm}_s12345"  # first-run convention: no tag prefix
     return OVERNIGHT_TAG, f"s{seed}_{arm}", f"{arm}_s{seed}"
@@ -146,9 +160,10 @@ def _mean_sd(values: List[float], places: int = 4) -> str:
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--tag", required=True, help="the new arm's tag, e.g. evidence_ls_2026-09-28_16-10-10")
+    ap.add_argument("--ols-tag", help="the online-l arm's tag (scripts/tmux/cifar100_online_ls.sh), e.g. online_ls_2026-09-29_12-07-14")
     ap.add_argument("--fit-logs", required=True, type=Path, nargs="+", help="dirs holding fit_<arm>_s<seed>.log")
     ap.add_argument("--csv", required=True, type=Path)
-    ap.add_argument("--arms", nargs="+", default=list(ARMS), choices=list(ARMS))
+    ap.add_argument("--arms", nargs="+", default=[a for a in ARMS if a != "ols"], choices=list(ARMS))
     ap.add_argument("--expect-committed", action="store_true", help="gate the SNGP / SpecReg rows on CIFAR100_RESULTS.md")
     args = ap.parse_args()
 
@@ -156,7 +171,7 @@ def main() -> None:
     rows: List[Dict[str, object]] = []
     for arm_key in args.arms:
         for seed in SEEDS:
-            tag, label, fit_row = _source(arm_key, seed, args.tag)
+            tag, label, fit_row = _source(arm_key, seed, args.tag, args.ols_tag)
             knob, trained, fitted = _fit(args.fit_logs, fit_row)
             if arm_key == "baseline":
                 arm, published, logits = _baseline_arm(infer_root, tag, label, fitted)
@@ -210,7 +225,8 @@ def main() -> None:
             print(f"| {ARMS[a]} | " + " | ".join(cells) + " |")
         print()
 
-    pairs = [(b, a) for a, b in (("sngp", "specreg"), ("specreg", "els")) if a in by_arm and b in by_arm]
+    pairs = [(b, a) for a, b in (("sngp", "specreg"), ("specreg", "els"), ("specreg", "ols"), ("els", "ols"))
+             if a in by_arm and b in by_arm]
     delta_cols = ["acc", "nll", "smece", "auroc_msp_cifar10", "auroc_msp_svhn", "auroc_ds_svhn", "auroc_var_cifar10", "auroc_var_svhn"]
     for hi, lo in pairs:
         print(f"### Paired per seed: {ARMS[hi]} − {ARMS[lo]}\n")
