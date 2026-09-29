@@ -65,11 +65,17 @@ LENGTH_SCALES = (1.0, 1.5, 2.0, 3.0, 4.0, 5.0, 10.0, 20.0)
 RFF_DIMS = (1024, 4096, 16384)
 
 
-def _variance_head(length_scale: float, rff_dim: int, seed: int, device: str) -> RandomFeatureGaussianProcess:
+def _variance_head(
+    length_scale: float, rff_dim: int, seed: int, device: str,
+    feature_map: str = "cos", random_feature_type: str = "orf",
+) -> RandomFeatureGaussianProcess:
+    """The study's variance head. The defaults (cos / orf) are the committed results; the evidence
+    script overrides the feature map and coupling to score positive-feature heads."""
     torch.manual_seed(2_000 + seed)
     return RandomFeatureGaussianProcess(
         in_dim=640, num_classes=100, rff_dim=rff_dim, length_scale=length_scale, ridge_penalty=1.0,
-        normalize_input=False, scale_random_features=False, cov_momentum=-1.0, random_feature_type="orf",
+        normalize_input=False, scale_random_features=False, cov_momentum=-1.0,
+        random_feature_type=random_feature_type, feature_map=feature_map,
     ).to(device)
 
 

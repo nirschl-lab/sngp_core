@@ -57,6 +57,10 @@ def main() -> None:
     ap.add_argument("--length-scales", type=float, nargs="+", default=list(LENGTH_SCALES))
     ap.add_argument("--rff-dims", type=int, nargs="+", default=list(RFF_DIMS))
     ap.add_argument("--csv", required=True, type=Path)
+    ap.add_argument("--feature-map", default="cos", choices=["cos", "positive", "hyperbolic"],
+                    help="random-feature map of the scored head (default: the committed cos results)")
+    ap.add_argument("--coupling", default="orf", choices=["orf", "rff", "simrf"],
+                    help="random-feature coupling of the scored head")
     ap.add_argument(
         "--no-auroc-join", action="store_true",
         help="skip joining the decoupled study's variance AUROC, which was measured on the l = 20 "
@@ -79,7 +83,7 @@ def main() -> None:
 
         for m in args.rff_dims:
             for l in args.length_scales:
-                head = _variance_head(l, m, seed, device)
+                head = _variance_head(l, m, seed, device, feature_map=args.feature_map, random_feature_type=args.coupling)
                 basis = evidence_basis(_head_features(head, h_train), y_train, num_classes=100)
                 recipe = log_evidence(basis, 1.0, 1.0)
                 alpha, noise, opt = optimize_hyperparameters(basis)
@@ -106,7 +110,8 @@ def main() -> None:
     summary = ev.groupby(["rff_dim", "length_scale"])[metrics].agg(["mean", "std"])
     summary.columns = [f"{a}_{b}" for a, b in summary.columns]
     summary = summary.reset_index()
-    if DECOUPLED_SUMMARY.exists() and not args.no_auroc_join:
+    # The decoupled AUROC is a cos / orf measurement, so it is joined only onto cos / orf rows.
+    if DECOUPLED_SUMMARY.exists() and not args.no_auroc_join and (args.feature_map, args.coupling) == ("cos", "orf"):
         dec = pd.read_csv(DECOUPLED_SUMMARY)
         dec = dec[dec.variance == "decoupled"][["rff_dim", "length_scale", "auroc_var_cifar10_mean", "auroc_var_svhn_mean"]]
         summary = summary.merge(dec, on=["rff_dim", "length_scale"], how="left")
