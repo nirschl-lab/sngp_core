@@ -23,6 +23,7 @@ considering a task done.
 | `src/checkpointing/legacy.py`, `src/checkpointing/resolve.py`, `scripts/checkpoints/**` | `pytest tests/checkpointing/` |
 | `src/data/classification_image_datamodule.py`, `artifact_image_datamodule.py`, `mnist_datamodule.py`, `benchmark_image_datamodule.py` | `pytest tests/test_datamodules.py` |
 | `src/models/components/schedulers.py` | `pytest tests/models/test_schedulers.py` |
+| `src/models/components/optimizers.py` | `pytest tests/models/test_optimizers.py` |
 | `src/callbacks/**` | `pytest tests/callbacks/` |
 | `src/inference/**` | `pytest tests/test_infer.py` |
 | `src/train.py` | `pytest tests/test_train.py` |
