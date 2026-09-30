@@ -6,11 +6,13 @@ a Hydra `_partial_`. The CIFAR-100 / WideResNet benchmark needs the reference re
 warmup-then-piecewise-decay schedule instead, which cannot be written as a bare
 `_partial_`: `SequentialLR` takes *already-constructed* schedulers, and each of those
 needs the optimizer that Hydra only supplies at the outermost call. Hence a factory.
+`warmup_stable_decay_lr` is the schedule for the Muon arms, whose update size is set by the
+LR alone (see its docstring).
 """
 from typing import Sequence
 
 from torch.optim import Optimizer
-from torch.optim.lr_scheduler import LinearLR, LRScheduler, MultiStepLR, SequentialLR
+from torch.optim.lr_scheduler import LambdaLR, LinearLR, LRScheduler, MultiStepLR, SequentialLR
 
 
 def warmup_piecewise_lr(
@@ -97,3 +99,65 @@ def warmup_piecewise_lr(
         total_iters=warmup_epochs,
     )
     return SequentialLR(optimizer, schedulers=[warmup, decay], milestones=[warmup_epochs])
+
+
+def warmup_stable_decay_lr(
+    optimizer: Optimizer,
+    *,
+    T_max: int,
+    warmup_epochs: int = 1,
+    warmup_start_factor: float = 0.1,
+    decay_fraction: float = 0.3,
+    eta_min: float = 0.0,
+) -> LRScheduler:
+    """Linear warmup, a constant plateau, then a linear decay toward zero (WSD).
+
+    Meant for Muon (`src.models.components.optimizers.MuonWithAuxAdamW`): its orthogonalized
+    step has spectral norm ~lr whatever the gradient's magnitude, so unlike SGD nothing
+    shrinks the step as training converges -- the schedule is the only annealing. Step
+    decay cuts the update 5x at a time and parks it at a non-zero floor; a linear decay to
+    zero anneals smoothly (Bergsma et al. 2025, arXiv:2502.15938, found linear-to-zero best
+    for AdamW, whose steps are likewise normalized).
+
+    The LR factor at epoch `e`, with `D = round(decay_fraction * T_max)`:
+      * `e < warmup_epochs`: linear from `warmup_start_factor` toward 1;
+      * then 1 until epoch `T_max - D`;
+      * then `(T_max - e) / D`, i.e. 1/D in the last epoch.
+    `LitModuleBase.configure_optimizers` steps schedulers once per epoch, so the last epoch
+    runs at 1/D rather than exactly 0 (a zero factor would waste that epoch). `LambdaLR`
+    applies the factor to every param group's own base LR, so Muon's and AdamW's groups share
+    the shape.
+
+    :param T_max: Total training epochs.
+    :param warmup_epochs: Epochs spent warming up; `0` disables warmup.
+    :param warmup_start_factor: Fraction of the base LR to start warmup from.
+    :param decay_fraction: Fraction of `T_max` spent in the final linear decay.
+    :param eta_min: Must be 0.0. Present only to absorb the model config's inherited
+        CosineAnnealingLR key (see `warmup_piecewise_lr`).
+    """
+    if eta_min != 0.0:
+        raise ValueError(
+            "warmup_stable_decay_lr decays to zero, so eta_min must be 0.0 "
+            f"(got {eta_min}). It exists in the signature only because Hydra merges the "
+            "model config's CosineAnnealingLR node into this one."
+        )
+    if not 0.0 < decay_fraction <= 1.0:
+        raise ValueError(f"decay_fraction must be in (0, 1], got {decay_fraction}")
+    if warmup_epochs < 0:
+        raise ValueError(f"warmup_epochs must be >= 0, got {warmup_epochs}")
+    decay_epochs = round(decay_fraction * T_max)
+    if decay_epochs < 1 or warmup_epochs + decay_epochs > T_max:
+        raise ValueError(
+            f"warmup ({warmup_epochs}) + decay ({decay_epochs} = round({decay_fraction} * "
+            f"{T_max})) epochs must fit in T_max={T_max} with at least one decay epoch."
+        )
+    decay_start = T_max - decay_epochs
+
+    def factor(epoch: int) -> float:
+        if epoch < warmup_epochs:
+            return warmup_start_factor + (1.0 - warmup_start_factor) * epoch / warmup_epochs
+        if epoch < decay_start:
+            return 1.0
+        return max(T_max - epoch, 0) / decay_epochs
+
+    return LambdaLR(optimizer, lr_lambda=factor)

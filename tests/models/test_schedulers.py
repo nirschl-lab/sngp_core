@@ -7,7 +7,7 @@ decay inside warmup, still trains to completion and just produces slightly wrong
 import pytest
 import torch
 
-from src.models.components.schedulers import warmup_piecewise_lr
+from src.models.components.schedulers import warmup_piecewise_lr, warmup_stable_decay_lr
 
 BASE_LR = 0.04
 
@@ -84,3 +84,58 @@ class TestWarmupPiecewiseLR:
         optimizer = torch.optim.SGD([torch.nn.Parameter(torch.zeros(1))], lr=BASE_LR)
         with pytest.raises(ValueError, match="not strictly increasing"):
             warmup_piecewise_lr(optimizer, T_max=2)
+
+
+def _wsd_trace(total_epochs: int, **kwargs) -> list[float]:
+    params = [torch.nn.Parameter(torch.zeros(1))]
+    optimizer = torch.optim.SGD(params, lr=BASE_LR)
+    scheduler = warmup_stable_decay_lr(optimizer, **kwargs)
+    trace = []
+    for _ in range(total_epochs):
+        trace.append(optimizer.param_groups[0]["lr"])
+        optimizer.step()
+        scheduler.step()
+    return trace
+
+
+class TestWarmupStableDecayLR:
+    def test_cifar100_muon_schedule(self):
+        """250 epochs, 1 warmup epoch at 0.1x, flat through epoch 175, then linear to 1/75."""
+        trace = _wsd_trace(250, T_max=250)
+        assert trace[0] == pytest.approx(BASE_LR * 0.1)
+        assert trace[1:176] == pytest.approx([BASE_LR] * 175)
+        assert trace[176] == pytest.approx(BASE_LR * 74 / 75)
+        assert trace[249] == pytest.approx(BASE_LR / 75)
+        steps = [a - b for a, b in zip(trace[175:], trace[176:])]
+        assert steps == pytest.approx([BASE_LR / 75] * 74)  # linear
+
+    def test_non_increasing_after_warmup_and_never_negative(self):
+        trace = _wsd_trace(300, T_max=250, warmup_epochs=3, decay_fraction=0.5)
+        assert all(a >= b for a, b in zip(trace[3:], trace[4:]))
+        assert min(trace) >= 0.0
+
+    def test_scales_every_param_group_from_its_own_base_lr(self):
+        """Muon and AdamW live in one optimizer; both must follow the same shape."""
+        groups = [{"params": [torch.nn.Parameter(torch.zeros(1))], "lr": 0.02},
+                  {"params": [torch.nn.Parameter(torch.zeros(1))], "lr": 1e-3}]
+        optimizer = torch.optim.SGD(groups)
+        scheduler = warmup_stable_decay_lr(optimizer, T_max=10)
+        for _ in range(9):
+            optimizer.step()
+            scheduler.step()
+            lrs = [g["lr"] for g in optimizer.param_groups]
+            assert lrs[0] / lrs[1] == pytest.approx(20.0)
+
+    @pytest.mark.parametrize(
+        "kwargs, match",
+        [
+            ({"T_max": 250, "eta_min": 1e-4}, "eta_min must be 0.0"),
+            ({"T_max": 250, "decay_fraction": 0.0}, "decay_fraction"),
+            ({"T_max": 250, "decay_fraction": 1.5}, "decay_fraction"),
+            ({"T_max": 10, "warmup_epochs": 5, "decay_fraction": 0.8}, "must fit"),
+        ],
+    )
+    def test_bad_arguments_are_rejected(self, kwargs, match):
+        optimizer = torch.optim.SGD([torch.nn.Parameter(torch.zeros(1))], lr=BASE_LR)
+        with pytest.raises(ValueError, match=match):
+            warmup_stable_decay_lr(optimizer, **kwargs)
