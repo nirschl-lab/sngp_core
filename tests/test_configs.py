@@ -265,6 +265,7 @@ class TestExperimentProtocolConsistency:
             "sngp_specreg_cifar100_literal",
             "sngp_specreg_cifar100_rf",
             "sngp_muon_cifar100",
+            "sngp_muon_cifar100_wsd",
         ],
     }
     _ALL_EXPERIMENTS = sorted(e for group in _EXPERIMENTS_BY_DATASET.values() for e in group)
@@ -303,6 +304,7 @@ class TestExperimentProtocolConsistency:
         "sngp_specreg_cifar100_literal": {"monitor": "val/loss", "early_stopping": None},
         "sngp_specreg_cifar100_rf": {"monitor": "val/loss", "early_stopping": None},
         "sngp_muon_cifar100": {"monitor": "val/loss", "early_stopping": None},
+        "sngp_muon_cifar100_wsd": {"monitor": "val/loss", "early_stopping": None},
     }
 
     # sngp_specreg_* experiments normally must have weight_decay == 0, so the spectral

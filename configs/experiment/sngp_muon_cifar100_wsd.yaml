@@ -1,0 +1,87 @@
+# @package _global_
+
+# to execute this experiment run:
+# python train.py experiment=sngp_muon_cifar100_wsd
+#
+# sngp_muon_cifar100 (GP head on an unconstrained WRN-28-10, Muon, l = 7 -- see that file's
+# header) with ONE change: the LR schedule. The benchmark's warmup_piecewise_lr is replaced by
+# warmup_stable_decay_lr -- 1 warmup epoch from 0.1x, constant at the peak through epoch 175,
+# then linear decay to 1/75 of the peak at epoch 249 (the last 30% of the budget).
+#
+# Why: Muon's orthogonalized step has spectral norm ~lr regardless of the gradient, so the
+# schedule is its only annealing. Step decay cuts the update 5x three times and holds a
+# non-zero floor for the last 50 epochs; a linear decay to zero anneals smoothly, and it is the
+# shape used for Muon in practice. The piecewise arms (same seed, same wd pair) are the
+# schedule-matched comparison. Launched by `scripts/tmux/cifar100_muon.sh --wsd`.
+
+defaults:
+  - override /data: cifar100
+  - override /model: sngp_classifier
+  - override /callbacks: default
+  - override /trainer: default
+
+name: "cifar100_sngp_muon_wsd_wrn28x10"
+WANDB_PROJECT: ${oc.env:PROJECT_NAME}
+tags: ["sngp", "muon", "wsd", "no-spectral-norm", "cifar100", "wide_resnet28_10", "benchmark", "training"]
+
+seed: 12345
+
+num_classes: 100
+
+trainer:
+  min_epochs: 250
+  max_epochs: 250
+  accelerator: "gpu"
+
+model:
+  # Own output dir: task_name is "train/${model.name}_<dataset>".
+  name: sngp_muon_wsd_classifier
+  optimizer:
+    _target_: src.models.components.optimizers.MuonWithAuxAdamW
+    _partial_: true
+    lr: 0.02
+    momentum: 0.95
+    weight_decay: 0.1
+    adamw_lr: 1e-3
+    adamw_weight_decay: 0.01
+  net:
+    arch: wide_resnet28_10
+    num_classes: ${num_classes}
+    pretrained: false
+    use_spectral_norm: false
+    spectral_norm_bound: null
+    length_scale: 7.0
+    scale_random_features: false
+    ridge_penalty: 1.0
+    normalize_input: false
+    mean_field_factor: 7.5
+  compile: false
+  scheduler:
+    _target_: src.models.components.schedulers.warmup_stable_decay_lr
+    _partial_: true
+    warmup_epochs: 1
+    warmup_start_factor: 0.1
+    decay_fraction: 0.3
+  num_classes: ${num_classes}
+
+data:
+  datamodule:
+    batch_size: 128
+
+logger:
+  wandb:
+    project: "${WANDB_PROJECT}"
+    tags: "${tags_with:${tags},${data.datamodule.institution}}"
+    group: "CIFAR100"
+    name: ${name}
+    log_model: True
+  aim:
+    experiment: ""
+
+callbacks:
+  model_checkpoint:
+    monitor: "val/loss"
+    mode: "min"
+  early_stopping: null
+  test_artifacts:
+    hist_bins: 10

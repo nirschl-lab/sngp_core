@@ -4,6 +4,9 @@
 # configs/experiment/sngp_muon_cifar100.yaml has the reasoning. Follow-up of the Acevedo study
 # (docs/results/ACEVEDO_MUON_RESULTS.md, scripts/tmux/acevedo_muon.sh).
 #
+# --wsd switches the LR schedule from the benchmark's piecewise decay to warmup-stable-decay
+# (experiment=sngp_muon_cifar100_wsd, study `muon_wsd`, default GPUs 2 3) -- the only difference.
+#
 # One seed (12345), two arms, one per GPU (override with GPUS="a b"), ~2.7-3 h:
 #   muon_wd0_s12345     Muon weight_decay 0   -- no cap on the conv weights' spectral norm
 #   muon_wd0.1_s12345   Muon weight_decay 0.1 -- soft cap ~1/wd (the experiment's default)
@@ -21,16 +24,23 @@
 #
 #   scripts/tmux/cifar100_muon.sh --smoke   # ~3-epoch check of both arms
 #   scripts/tmux/cifar100_muon.sh           # full 250-epoch study
+#   scripts/tmux/cifar100_muon.sh --wsd [--smoke]   # same, warmup-stable-decay schedule
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 
 if [[ -f .env ]]; then set -a; . ./.env; set +a; fi
 : "${EXPERIMENTS_HOME:?}" "${PROJECT_NAME:?}"
 
-STUDY="muon"
-MODE="full"
-for arg in "$@"; do [[ "${arg}" == "--smoke" ]] && MODE="smoke"; done
-read -r -a GPU_LIST <<< "${GPUS:-0 1}"
+STUDY="muon"; EXPERIMENT="sngp_muon_cifar100"; DEFAULT_GPUS="0 1"
+MODE="full"; WSD=0
+for arg in "$@"; do
+  [[ "${arg}" == "--smoke" ]] && MODE="smoke"
+  [[ "${arg}" == "--wsd" ]] && WSD=1
+done
+if [[ "${WSD}" == 1 ]]; then
+  STUDY="muon_wsd"; EXPERIMENT="sngp_muon_cifar100_wsd"; DEFAULT_GPUS="2 3"
+fi
+read -r -a GPU_LIST <<< "${GPUS:-${DEFAULT_GPUS}}"
 SMOKE_STEPS="${SMOKE_STEPS:-1200}"
 
 # Passed down to the re-exec'd child so the parent and child agree on one stamp.
@@ -47,7 +57,8 @@ mkdir -p "${LOGS}"
 if [[ "${1:-}" != "--run" ]]; then
   command -v tmux >/dev/null || { echo "tmux is not installed." >&2; exit 1; }
   SESSION="cifar100_${TAG}"
-  CHILD_ARGS="--run"; [[ "${MODE}" == "smoke" ]] && CHILD_ARGS="--run --smoke"
+  CHILD_ARGS="--run"; [[ "${MODE}" == "smoke" ]] && CHILD_ARGS="${CHILD_ARGS} --smoke"
+  [[ "${WSD}" == 1 ]] && CHILD_ARGS="${CHILD_ARGS} --wsd"
   tmux new-session -d -s "${SESSION}" -e "CIFAR_MUON_STAMP=${STAMP}" -e "GPUS=${GPU_LIST[*]}" \
       -e "SMOKE_STEPS=${SMOKE_STEPS}" "bash '$0' ${CHILD_ARGS} 2>&1 | tee '${LOGS}/driver.log'"
   echo "Launched '${SESSION}' (${MODE})."
@@ -63,7 +74,7 @@ if [[ "${MODE}" == "smoke" ]]; then
 else
   BUDGET=(trainer.max_epochs=250 trainer.min_epochs=250 test=True "logger.wandb.group=CIFAR100_${TAG}")
 fi
-COMMON=(experiment=sngp_muon_cifar100 logger.wandb.log_model=false "${BUDGET[@]}")
+COMMON=("experiment=${EXPERIMENT}" logger.wandb.log_model=false "${BUDGET[@]}")
 
 # run <label> <gpu> <extra hydra overrides...>
 run() {
@@ -79,7 +90,7 @@ run() {
     || echo "[$(date +%H:%M:%S)] FAILED ${label} (see ${LOGS}/${label}.log)"
 }
 
-echo "=== ${STUDY} (${MODE}) -- sngp_muon_cifar100 (l = 7, no SN), seed 12345, Muon wd 0 / 0.1 ==="
+echo "=== ${STUDY} (${MODE}) -- ${EXPERIMENT} (l = 7, no SN), seed 12345, Muon wd 0 / 0.1 ==="
 run muon_wd0_s12345    "${GPU_LIST[0]}" seed=12345 model.optimizer.weight_decay=0.0 &
 run muon_wd0.1_s12345  "${GPU_LIST[1]}" seed=12345 &
 wait
