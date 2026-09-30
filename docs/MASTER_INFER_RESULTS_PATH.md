@@ -804,3 +804,35 @@ uv run python scripts/metrics/cifar100_length_scale_evidence.py --cache-dir $C -
 
 Gate: the same as evidence_ls (the SNGP / SpecReg rows reproduce NLL 0.7600 / 0.7472, and the
 offline softmax reproduces `class_probs`, max |Δ| ≤ 3.4e-7 for the new rows).
+
+---
+
+**Acevedo GP head without SN, trained with Muon (2026-09-30).** Calibrated inference for the
+three arms of [results/ACEVEDO_MUON_RESULTS.md](results/ACEVEDO_MUON_RESULTS.md): the 7-dataset
+suite plus the procedural axis (`real_baseline` + `severity_{1..5}`), with no config (count)
+arms. The SNGP `c* = 6.0` and SpecReg comparison rows reuse the calibrated dirs above.
+
+sngp_muon_wd0_acevedo_calibrated / sngp_muon_wd0.1_acevedo_calibrated / sngp_nosn_adamw_acevedo_calibrated:
+```bash
+/data1/maheswararao/experiments/uncertainty-aware-ml/infer/sngp_muon_classifier_acevedo_calibrated/2026-09-30_12-47-49_muon_wd0/{acevedo,jung,kather2016,kather2018,nirschl2018,tang,wong,acevedo_artifact/{real_baseline,procedural/severity_{1..5}}}
+/data1/maheswararao/experiments/uncertainty-aware-ml/infer/sngp_muon_classifier_acevedo_calibrated/2026-09-30_12-47-49_muon_wd0.1/{acevedo,jung,kather2016,kather2018,nirschl2018,tang,wong,acevedo_artifact/{real_baseline,procedural/severity_{1..5}}}
+/data1/maheswararao/experiments/uncertainty-aware-ml/infer/sngp_nosn_classifier_acevedo_calibrated/2026-09-30_12-47-49_adamw_nosn/{acevedo,jung,kather2016,kather2018,nirschl2018,tang,wong,acevedo_artifact/{real_baseline,procedural/severity_{1..5}}}
+```
+
+Reproduce (train, calibrate, suite, OOD scoring; `csv/` is gitignored):
+```bash
+scripts/tmux/acevedo_muon.sh                      # train, 3 GPUs, ~1.4 h
+T=/data1/maheswararao/experiments/uncertainty-aware-ml/train
+I=/data1/maheswararao/experiments/uncertainty-aware-ml/infer
+N=2026-09-30_12-47-49
+export AXES=procedural                            # 7 datasets + severity 1..5, no count arms
+for arm in "muon_wd0 sngp_muon_classifier sngp_muon_acevedo" \
+           "muon_wd0.1 sngp_muon_classifier sngp_muon_acevedo" \
+           "adamw_nosn sngp_nosn_classifier sngp_acevedo"; do
+  set -- $arm; C=$T/$2_acevedo/runs/${N}_$1/checkpoints; P=$2_acevedo_calibrated/${N}_$1
+  uv run scripts/checkpoints/calibrate_checkpoint.py --ckpt $C/best.ckpt --experiment $3 --split val
+  scripts/inference/run_eval_suite_parallel.sh $C/best.calibrated.ckpt $P 0 1 2 3 -- data.datamodule.num_workers=8
+  uv run src/metrics/calculate_ood_metrics.py --run-dir $I/$P --indist acevedo \
+      --outdist jung kather2016 kather2018 nirschl2018 tang wong --out-dir csv/ood_metrics --name sngp_$1_acevedo_calibrated
+done
+```

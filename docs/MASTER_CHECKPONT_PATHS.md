@@ -149,3 +149,30 @@ is used only by the calibrated comparison section of the results doc:
 
 The sibling run directories `2026-09-18_13-59-*` and `2026-09-18_14-01-*` under the same
 parent are smoke tests (`fast_dev_run`, 3-epoch mini runs), not results.
+
+---
+
+**Acevedo GP head without SN, trained with Muon (2026-09-30).** Three arms on the
+`sngp_acevedo` protocol, with no spectral normalization and no spectral penalty
+(`scripts/tmux/acevedo_muon.sh`, branch `acevedo-muon`, W&B group
+`Acevedo_muon_2026-09-30_12-47-49`). Each `best.calibrated.ckpt` carries `mean_field_factor` fit on
+val NLL. Results: [results/ACEVEDO_MUON_RESULTS.md](results/ACEVEDO_MUON_RESULTS.md).
+Run dirs `*_smoke_*` under the same parents are smoke tests, not results.
+
+sngp_muon_wd0_acevedo (`experiment=sngp_muon_acevedo model.optimizer.weight_decay=0.0`, epoch 62, mff 7.3992):
+```bash
+/data1/maheswararao/experiments/uncertainty-aware-ml/train/sngp_muon_classifier_acevedo/runs/2026-09-30_12-47-49_muon_wd0/checkpoints/best.ckpt
+/data1/maheswararao/experiments/uncertainty-aware-ml/train/sngp_muon_classifier_acevedo/runs/2026-09-30_12-47-49_muon_wd0/checkpoints/best.calibrated.ckpt
+```
+
+sngp_muon_wd0.1_acevedo (`experiment=sngp_muon_acevedo`, epoch 139, mff 1.4269):
+```bash
+/data1/maheswararao/experiments/uncertainty-aware-ml/train/sngp_muon_classifier_acevedo/runs/2026-09-30_12-47-49_muon_wd0.1/checkpoints/best.ckpt
+/data1/maheswararao/experiments/uncertainty-aware-ml/train/sngp_muon_classifier_acevedo/runs/2026-09-30_12-47-49_muon_wd0.1/checkpoints/best.calibrated.ckpt
+```
+
+sngp_nosn_adamw_acevedo (control: `experiment=sngp_acevedo model.net.use_spectral_norm=false model.net.spectral_norm_bound=null`, epoch 36, mff 0):
+```bash
+/data1/maheswararao/experiments/uncertainty-aware-ml/train/sngp_nosn_classifier_acevedo/runs/2026-09-30_12-47-49_adamw_nosn/checkpoints/best.ckpt
+/data1/maheswararao/experiments/uncertainty-aware-ml/train/sngp_nosn_classifier_acevedo/runs/2026-09-30_12-47-49_adamw_nosn/checkpoints/best.calibrated.ckpt
+```
