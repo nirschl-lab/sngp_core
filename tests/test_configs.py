@@ -241,7 +241,13 @@ class TestExperimentProtocolConsistency:
         "tang": ["baseline_tang", "sngp_tang", "deep_ensemble_tang"],
         "kather2018": ["baseline_kather2018", "sngp_kather2018", "deep_ensemble_kather2018"],
         "wong": ["baseline_wong", "sngp_wong", "deep_ensemble_wong"],
-        "acevedo": ["baseline_acevedo", "sngp_acevedo", "sngp_specreg_acevedo", "deep_ensemble_acevedo"],
+        "acevedo": [
+            "baseline_acevedo",
+            "sngp_acevedo",
+            "sngp_specreg_acevedo",
+            "sngp_muon_acevedo",
+            "deep_ensemble_acevedo",
+        ],
         "wong_ucdavis": [
             "baseline_wong_ucdavis",
             "sngp_wong_ucdavis",

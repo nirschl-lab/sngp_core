@@ -1,0 +1,86 @@
+# @package _global_
+
+# to execute this experiment run:
+# python train.py experiment=sngp_muon_acevedo
+#
+# Quick study: the SNGP random-feature GP head on an UNconstrained ResNet-18 -- no spectral
+# normalization and no spectral regularization -- trained with Muon (Jordan et al. 2024)
+# instead of AdamW. Question: do Muon's orthogonalized (spectrally bounded) updates give the
+# GP head any of the distance-awareness that SN (sngp_acevedo, c*=6) or the SpecReg penalty
+# (sngp_specreg_acevedo) buy? Launched by scripts/tmux/acevedo_muon.sh, which also runs a
+# weight_decay=0 arm and an AdamW no-SN control.
+#
+# Everything except the optimizer and the SN switch is sngp_acevedo's protocol: same data,
+# backbone, head, budget, cosine schedule, and val/nll_cal selection with early stopping.
+#
+# Muon bounds each update's spectral norm, not the weight's; only its decoupled weight decay
+# caps the conv weights, softly, near 1 / weight_decay (~10 at 0.1). Every conv is followed by
+# BatchNorm, which is scale-invariant in the conv weight, and BN / the stem / the GP output
+# layer are on the AdamW group -- see src/models/components/optimizers.py.
+
+defaults:
+  - override /data: acevedo
+  - override /model: sngp_classifier
+  - override /callbacks: default
+  - override /trainer: default
+
+name: "acevedo_sngp_muon_resnet18"
+WANDB_PROJECT: ${oc.env:PROJECT_NAME}
+tags: ["sngp", "muon", "no-spectral-norm", "acevedo", "resnet18", "training"]
+
+seed: 12345
+
+num_classes: 8
+
+trainer:
+  min_epochs: 30
+  max_epochs: 150
+  accelerator: "gpu"
+
+model:
+  # Own output dir: task_name is "train/${model.name}_<dataset>", so the family default would
+  # land these runs next to the protocol SN runs.
+  name: sngp_muon_classifier
+  optimizer:
+    _target_: src.models.components.optimizers.MuonWithAuxAdamW
+    _partial_: true
+    # Muon group (hidden convs): the reference defaults.
+    lr: 0.02
+    momentum: 0.95
+    weight_decay: 0.1
+    # AdamW group (stem, BN, GP-input LayerNorm, GP output layer): sngp_acevedo's values.
+    adamw_lr: 0.009157924694202957
+    adamw_weight_decay: 3.746886442236255e-05
+  net:
+    arch: resnet18
+    num_classes: ${num_classes}
+    pretrained: false
+    use_spectral_norm: false
+    spectral_norm_bound: null
+  compile: false
+  scheduler:
+    _target_: torch.optim.lr_scheduler.CosineAnnealingLR
+    _partial_: true
+    T_max: ${trainer.max_epochs}
+    eta_min: 0.0
+  num_classes: ${num_classes}
+
+data:
+  datamodule:
+    batch_size: 64
+
+logger:
+  wandb:
+    project: "${WANDB_PROJECT}"
+    tags: "${tags_with:${tags},${data.datamodule.institution}}"
+    group: "Muon"
+    name: ${name}
+    log_model: True
+  aim:
+    experiment: ""
+
+callbacks:
+  # model_checkpoint / early_stopping: inherited from configs/callbacks/default.yaml
+  # (val/nll_cal, mode min).
+  test_artifacts:
+    hist_bins: 10
