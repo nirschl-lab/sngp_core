@@ -839,6 +839,44 @@ uv run python scripts/metrics/cifar100_evidence_ls_report.py --expect-committed 
 Gate: the SNGP / SpecReg rows reproduce NLL 0.7600 / 0.7472, and the offline softmax reproduces
 `class_probs` (max |Δ| ≤ 4.7e-7 for the new rows).
 
+### cosine: SNGP / SpecReg / Muon GP head on the cosine schedule at ℓ = 7 (2026-10-01)
+
+Five single-seed rows (seed 12345), all `last.ckpt`, with one val-fit knob per row:
+- SNGP c = 6.0 and SNGP + SpecReg;
+- Muon wd 0.1 with the AdamW aux group;
+- Muon wd 0.1 and wd 0 with the SGD aux group (`MuonWithAuxSGD`).
+
+All five use `CosineAnnealingLR` to 0 over 250 epochs at ℓ = 7. They are shown next to the 3-seed
+Baseline / SNGP / SpecReg / evidence-ℓ rows and the piecewise Muon wd 0.1 row. `cos_muon_wd0_s12345`
+(AdamW aux) was stopped at epoch 152 and is not evaluated. Branch `acevedo-muon`.
+Checkpoints: [checkpoints/CIFAR_CHECKPOINTS.md](checkpoints/CIFAR_CHECKPOINTS.md), section "cosine".
+
+```bash
+# new rows' predictions
+/data1/maheswararao/experiments/uncertainty-aware-ml/infer/cosine_2026-10-01_10-17-06_{cos_sngp_l7,cos_specreg_l7,cos_muon_wd0.1,cos_muonsgd_wd0.1,cos_muonsgd_wd0}_s12345__{cifar100,cifar10,svhn}/
+# val fits for the 5 new checkpoints
+/data1/maheswararao/experiments/uncertainty-aware-ml/tmux_logs/cifar100_cosine_infer_2026-10-01_16-25-28/fit_cosine_2026-10-01_10-17-06_<label>.log
+```
+
+Reproduce:
+```bash
+scripts/tmux/cifar100_cosine.sh              # train SNGP / SpecReg / Muon wd 0.1 (AdamW aux), ~2.7 h
+CIFAR_COSINE_STAMP=2026-10-01_10-17-06 ARMS="cos_muonsgd_wd0.1_s12345 cos_muonsgd_wd0_s12345" \
+    scripts/tmux/cifar100_cosine.sh          # the two SGD-aux Muon arms into the same tag
+scripts/tmux/cifar100_cosine_infer.sh cosine_2026-10-01_10-17-06   # inference + 5 val fits (~3 min)
+T=/data1/maheswararao/experiments/uncertainty-aware-ml/tmux_logs
+uv run python scripts/metrics/cifar100_evidence_ls_report.py --expect-committed \
+    --tag evidence_ls_2026-09-28_16-10-10 --muon-tag muon_2026-09-30_15-20-01 \
+    --cosine-tag cosine_2026-10-01_10-17-06 \
+    --arms baseline sngp specreg els muon_pw01 cos_sngp cos_specreg cos_muon01 cos_muonsgd01 cos_muonsgd0 \
+    --fit-logs $T/cifar100_evidence_ls_2026-09-28_16-10-10_infer $T/cifar100_muon_infer_2026-10-01_09-28-29 \
+               $T/cifar100_cosine_infer_2026-10-01_16-25-28 \
+    --csv figures/cifar100_cosine/cifar100_cosine_per_seed.csv
+```
+
+Gate: the SNGP / SpecReg rows reproduce NLL 0.7600 / 0.7472, and the offline softmax reproduces
+`class_probs` (max |Δ| ≤ 4.2e-7 for the new rows).
+
 ---
 
 **Acevedo GP head without SN, trained with Muon (2026-09-30).** Calibrated inference for the
