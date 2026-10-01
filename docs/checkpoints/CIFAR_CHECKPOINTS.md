@@ -246,15 +246,22 @@ the Acevedo schedule (`CosineAnnealingLR` to 0 over 250 epochs, per epoch, no wa
 `cosine_2026-10-01_10-17-06`, W&B group `CIFAR100_cosine_2026-10-01_10-17-06`, runs `l602qimv`
 SNGP / `1damijv6` SpecReg / `7qd4u08k` Muon wd 0.1 / `2bsnyc36` Muon wd 0. The wd-0 arm was added
 an hour later (`ARMS=cos_muon_wd0_s12345` with the same stamp, driver log `driver_add_11-29-00.log`);
-its AdamW group keeps weight decay 0.01, as in the piecewise `muon_wd0` arm. Compare at
-`last.ckpt` (epoch 249).
+its AdamW group keeps weight decay 0.01, as in the piecewise `muon_wd0` arm. **It was stopped at
+epoch 152**, so its `last.ckpt` is partial and not a result: the AdamW aux group let the final BN γ and
+the GP output layer drift (see `configs/experiment/sngp_muon_sgd_cifar100_cosine.yaml`). It was
+replaced by two `MuonWithAuxSGD` arms (experiment `sngp_muon_sgd_cifar100_cosine`, commit `7db53ea`):
+the SGD arms' exact rule (0.04, Nesterov, L2 6e-4) on the stem / BN / GP output layer. They are
+`cos_muonsgd_wd0.1_s12345` (W&B `8leo4avq`) and `cos_muonsgd_wd0_s12345` (W&B `jjwe330m`), launched
+13:13 into the same tag (driver log `driver_add_13-13-11.log`). Compare at `last.ckpt` (epoch 249).
 
 ```bash
 C=/data1/maheswararao/experiments/uncertainty-aware-ml/overnight/cosine_2026-10-01_10-17-06
 $C/cos_sngp_l7_s12345/checkpoints/{best,last}.ckpt      # SNGP, c = 6.0
 $C/cos_specreg_l7_s12345/checkpoints/{best,last}.ckpt   # SNGP + SpecReg
 $C/cos_muon_wd0.1_s12345/checkpoints/{best,last}.ckpt   # GP head, no SN, Muon wd 0.1
-$C/cos_muon_wd0_s12345/checkpoints/{best,last}.ckpt     # GP head, no SN, Muon wd 0
+$C/cos_muon_wd0_s12345/checkpoints/{best,last}.ckpt     # GP head, no SN, Muon wd 0 -- STOPPED at epoch 152
+$C/cos_muonsgd_wd0.1_s12345/checkpoints/{best,last}.ckpt  # GP head, no SN, Muon wd 0.1 + SGD aux
+$C/cos_muonsgd_wd0_s12345/checkpoints/{best,last}.ckpt    # GP head, no SN, Muon wd 0 + SGD aux
 ```
 
 The `cosine_smoke_*` tree under `overnight/` is a 1200-step smoke test, not a result.
