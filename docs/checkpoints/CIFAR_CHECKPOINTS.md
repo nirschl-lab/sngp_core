@@ -252,7 +252,16 @@ the GP output layer drift (see `configs/experiment/sngp_muon_sgd_cifar100_cosine
 replaced by two `MuonWithAuxSGD` arms (experiment `sngp_muon_sgd_cifar100_cosine`, commit `7db53ea`):
 the SGD arms' exact rule (0.04, Nesterov, L2 6e-4) on the stem / BN / GP output layer. They are
 `cos_muonsgd_wd0.1_s12345` (W&B `8leo4avq`) and `cos_muonsgd_wd0_s12345` (W&B `jjwe330m`), launched
-13:13 into the same tag (driver log `driver_add_13-13-11.log`). Compare at `last.ckpt` (epoch 249).
+13:13 into the same tag (driver log `driver_add_13-13-11.log`).
+
+Two BatchNorm-control arms on the Muon wd 0.1 + SGD aux recipe were added at 17:03 (commit `e6074b3`,
+driver log `driver_add_17-03-18.log`):
+- `cos_muonsgd_bnsn_wd0.1_s12345` (W&B `2debw4em`), experiment `sngp_muon_sgd_bnsn_cifar100_cosine`:
+  every BN is a `SpectralBatchNorm2d` with its gain max|γ|/√(running_var+ε) capped at 3 (DUE).
+- `cos_muonsgd_bnreg_wd0.1_s12345` (W&B `nkkg01xu`), experiment `sngp_muon_sgd_bnreg_cifar100_cosine`:
+  the loss gets CE + 0.01·Σ_l (BN gain)² every 24 steps (`spec_reg_target: batchnorm`).
+
+Compare at `last.ckpt` (epoch 249).
 
 ```bash
 C=/data1/maheswararao/experiments/uncertainty-aware-ml/overnight/cosine_2026-10-01_10-17-06
@@ -262,6 +271,8 @@ $C/cos_muon_wd0.1_s12345/checkpoints/{best,last}.ckpt   # GP head, no SN, Muon w
 $C/cos_muon_wd0_s12345/checkpoints/{best,last}.ckpt     # GP head, no SN, Muon wd 0 -- STOPPED at epoch 152
 $C/cos_muonsgd_wd0.1_s12345/checkpoints/{best,last}.ckpt  # GP head, no SN, Muon wd 0.1 + SGD aux
 $C/cos_muonsgd_wd0_s12345/checkpoints/{best,last}.ckpt    # GP head, no SN, Muon wd 0 + SGD aux
+$C/cos_muonsgd_bnsn_wd0.1_s12345/checkpoints/{best,last}.ckpt   # Muon wd 0.1 + SGD aux + BN spectral norm (c = 3)
+$C/cos_muonsgd_bnreg_wd0.1_s12345/checkpoints/{best,last}.ckpt  # Muon wd 0.1 + SGD aux + BN SpecReg (0.01, every 24 steps)
 ```
 
 The `cosine_smoke_*` tree under `overnight/` is a 1200-step smoke test, not a result.
