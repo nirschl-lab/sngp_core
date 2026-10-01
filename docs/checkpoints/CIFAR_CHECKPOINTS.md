@@ -214,3 +214,25 @@ $B/ols_specreg_s2/checkpoints/{best,last}.ckpt       # seed 2,     final l 5.00
 ```
 
 Verify: `read_meta('<path>').net_spec['length_scale']` → `5.612…` / `5.612…` / `5.0`.
+
+## muon — GP head on an unconstrained WRN-28-10, trained with Muon, ℓ = 7, seed 12345 (2026-09-30)
+
+`scripts/tmux/cifar100_muon.sh` (branch `acevedo-muon`): no spectral normalization and no
+spectral penalty; Muon (lr 0.02) on the hidden convs, AdamW on the rest, ℓ = 7. Two schedules:
+`sngp_muon_cifar100` (piecewise, tag `muon_2026-09-30_15-20-01`, W&B group
+`CIFAR100_muon_2026-09-30_15-20-01`, runs `bousli1o` wd 0 / `sjbaklag` wd 0.1) and
+`sngp_muon_cifar100_wsd` (`--wsd`, tag `muon_wsd_2026-09-30_15-54-17`, W&B group
+`CIFAR100_muon_wsd_2026-09-30_15-54-17`, runs `5ljnhcdw` wd 0 / `9yk8zf4a` wd 0.1).
+Compare at `last.ckpt` (epoch 249). Results:
+[../results/CIFAR100_MUON_RESULTS.md](../results/CIFAR100_MUON_RESULTS.md).
+
+```bash
+P=/data1/maheswararao/experiments/uncertainty-aware-ml/overnight/muon_2026-09-30_15-20-01
+W=/data1/maheswararao/experiments/uncertainty-aware-ml/overnight/muon_wsd_2026-09-30_15-54-17
+$P/muon_wd0_s12345/checkpoints/{best,last}.ckpt     # piecewise, Muon wd 0
+$P/muon_wd0.1_s12345/checkpoints/{best,last}.ckpt   # piecewise, Muon wd 0.1
+$W/muon_wd0_s12345/checkpoints/{best,last}.ckpt     # WSD, Muon wd 0
+$W/muon_wd0.1_s12345/checkpoints/{best,last}.ckpt   # WSD, Muon wd 0.1
+```
+
+The `muon_smoke_*` / `muon_wsd_smoke_*` trees under `overnight/` are 1200-step smoke tests, not results.

@@ -805,6 +805,40 @@ uv run python scripts/metrics/cifar100_length_scale_evidence.py --cache-dir $C -
 Gate: the same as evidence_ls (the SNGP / SpecReg rows reproduce NLL 0.7600 / 0.7472, and the
 offline softmax reproduces `class_probs`, max |Δ| ≤ 3.4e-7 for the new rows).
 
+### muon: GP head on an unconstrained WRN-28-10, trained with Muon, 9-row benchmark (2026-09-30)
+
+The online_ls benchmark plus 4 single-seed rows (seed 12345): Muon wd 0 / 0.1 under the piecewise
+and the warmup-stable-decay schedule, no SN, ℓ = 7. All rows use `last.ckpt` and one val-fit knob
+per row. Branch `acevedo-muon`.
+Results: [results/CIFAR100_MUON_RESULTS.md](results/CIFAR100_MUON_RESULTS.md).
+Checkpoints: [checkpoints/CIFAR_CHECKPOINTS.md](checkpoints/CIFAR_CHECKPOINTS.md), section "muon".
+
+```bash
+# new rows' predictions (the other 15 rows reuse the evidence_ls / online_ls sections')
+/data1/maheswararao/experiments/uncertainty-aware-ml/infer/muon_2026-09-30_15-20-01_muon_wd{0,0.1}_s12345__{cifar100,cifar10,svhn}/
+/data1/maheswararao/experiments/uncertainty-aware-ml/infer/muon_wsd_2026-09-30_15-54-17_muon_wd{0,0.1}_s12345__{cifar100,cifar10,svhn}/
+# val fits for the 4 new checkpoints
+/data1/maheswararao/experiments/uncertainty-aware-ml/tmux_logs/cifar100_muon_infer_2026-10-01_09-28-29/fit_<tag>_muon_wd<wd>_s12345.log
+```
+
+Reproduce:
+```bash
+scripts/tmux/cifar100_muon.sh                # train piecewise arms (GPUs 0 1, ~2.7 h)
+scripts/tmux/cifar100_muon.sh --wsd          # train WSD arms (GPUs 2 3, ~2.7 h)
+scripts/tmux/cifar100_muon_infer.sh muon_2026-09-30_15-20-01 muon_wsd_2026-09-30_15-54-17   # inference + 4 val fits
+T=/data1/maheswararao/experiments/uncertainty-aware-ml/tmux_logs
+uv run python scripts/metrics/cifar100_evidence_ls_report.py --expect-committed \
+    --tag evidence_ls_2026-09-28_16-10-10 --ols-tag online_ls_2026-09-29_12-07-14 \
+    --muon-tag muon_2026-09-30_15-20-01 --muon-wsd-tag muon_wsd_2026-09-30_15-54-17 \
+    --arms baseline sngp specreg els ols muon_pw0 muon_pw01 muon_wsd0 muon_wsd01 \
+    --fit-logs $T/cifar100_evidence_ls_2026-09-28_16-10-10_infer $T/cifar100_online_ls_2026-09-29_12-07-14_infer \
+               $T/cifar100_muon_infer_2026-10-01_09-28-29 \
+    --csv figures/cifar100_muon/cifar100_muon_per_seed.csv
+```
+
+Gate: the SNGP / SpecReg rows reproduce NLL 0.7600 / 0.7472, and the offline softmax reproduces
+`class_probs` (max |Δ| ≤ 4.7e-7 for the new rows).
+
 ---
 
 **Acevedo GP head without SN, trained with Muon (2026-09-30).** Calibrated inference for the
