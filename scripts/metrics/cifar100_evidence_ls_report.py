@@ -38,6 +38,18 @@ The 5th row, the online-l arm (scripts/tmux/cifar100_online_ls.sh), is opt-in:
         --fit-logs $EXPERIMENTS_HOME/$PROJECT_NAME/tmux_logs/cifar100_evidence_ls_2026-09-28_16-10-10_infer \\
                    $EXPERIMENTS_HOME/$PROJECT_NAME/tmux_logs/cifar100_online_ls_2026-09-29_12-07-14_infer \\
         --csv figures/cifar100_online_ls/cifar100_online_ls_per_seed.csv
+
+The Muon rows (scripts/tmux/cifar100_muon.sh: GP head on an unconstrained WRN-28-10, Muon,
+l = 7, seed 12345 only, Muon wd 0 / 0.1 under the piecewise and/or WSD schedule) are opt-in
+too; their predictions and val fits come from scripts/tmux/cifar100_muon_infer.sh. A one-seed
+row is printed without a spread, and its paired deltas use the seeds both rows share:
+
+    uv run python scripts/metrics/cifar100_evidence_ls_report.py \\
+        --tag evidence_ls_2026-09-28_16-10-10 --ols-tag online_ls_2026-09-29_12-07-14 \\
+        --muon-tag muon_2026-09-30_15-20-01 --muon-wsd-tag muon_wsd_2026-09-30_15-54-17 \\
+        --arms baseline sngp specreg els ols muon_pw0 muon_pw01 muon_wsd0 muon_wsd01 \\
+        --fit-logs <evidence_ls _infer dir> <online_ls _infer dir> <cifar100_muon_infer_<stamp> dir> \\
+        --csv figures/cifar100_muon/cifar100_muon_per_seed.csv
 """
 import argparse
 import csv
@@ -73,7 +85,23 @@ ARMS: Dict[str, str] = {
     "specreg": "SNGP + SpecReg",
     "els": "SNGP + SpecReg + evidence ℓ = 7",
     "ols": "SNGP + SpecReg + online evidence ℓ",
+    "muon_pw0": "GP head, no SN, Muon wd 0 (piecewise)",
+    "muon_pw01": "GP head, no SN, Muon wd 0.1 (piecewise)",
+    "muon_wsd0": "GP head, no SN, Muon wd 0 (WSD)",
+    "muon_wsd01": "GP head, no SN, Muon wd 0.1 (WSD)",
 }
+# Muon rows: arm -> (which tag flag, run label stem). One seed each.
+MUON_ARMS = {
+    "muon_pw0": ("muon_tag", "muon_wd0"),
+    "muon_pw01": ("muon_tag", "muon_wd0.1"),
+    "muon_wsd0": ("muon_wsd_tag", "muon_wd0"),
+    "muon_wsd01": ("muon_wsd_tag", "muon_wd0.1"),
+}
+MUON_SEEDS = (12345,)
+
+
+def _seeds(arm: str) -> Tuple[int, ...]:
+    return MUON_SEEDS if arm in MUON_ARMS else SEEDS
 # Committed val-fit numbers (CIFAR100_RESULTS.md, "λ fitted on validation"), for the gate.
 COMMITTED_NLL = {"sngp": 0.7600, "specreg": 0.7472}
 _NO_VAR = 1e-12
@@ -89,8 +117,16 @@ FIELDS = [
 ]
 
 
-def _source(arm: str, seed: int, tag: str, ols_tag: Optional[str] = None) -> Tuple[str, str, str]:
+def _source(arm: str, seed: int, tag: str, ols_tag: Optional[str] = None,
+            muon_tags: Optional[Dict[str, Optional[str]]] = None) -> Tuple[str, str, str]:
     """(infer tag, infer label, fit-log row) for one arm x seed."""
+    if arm in MUON_ARMS:
+        flag, stem = MUON_ARMS[arm]
+        mtag = (muon_tags or {}).get(flag)
+        if mtag is None:
+            raise SystemExit(f"arm {arm!r} needs --{flag.replace('_', '-')}")
+        label = f"{stem}_s{seed}"
+        return mtag, label, f"{mtag}_{label}"  # cifar100_muon_infer.sh writes fit_<tag>_<label>.log
     if arm == "els":
         return tag, f"els_specreg_s{seed}", f"els_specreg_s{seed}"
     if arm == "ols":
@@ -161,17 +197,20 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--tag", required=True, help="the new arm's tag, e.g. evidence_ls_2026-09-28_16-10-10")
     ap.add_argument("--ols-tag", help="the online-l arm's tag (scripts/tmux/cifar100_online_ls.sh), e.g. online_ls_2026-09-29_12-07-14")
+    ap.add_argument("--muon-tag", help="piecewise Muon study tag (scripts/tmux/cifar100_muon.sh), e.g. muon_2026-09-30_15-20-01")
+    ap.add_argument("--muon-wsd-tag", help="WSD Muon study tag (cifar100_muon.sh --wsd), e.g. muon_wsd_2026-09-30_15-54-17")
     ap.add_argument("--fit-logs", required=True, type=Path, nargs="+", help="dirs holding fit_<arm>_s<seed>.log")
     ap.add_argument("--csv", required=True, type=Path)
-    ap.add_argument("--arms", nargs="+", default=[a for a in ARMS if a != "ols"], choices=list(ARMS))
+    ap.add_argument("--arms", nargs="+", default=["baseline", "sngp", "specreg", "els"], choices=list(ARMS))
     ap.add_argument("--expect-committed", action="store_true", help="gate the SNGP / SpecReg rows on CIFAR100_RESULTS.md")
     args = ap.parse_args()
 
     infer_root = Path(os.environ["EXPERIMENTS_HOME"]) / os.environ["PROJECT_NAME"] / "infer"
     rows: List[Dict[str, object]] = []
+    muon_tags = {"muon_tag": args.muon_tag, "muon_wsd_tag": args.muon_wsd_tag}
     for arm_key in args.arms:
-        for seed in SEEDS:
-            tag, label, fit_row = _source(arm_key, seed, args.tag, args.ols_tag)
+        for seed in _seeds(arm_key):
+            tag, label, fit_row = _source(arm_key, seed, args.tag, args.ols_tag, muon_tags)
             knob, trained, fitted = _fit(args.fit_logs, fit_row)
             if arm_key == "baseline":
                 arm, published, logits = _baseline_arm(infer_root, tag, label, fitted)
@@ -225,15 +264,21 @@ def main() -> None:
             print(f"| {ARMS[a]} | " + " | ".join(cells) + " |")
         print()
 
-    pairs = [(b, a) for a, b in (("sngp", "specreg"), ("specreg", "els"), ("specreg", "ols"), ("els", "ols"))
-             if a in by_arm and b in by_arm]
+    base_pairs = [("sngp", "specreg"), ("specreg", "els"), ("specreg", "ols"), ("els", "ols")]
+    # Each Muon row against its natural references: SpecReg at the same l (els), SpecReg at the
+    # recipe l = 20, and spectral-norm SNGP; and the WSD rows against the matching piecewise row.
+    for m in MUON_ARMS:
+        base_pairs += [(ref, m) for ref in ("els", "specreg", "sngp")]
+    base_pairs += [("muon_pw0", "muon_wsd0"), ("muon_pw01", "muon_wsd01")]
+    pairs = [(b, a) for a, b in base_pairs if a in by_arm and b in by_arm]
     delta_cols = ["acc", "nll", "smece", "auroc_msp_cifar10", "auroc_msp_svhn", "auroc_ds_svhn", "auroc_var_cifar10", "auroc_var_svhn"]
     for hi, lo in pairs:
         print(f"### Paired per seed: {ARMS[hi]} − {ARMS[lo]}\n")
         print("| seed | " + " | ".join(delta_cols) + " |")
         print("|---|" + "---:|" * len(delta_cols))
         deltas = {k: [] for k in delta_cols}
-        for seed in SEEDS:
+        shared = [s for s in SEEDS if s in _seeds(hi) and s in _seeds(lo)]
+        for seed in shared:
             h = next(r for r in by_arm[hi] if r["seed"] == seed)
             l = next(r for r in by_arm[lo] if r["seed"] == seed)
             d = {k: h[k] - l[k] for k in delta_cols}
@@ -242,7 +287,7 @@ def main() -> None:
             print(f"| {seed} | " + " | ".join(f"{v:+.4f}" for v in d.values()) + " |")
         print("| **mean** | " + " | ".join(f"{statistics.mean(v):+.4f}" for v in deltas.values()) + " |")
         signs = [max(sum(x > 0 for x in v), sum(x < 0 for x in v)) for v in deltas.values()]
-        print("| sign-consistent | " + " | ".join(f"{s}/{len(SEEDS)}" for s in signs) + " |\n")
+        print("| sign-consistent | " + " | ".join(f"{s}/{len(shared)}" for s in signs) + " |\n")
 
 
 if __name__ == "__main__":
