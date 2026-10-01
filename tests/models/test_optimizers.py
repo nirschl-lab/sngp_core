@@ -1,13 +1,19 @@
 """Guards for `src/models/components/optimizers.py`.
 
-The Muon / AdamW split is by parameter shape, not name, so a wrong rule would silently
-send the stem, BatchNorm or the GP output layer to Muon (or every conv to AdamW) and
-still train.
+The Muon / aux split is by parameter shape, not name, so a wrong rule would silently
+send the stem, BatchNorm or the GP output layer to Muon (or every conv to the aux
+optimizer) and still train. `MuonWithAuxSGD`'s aux group must be exactly the SGD arms'
+update rule, or the Muon-vs-SGD comparison is no longer confined to the hidden convs.
 """
 import pytest
 import torch
 
-from src.models.components.optimizers import MuonWithAuxAdamW, is_muon_param, zeropower_via_newtonschulz5
+from src.models.components.optimizers import (
+    MuonWithAuxAdamW,
+    MuonWithAuxSGD,
+    is_muon_param,
+    zeropower_via_newtonschulz5,
+)
 from src.models.sngp.sngp_classifier import SNGPClassifier
 
 
@@ -17,14 +23,15 @@ def net() -> SNGPClassifier:
     return SNGPClassifier(num_classes=8, arch="resnet18", use_spectral_norm=False)
 
 
-def _group_ids(optimizer: MuonWithAuxAdamW) -> tuple[set[int], set[int]]:
+def _group_ids(optimizer: torch.optim.Optimizer) -> tuple[set[int], set[int]]:
     muon, adamw = optimizer.param_groups
     assert muon["use_muon"] and not adamw["use_muon"]
     return {id(p) for p in muon["params"]}, {id(p) for p in adamw["params"]}
 
 
-def test_split_on_sngp_resnet18(net: SNGPClassifier):
-    optimizer = MuonWithAuxAdamW(net.parameters())
+@pytest.mark.parametrize("cls", [MuonWithAuxAdamW, MuonWithAuxSGD])
+def test_split_on_sngp_resnet18(net: SNGPClassifier, cls):
+    optimizer = cls(net.parameters())
     muon, adamw = _group_ids(optimizer)
     named = dict(net.named_parameters())
     assert id(named["backbone.conv1.weight"]) in adamw  # RGB stem
@@ -36,9 +43,10 @@ def test_split_on_sngp_resnet18(net: SNGPClassifier):
     assert len(muon) + len(adamw) == len(named)
 
 
-def test_rejects_models_without_conv_kernels():
+@pytest.mark.parametrize("cls", [MuonWithAuxAdamW, MuonWithAuxSGD])
+def test_rejects_models_without_conv_kernels(cls):
     with pytest.raises(ValueError, match="no hidden conv kernels"):
-        MuonWithAuxAdamW(torch.nn.Linear(4, 4).parameters())
+        cls(torch.nn.Linear(4, 4).parameters())
 
 
 @pytest.mark.parametrize("shape", [(64, 576), (512, 128), (32, 32)])
@@ -75,8 +83,9 @@ def test_weight_decay_shrinks_muon_weights_only_by_lr_times_wd():
     torch.testing.assert_close(model.weight.detach(), before * (1 - 0.1 * 0.5))
 
 
-def test_state_dict_roundtrip_and_cosine_schedule(net: SNGPClassifier):
-    optimizer = MuonWithAuxAdamW(net.parameters(), lr=0.02, adamw_lr=1e-3)
+@pytest.mark.parametrize("cls, aux_lr", [(MuonWithAuxAdamW, "adamw_lr"), (MuonWithAuxSGD, "sgd_lr")])
+def test_state_dict_roundtrip_and_cosine_schedule(net: SNGPClassifier, cls, aux_lr):
+    optimizer = cls(net.parameters(), lr=0.02, **{aux_lr: 1e-3})
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=10)
     net.train()
     out = net(torch.randn(2, 3, 64, 64), update_precision=False)
@@ -88,8 +97,32 @@ def test_state_dict_roundtrip_and_cosine_schedule(net: SNGPClassifier):
     assert 0 < factor < 1
     assert optimizer.param_groups[1]["lr"] == pytest.approx(1e-3 * factor)
 
-    fresh = MuonWithAuxAdamW(net.parameters(), lr=0.02, adamw_lr=1e-3)
+    fresh = cls(net.parameters(), lr=0.02, **{aux_lr: 1e-3})
     fresh.load_state_dict(optimizer.state_dict())
     for a, b in zip(fresh.param_groups, optimizer.param_groups):
         assert a["lr"] == b["lr"] and a["use_muon"] == b["use_muon"]
     assert len(fresh.state) == len(optimizer.state)
+
+
+@pytest.mark.parametrize("nesterov", [True, False])
+def test_sgd_aux_group_matches_torch_sgd(nesterov):
+    """The aux step is torch.optim.SGD (coupled L2, dampening 0), step for step."""
+    torch.manual_seed(0)
+    model = torch.nn.Sequential(torch.nn.Conv2d(8, 8, 3), torch.nn.BatchNorm2d(8),
+                                torch.nn.Flatten(), torch.nn.Linear(8 * 6 * 6, 5))
+    hp = dict(lr=0.04, momentum=0.9, nesterov=nesterov, weight_decay=6e-4)
+    optimizer = MuonWithAuxSGD(model.parameters(), sgd_lr=hp["lr"], sgd_momentum=hp["momentum"],
+                               sgd_nesterov=nesterov, sgd_weight_decay=hp["weight_decay"])
+    aux = optimizer.param_groups[1]["params"]
+    assert len(aux) == 5  # conv bias, BN weight/bias, linear weight/bias
+    ref_params = [p.detach().clone().requires_grad_() for p in aux]
+    reference = torch.optim.SGD(ref_params, **hp)
+    for _ in range(3):
+        optimizer.zero_grad()
+        model(torch.randn(4, 8, 8, 8)).square().mean().backward()
+        for r, p in zip(ref_params, aux):
+            r.grad = p.grad.clone()
+        optimizer.step()
+        reference.step()
+        for r, p in zip(ref_params, aux):
+            torch.testing.assert_close(p.detach(), r.detach())

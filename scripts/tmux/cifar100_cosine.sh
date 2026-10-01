@@ -4,13 +4,18 @@
 # l = 7. Follow-up of docs/results/CIFAR100_MUON_RESULTS.md, where the piecewise-schedule Muon rows
 # trail every SGD row in-distribution; the experiment headers have the reasoning.
 #
-# One seed (12345), four arms, one per GPU, ~2.7-3 h:
-#   cos_sngp_l7_s12345      experiment=sngp_cifar100_cosine          spectral norm c = 6.0, SGD
-#   cos_specreg_l7_s12345   experiment=sngp_specreg_cifar100_cosine  spectral penalty, SGD
-#   cos_muon_wd0.1_s12345   experiment=sngp_muon_cifar100_cosine     no SN, Muon wd 0.1
-#   cos_muon_wd0_s12345     experiment=sngp_muon_cifar100_cosine     no SN, Muon wd 0 (AdamW group
-#                                                                     keeps its 0.01, as in the
-#                                                                     piecewise muon_wd0 arm)
+# One seed (12345), one arm per GPU, ~2.7-3 h:
+#   cos_sngp_l7_s12345        experiment=sngp_cifar100_cosine           spectral norm c = 6.0, SGD
+#   cos_specreg_l7_s12345     experiment=sngp_specreg_cifar100_cosine   spectral penalty, SGD
+#   cos_muon_wd0.1_s12345     experiment=sngp_muon_cifar100_cosine      no SN, Muon wd 0.1, AdamW aux
+#   cos_muon_wd0_s12345       experiment=sngp_muon_cifar100_cosine      no SN, Muon wd 0, AdamW aux
+#                                                                       (aux keeps its 0.01)
+#   cos_muonsgd_wd0.1_s12345  experiment=sngp_muon_sgd_cifar100_cosine  no SN, Muon wd 0.1, SGD aux
+#   cos_muonsgd_wd0_s12345    experiment=sngp_muon_sgd_cifar100_cosine  no SN, Muon wd 0, SGD aux
+#
+# In cosine_2026-10-01_10-17-06, cos_muon_wd0_s12345 was stopped at epoch 152: the AdamW aux group
+# let the final BN gamma and the GP output layer drift (see sngp_muon_sgd_cifar100_cosine.yaml),
+# and the two muonsgd arms replaced it.
 #
 # ARMS="label ..." runs a subset. With CIFAR_COSINE_STAMP=<stamp> of an earlier launch it adds those
 # arms to that launch's tree and W&B group (own tmux session and driver log); that is how
@@ -41,8 +46,11 @@ declare -A ARM_OVERRIDES=(
   [cos_specreg_l7_s12345]="experiment=sngp_specreg_cifar100_cosine"
   [cos_muon_wd0.1_s12345]="experiment=sngp_muon_cifar100_cosine"
   [cos_muon_wd0_s12345]="experiment=sngp_muon_cifar100_cosine model.optimizer.weight_decay=0.0"
+  [cos_muonsgd_wd0.1_s12345]="experiment=sngp_muon_sgd_cifar100_cosine"
+  [cos_muonsgd_wd0_s12345]="experiment=sngp_muon_sgd_cifar100_cosine model.optimizer.weight_decay=0.0"
 )
 ALL_ARMS="cos_sngp_l7_s12345 cos_specreg_l7_s12345 cos_muon_wd0.1_s12345 cos_muon_wd0_s12345"
+ALL_ARMS+=" cos_muonsgd_wd0.1_s12345 cos_muonsgd_wd0_s12345"
 read -r -a ARM_LIST <<< "${ARMS:-${ALL_ARMS}}"
 for label in "${ARM_LIST[@]}"; do
   [[ -n "${ARM_OVERRIDES[${label}]:-}" ]] || { echo "Unknown arm '${label}'." >&2; exit 1; }
