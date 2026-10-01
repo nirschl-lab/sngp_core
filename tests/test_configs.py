@@ -266,6 +266,9 @@ class TestExperimentProtocolConsistency:
             "sngp_specreg_cifar100_rf",
             "sngp_muon_cifar100",
             "sngp_muon_cifar100_wsd",
+            "sngp_cifar100_cosine",
+            "sngp_specreg_cifar100_cosine",
+            "sngp_muon_cifar100_cosine",
         ],
     }
     _ALL_EXPERIMENTS = sorted(e for group in _EXPERIMENTS_BY_DATASET.values() for e in group)
@@ -305,6 +308,9 @@ class TestExperimentProtocolConsistency:
         "sngp_specreg_cifar100_rf": {"monitor": "val/loss", "early_stopping": None},
         "sngp_muon_cifar100": {"monitor": "val/loss", "early_stopping": None},
         "sngp_muon_cifar100_wsd": {"monitor": "val/loss", "early_stopping": None},
+        "sngp_cifar100_cosine": {"monitor": "val/loss", "early_stopping": None},
+        "sngp_specreg_cifar100_cosine": {"monitor": "val/loss", "early_stopping": None},
+        "sngp_muon_cifar100_cosine": {"monitor": "val/loss", "early_stopping": None},
     }
 
     # sngp_specreg_* experiments normally must have weight_decay == 0, so the spectral
@@ -313,8 +319,10 @@ class TestExperimentProtocolConsistency:
     # everything but the regularizer fixed -- including that arm's weight decay. (Its
     # companion, sngp_specreg_cifar100_literal, keeps 0 and is not exempt. The rf_e2e_l2
     # study, sngp_specreg_cifar100_rf, changes only the GP head of the matched arm, so it
-    # inherits the exemption.)
-    _SPECREG_WD_EXEMPT = frozenset({"sngp_specreg_cifar100", "sngp_specreg_cifar100_rf"})
+    # inherits the exemption, as does the cosine-schedule study's sngp_specreg_cifar100_cosine.)
+    _SPECREG_WD_EXEMPT = frozenset(
+        {"sngp_specreg_cifar100", "sngp_specreg_cifar100_rf", "sngp_specreg_cifar100_cosine"}
+    )
 
     # The Liu et al. (2022) Table 9 constants, as pinned in configs/model/sngp_classifier.yaml.
     #

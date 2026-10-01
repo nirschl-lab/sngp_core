@@ -1,0 +1,88 @@
+# @package _global_
+
+# to execute this experiment run:
+# python train.py experiment=sngp_muon_cifar100_cosine
+#
+# sngp_muon_cifar100 (GP head on an unconstrained WRN-28-10, Muon wd 0.1, l = 7) with ONE
+# change: warmup_piecewise_lr -> CosineAnnealingLR. Same shape as the sngp_muon_cifar100_wsd
+# arm, which changed only the schedule too.
+#
+# Why: the piecewise-schedule Muon rows trail every SGD row in-distribution
+# (docs/results/CIFAR100_MUON_RESULTS.md), and the schedule is one suspect. The cosine study runs
+# SNGP, SNGP + SpecReg and the Muon GP head on ONE shared schedule and ONE length scale (l = 7,
+# the SpecReg evidence pick), so Muon vs SGD differs only in the optimizer and the spectral
+# control. Launched by scripts/tmux/cifar100_cosine.sh. Only the schedule (and, where noted, l)
+# differs from the parent, so the parent's header carries the reasoning for everything else.
+
+defaults:
+  - override /data: cifar100
+  - override /model: sngp_classifier
+  - override /callbacks: default
+  - override /trainer: default
+
+name: "cifar100_sngp_muon_cosine_wrn28x10"
+WANDB_PROJECT: ${oc.env:PROJECT_NAME}
+tags: ["sngp", "muon", "no-spectral-norm", "cifar100", "wide_resnet28_10", "benchmark", "cosine", "training"]
+
+seed: 12345
+
+num_classes: 100
+
+trainer:
+  min_epochs: 250
+  max_epochs: 250
+  accelerator: "gpu"
+
+model:
+  # Own output dir: task_name is "train/${model.name}_<dataset>".
+  name: sngp_muon_cosine_classifier
+  optimizer:
+    _target_: src.models.components.optimizers.MuonWithAuxAdamW
+    _partial_: true
+    lr: 0.02
+    momentum: 0.95
+    weight_decay: 0.1
+    adamw_lr: 1e-3
+    adamw_weight_decay: 0.01
+  net:
+    arch: wide_resnet28_10
+    num_classes: ${num_classes}
+    pretrained: false
+    use_spectral_norm: false
+    spectral_norm_bound: null
+    length_scale: 7.0
+    scale_random_features: false
+    ridge_penalty: 1.0
+    normalize_input: false
+    mean_field_factor: 7.5
+  compile: false
+  scheduler:
+    # The Acevedo schedule (sngp_acevedo.yaml et al.): cosine from the peak LR to 0 over the
+    # full budget, stepped once per epoch, no warmup. Scales every optimizer param group.
+    _target_: torch.optim.lr_scheduler.CosineAnnealingLR
+    _partial_: true
+    T_max: ${trainer.max_epochs}
+    eta_min: 0.0
+  num_classes: ${num_classes}
+
+data:
+  datamodule:
+    batch_size: 128
+
+logger:
+  wandb:
+    project: "${WANDB_PROJECT}"
+    tags: "${tags_with:${tags},${data.datamodule.institution}}"
+    group: "CIFAR100"
+    name: ${name}
+    log_model: True
+  aim:
+    experiment: ""
+
+callbacks:
+  model_checkpoint:
+    monitor: "val/loss"
+    mode: "min"
+  early_stopping: null
+  test_artifacts:
+    hist_bins: 10
