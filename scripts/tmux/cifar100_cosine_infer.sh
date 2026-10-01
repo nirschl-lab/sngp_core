@@ -33,6 +33,8 @@ declare -A EXPERIMENT=(
   [cos_muon_wd0_s12345]=sngp_muon_cifar100_cosine
   [cos_muonsgd_wd0.1_s12345]=sngp_muon_sgd_cifar100_cosine
   [cos_muonsgd_wd0_s12345]=sngp_muon_sgd_cifar100_cosine
+  [cos_muonsgd_bnsn_wd0.1_s12345]=sngp_muon_sgd_bnsn_cifar100_cosine
+  [cos_muonsgd_bnreg_wd0.1_s12345]=sngp_muon_sgd_bnreg_cifar100_cosine
 )
 DEFAULT_LABELS="cos_sngp_l7_s12345 cos_specreg_l7_s12345 cos_muon_wd0.1_s12345"
 DEFAULT_LABELS+=" cos_muonsgd_wd0.1_s12345 cos_muonsgd_wd0_s12345"

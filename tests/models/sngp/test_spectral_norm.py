@@ -231,3 +231,84 @@ class TestBoundedSpectralNorm:
         expected = x @ model[0].weight.t() + model[0].bias
         assert torch.allclose(model(x), expected, atol=1e-5)
         assert _sigma_of(model[0]) == pytest.approx(2.0, abs=0.05)
+
+
+class TestSpectralBatchNorm:
+    """`SpectralBatchNorm2d` / `apply_bn_spectral_norm`: DUE's BN gain cap
+    max_i |gamma_i| / sqrt(running_var_i + eps) <= coeff (Gouk et al. eq. 28)."""
+
+    @staticmethod
+    def _gain(bn: nn.BatchNorm2d, weight: torch.Tensor) -> float:
+        return (weight.abs() / (bn.running_var + bn.eps).sqrt()).max().item()
+
+    @staticmethod
+    def _effective_weight(bn) -> torch.Tensor:
+        return bn.weight / torch.clamp(bn.lipschitz() / bn.coeff, min=1.0)
+
+    def test_gain_is_capped_in_train_and_eval(self):
+        from src.models.components.spectral_norm import SpectralBatchNorm2d
+
+        torch.manual_seed(0)
+        bn = SpectralBatchNorm2d(8, coeff=3.0)
+        with torch.no_grad():
+            bn.weight.copy_(torch.linspace(0.5, 4.0, 8))
+        for _ in range(20):  # running_var -> ~0.04, so the raw gain is ~20 >> 3
+            bn(torch.randn(16, 8, 4, 4) * 0.2)
+        assert bn.lipschitz().item() > 10
+        for mode in (bn.train, bn.eval):
+            mode()
+            assert self._gain(bn, self._effective_weight(bn)) == pytest.approx(3.0, rel=1e-5)
+        # Eval output is exactly BN with the rescaled gamma.
+        x = torch.randn(4, 8, 4, 4)
+        ref = nn.functional.batch_norm(x, bn.running_mean, bn.running_var, self._effective_weight(bn), bn.bias, False, 0.0, bn.eps)
+        torch.testing.assert_close(bn(x), ref)
+
+    def test_no_op_below_the_cap(self):
+        from src.models.components.spectral_norm import SpectralBatchNorm2d
+
+        torch.manual_seed(0)
+        plain = nn.BatchNorm2d(8)
+        bn = SpectralBatchNorm2d(8, coeff=3.0)
+        bn.load_state_dict(plain.state_dict())
+        x = torch.randn(16, 8, 4, 4)
+        torch.testing.assert_close(bn(x), plain(x))  # train: gamma = 1, running_var = 1 -> L = 1
+        torch.testing.assert_close(bn.running_var, plain.running_var)
+        assert bn.num_batches_tracked == plain.num_batches_tracked == 1
+        bn.eval(), plain.eval()
+        torch.testing.assert_close(bn(x), plain(x))
+
+    def test_state_dict_keys_match_batchnorm_and_load_both_ways(self):
+        from src.models.components.spectral_norm import SpectralBatchNorm2d
+
+        plain, bn = nn.BatchNorm2d(8), SpectralBatchNorm2d(8, coeff=3.0)
+        assert set(bn.state_dict()) == set(plain.state_dict())
+        bn.load_state_dict(plain.state_dict(), strict=True)
+        plain.load_state_dict(bn.state_dict(), strict=True)
+
+    def test_gradient_reaches_gamma_and_beta(self):
+        from src.models.components.spectral_norm import SpectralBatchNorm2d
+
+        bn = SpectralBatchNorm2d(8, coeff=0.5)  # binding from the start
+        bn(torch.randn(16, 8, 4, 4)).square().sum().backward()
+        assert bn.weight.grad is not None and bn.weight.grad.abs().sum() > 0
+        assert bn.bias.grad is not None and bn.bias.grad.abs().sum() > 0
+
+    def test_invalid_coeff_raises(self):
+        from src.models.components.spectral_norm import SpectralBatchNorm2d
+
+        with pytest.raises(ValueError, match="coeff"):
+            SpectralBatchNorm2d(8, coeff=0.0)
+
+    def test_apply_replaces_every_wrn_batchnorm_and_is_idempotent(self):
+        from src.models.backbones import build_backbone
+        from src.models.components.spectral_norm import SpectralBatchNorm2d, apply_bn_spectral_norm
+
+        torch.manual_seed(0)
+        backbone, _ = build_backbone("wide_resnet28_10", False)
+        before = {k: v.clone() for k, v in backbone.state_dict().items()}
+        assert apply_bn_spectral_norm(backbone, coeff=3.0) == 25
+        bns = [m for m in backbone.modules() if isinstance(m, nn.BatchNorm2d)]
+        assert len(bns) == 25 and all(isinstance(m, SpectralBatchNorm2d) and m.coeff == 3.0 for m in bns)
+        after = backbone.state_dict()
+        assert set(after) == set(before) and all(torch.equal(before[k], after[k]) for k in before)
+        assert apply_bn_spectral_norm(backbone, coeff=3.0) == 0

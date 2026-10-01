@@ -304,3 +304,28 @@ class TestSetLengthScale:
         x = torch.randn(2, 3, 64, 64)
         logits, _, _ = model.gp_head(model.pooled_features(x))
         torch.testing.assert_close(logits, model(x).logits)
+
+
+class TestBatchNormSpectralNormKnob:
+    def test_bound_builds_spectral_bn_and_round_trips_through_the_spec(self):
+        from src.models.components.spectral_norm import SpectralBatchNorm2d
+        from src.models.registry import build_net
+
+        model = SNGPClassifier(num_classes=4, arch="resnet18", pretrained=False, rff_dim=64,
+                               use_spectral_norm=False, bn_spectral_norm_bound=3.0)
+        bns = [m for m in model.backbone.modules() if isinstance(m, torch.nn.BatchNorm2d)]
+        assert len(bns) == 20 and all(isinstance(m, SpectralBatchNorm2d) and m.coeff == 3.0 for m in bns)
+        assert model.spec["bn_spectral_norm_bound"] == 3.0
+        rebuilt = build_net(model.spec)
+        rebuilt.load_state_dict(model.state_dict(), strict=True)
+        assert rebuilt.spec == model.spec
+
+    def test_spec_without_the_key_rebuilds_with_plain_batchnorm(self):
+        from src.models.components.spectral_norm import SpectralBatchNorm2d
+        from src.models.registry import build_net
+
+        spec = SNGPClassifier(num_classes=4, arch="resnet18", pretrained=False, rff_dim=64).spec
+        del spec["bn_spectral_norm_bound"]
+        rebuilt = build_net(spec)
+        assert rebuilt.bn_spectral_norm_bound is None
+        assert not any(isinstance(m, SpectralBatchNorm2d) for m in rebuilt.modules())

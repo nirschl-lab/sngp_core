@@ -12,6 +12,10 @@
 #                                                                       (aux keeps its 0.01)
 #   cos_muonsgd_wd0.1_s12345  experiment=sngp_muon_sgd_cifar100_cosine  no SN, Muon wd 0.1, SGD aux
 #   cos_muonsgd_wd0_s12345    experiment=sngp_muon_sgd_cifar100_cosine  no SN, Muon wd 0, SGD aux
+#   cos_muonsgd_bnsn_wd0.1_s12345   experiment=sngp_muon_sgd_bnsn_cifar100_cosine   + BN spectral
+#                                   norm, gain capped at 3 (DUE)
+#   cos_muonsgd_bnreg_wd0.1_s12345  experiment=sngp_muon_sgd_bnreg_cifar100_cosine  + BN SpecReg,
+#                                   CE + 0.01 * sum_l (max|gamma| / sigma)^2 every 24 steps
 #
 # In cosine_2026-10-01_10-17-06, cos_muon_wd0_s12345 was stopped at epoch 152: the AdamW aux group
 # let the final BN gamma and the GP output layer drift (see sngp_muon_sgd_cifar100_cosine.yaml),
@@ -48,9 +52,12 @@ declare -A ARM_OVERRIDES=(
   [cos_muon_wd0_s12345]="experiment=sngp_muon_cifar100_cosine model.optimizer.weight_decay=0.0"
   [cos_muonsgd_wd0.1_s12345]="experiment=sngp_muon_sgd_cifar100_cosine"
   [cos_muonsgd_wd0_s12345]="experiment=sngp_muon_sgd_cifar100_cosine model.optimizer.weight_decay=0.0"
+  [cos_muonsgd_bnsn_wd0.1_s12345]="experiment=sngp_muon_sgd_bnsn_cifar100_cosine"
+  [cos_muonsgd_bnreg_wd0.1_s12345]="experiment=sngp_muon_sgd_bnreg_cifar100_cosine"
 )
 ALL_ARMS="cos_sngp_l7_s12345 cos_specreg_l7_s12345 cos_muon_wd0.1_s12345 cos_muon_wd0_s12345"
 ALL_ARMS+=" cos_muonsgd_wd0.1_s12345 cos_muonsgd_wd0_s12345"
+ALL_ARMS+=" cos_muonsgd_bnsn_wd0.1_s12345 cos_muonsgd_bnreg_wd0.1_s12345"
 read -r -a ARM_LIST <<< "${ARMS:-${ALL_ARMS}}"
 for label in "${ARM_LIST[@]}"; do
   [[ -n "${ARM_OVERRIDES[${label}]:-}" ]] || { echo "Unknown arm '${label}'." >&2; exit 1; }

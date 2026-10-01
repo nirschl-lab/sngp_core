@@ -4,6 +4,7 @@ import torch
 
 from src.models.components.spectral_reg import (
     DEFAULT_SPEC_REG_WARMUP_ITERATIONS,
+    BatchNormSpectralRegularizer,
     SpectralRegularizer,
 )
 from src.models.outputs import ModelOutput
@@ -11,6 +12,8 @@ from src.models.sngp_lit_module import SNGPLitModule
 from src.utils import RankedLogger
 
 logger = RankedLogger(__name__, rank_zero_only=True)
+
+SPEC_REG_TARGETS = ("conv_linear", "batchnorm")
 
 
 class SNGPSpectralRegLitModule(SNGPLitModule):
@@ -45,6 +48,12 @@ class SNGPSpectralRegLitModule(SNGPLitModule):
     `train/spec_reg_active` (0/1), `train/sigma_max`, `train/sigma_mean`. `train/loss`
     (from `LitModuleBase`) is the total.
 
+    `spec_reg_target="batchnorm"` penalizes the backbone's BatchNorm gains instead,
+    `sum_l (max_i |gamma_i| / sqrt(running_var_i + eps))^2` (`BatchNormSpectralRegularizer`;
+    Gouk et al. 2021 eq. 28, the soft form of DUE's spectral BatchNorm), and leaves the convs
+    alone -- for backbones whose convs are spectrally controlled some other way (Muon). The
+    schedule knobs and log keys are shared; `train/sigma_*` then report BN gains.
+
     Selection caveat: with a burn-in the unregularized phase can post the lowest
     `val/nll`; pair this module with `ModelCheckpointFromEpoch(start_epoch=burn-in)` so
     `best.ckpt` is a regularized model (configs/experiment/sngp_specreg_acevedo.yaml).
@@ -62,6 +71,7 @@ class SNGPSpectralRegLitModule(SNGPLitModule):
         spec_reg_n_power_iterations: int = 1,
         spec_reg_conv_mode: str = "operator",
         spec_reg_warmup_iterations: int = DEFAULT_SPEC_REG_WARMUP_ITERATIONS,
+        spec_reg_target: str = "conv_linear",
         **kwargs,
     ) -> None:
         super().__init__(
@@ -73,12 +83,15 @@ class SNGPSpectralRegLitModule(SNGPLitModule):
             raise ValueError(f"spec_reg_every_n_steps must be >= 1, got {spec_reg_every_n_steps}")
         if spec_reg_burnin_epochs < 0:
             raise ValueError(f"spec_reg_burnin_epochs must be >= 0, got {spec_reg_burnin_epochs}")
+        if spec_reg_target not in SPEC_REG_TARGETS:
+            raise ValueError(f"spec_reg_target must be one of {SPEC_REG_TARGETS}, got {spec_reg_target!r}")
         self.spec_reg_coef = float(spec_reg_coef)
         self.spec_reg_every_n_steps = int(spec_reg_every_n_steps)
         self.spec_reg_burnin_epochs = int(spec_reg_burnin_epochs)
         self.spec_reg_n_power_iterations = int(spec_reg_n_power_iterations)
         self.spec_reg_conv_mode = spec_reg_conv_mode
         self.spec_reg_warmup_iterations = int(spec_reg_warmup_iterations)
+        self.spec_reg_target = spec_reg_target
 
         backbone = getattr(self.net, "backbone", None)
         if backbone is None:
@@ -95,15 +108,18 @@ class SNGPSpectralRegLitModule(SNGPLitModule):
             )
         # A submodule so it follows `.to(device)`; it owns no persistent state, so the
         # checkpoint state_dict is identical to a plain SNGPLitModule's.
-        self.spec_reg = SpectralRegularizer(
-            backbone,
-            n_power_iterations=self.spec_reg_n_power_iterations,
-            conv_mode=self.spec_reg_conv_mode,
-            warmup_iterations=self.spec_reg_warmup_iterations,
-        )
+        if self.spec_reg_target == "batchnorm":
+            self.spec_reg = BatchNormSpectralRegularizer(backbone)
+        else:
+            self.spec_reg = SpectralRegularizer(
+                backbone,
+                n_power_iterations=self.spec_reg_n_power_iterations,
+                conv_mode=self.spec_reg_conv_mode,
+                warmup_iterations=self.spec_reg_warmup_iterations,
+            )
         logger.info(
             f"Spectral regularization over {len(self.spec_reg)} backbone layers "
-            f"(conv_mode={self.spec_reg_conv_mode}): coef={self.spec_reg_coef}, "
+            f"(target={self.spec_reg_target}, conv_mode={self.spec_reg_conv_mode}): coef={self.spec_reg_coef}, "
             f"every {self.spec_reg_every_n_steps} step(s), "
             f"burn-in {self.spec_reg_burnin_epochs} epoch(s)"
         )

@@ -164,3 +164,32 @@ class TestInheritedSNGPBehaviour:
         assert torch.count_nonzero(module.net.gp_head.precision_accum) > 0
         module.on_train_epoch_start()
         assert torch.count_nonzero(module.net.gp_head.precision_accum) == 0
+
+
+class TestBatchNormTarget:
+    def test_batchnorm_target_regularizes_the_backbone_bns(self):
+        from src.models.components.spectral_reg import BatchNormSpectralRegularizer
+
+        module = make_module(spec_reg_target="batchnorm")
+        assert isinstance(module.spec_reg, BatchNormSpectralRegularizer)
+        assert len(module.spec_reg) == 20
+        assert not any("gp_head" in name for name in module.spec_reg.layer_names)
+        assert module.hparams["spec_reg_target"] == "batchnorm"
+        json.dumps(dict(module.hparams))
+
+    def test_batchnorm_target_adds_the_weighted_penalty(self):
+        module = make_module(spec_reg_target="batchnorm", spec_reg_coef=0.5)
+        # Module in train mode (so the penalty branch runs) but the net in eval mode, so the
+        # forward leaves the BN running stats -- and hence CE and penalty -- unchanged.
+        module.train()
+        module.net.eval()
+        batch = make_batch()
+        ce = base_ce(module, batch)
+        penalty = module.spec_reg().penalty
+        total = module.model_step(batch)[1]
+        assert penalty.item() > 0
+        torch.testing.assert_close(total, ce + 0.5 * penalty)
+
+    def test_rejects_an_unknown_target(self):
+        with pytest.raises(ValueError, match="spec_reg_target"):
+            make_module(spec_reg_target="layernorm")

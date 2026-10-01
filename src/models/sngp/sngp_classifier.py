@@ -6,7 +6,11 @@ import torch.distributed as dist
 import torch.nn as nn
 
 from src.models.backbones import BACKBONES, build_backbone
-from src.models.components.spectral_norm import apply_spectral_norm, assert_spectral_norm_compatible
+from src.models.components.spectral_norm import (
+    apply_bn_spectral_norm,
+    apply_spectral_norm,
+    assert_spectral_norm_compatible,
+)
 from src.models.outputs import ModelOutput
 from src.models.registry import register_net
 
@@ -501,6 +505,12 @@ class SNGPClassifier(nn.Module):
     backbone's singular values through a loss term instead of weight rescaling -- the two
     mechanisms must never be combined. `spectral_norm_bound` is ignored when it is off.
     Default `True`, so every spec written before the key existed rebuilds unchanged.
+
+    `bn_spectral_norm_bound=c` swaps every backbone BatchNorm2d for a `SpectralBatchNorm2d`
+    whose gain max_i |gamma_i| / sqrt(running_var_i + eps) is capped at c (DUE / Gouk et al.;
+    see `src/models/components/spectral_norm.py`). It is independent of `use_spectral_norm`:
+    neither conv regime constrains BN. Default `None` (plain BN), so older specs rebuild
+    unchanged; the state-dict keys are the same either way.
     """
 
     def __init__(
@@ -524,6 +534,7 @@ class SNGPClassifier(nn.Module):
         use_spectral_norm: bool = True,
         feature_map: str = "cos",
         kernel_amplitude: float = 1.0,
+        bn_spectral_norm_bound: Optional[float] = None,
     ):
         super().__init__()
         self.num_classes = num_classes
@@ -545,6 +556,7 @@ class SNGPClassifier(nn.Module):
         self.kernel_amplitude = float(kernel_amplitude)
         self.spectral_norm_bound = None if spectral_norm_bound is None else float(spectral_norm_bound)
         self.use_spectral_norm = bool(use_spectral_norm)
+        self.bn_spectral_norm_bound = None if bn_spectral_norm_bound is None else float(bn_spectral_norm_bound)
 
         if arch not in BACKBONES:
             raise ValueError(f"Unsupported backbone: {arch}. Supported: {sorted(BACKBONES)}")
@@ -562,6 +574,9 @@ class SNGPClassifier(nn.Module):
             apply_spectral_norm(
                 self.backbone, n_power_iterations=n_power_iterations_sn, bound=self.spectral_norm_bound
             )
+        # BatchNorm gain cap (DUE / Gouk et al.), independent of the conv/linear regime above.
+        if self.bn_spectral_norm_bound is not None:
+            apply_bn_spectral_norm(self.backbone, coeff=self.bn_spectral_norm_bound)
 
         # --- RFF-GP head ---
         self.gp_head = RandomFeatureGaussianProcess(
@@ -619,6 +634,7 @@ class SNGPClassifier(nn.Module):
             "kernel_amplitude": self.kernel_amplitude,
             "spectral_norm_bound": self.spectral_norm_bound,
             "use_spectral_norm": self.use_spectral_norm,
+            "bn_spectral_norm_bound": self.bn_spectral_norm_bound,
         }
 
     def forward(self, x: torch.Tensor, update_precision: bool = True) -> ModelOutput:

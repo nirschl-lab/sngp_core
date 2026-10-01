@@ -32,6 +32,7 @@ Gradient: sigma = <u, K~ v> with u, v the (detached) top singular pair, so autog
 d sigma^2 / dW = 2 sigma u v^T -- the analytic gradient the paper differentiates. Biases,
 BatchNorm and every other layer type are ignored: they do not enter the Jacobian bound the
 regularizer is motivated by (BN's affine scale is uncontrolled by *both* methods).
+`BatchNormSpectralRegularizer` below is the separate, opt-in term for BN's gain.
 
 `u`/`v` are non-persistent buffers: they are re-estimated when a run resumes
 (`warmup_iterations` power iterations on first use) and never enter a checkpoint's
@@ -293,3 +294,53 @@ class SpectralRegularizer(nn.Module):
             sigmas.append(self._sigma(idx))
         sigma = torch.stack(sigmas)
         return SpectralRegOutput(penalty=(sigma**2).sum(), sigmas=sigma.detach())
+
+
+class BatchNormSpectralRegularizer(nn.Module):
+    """`sum_l L_l^2` over the `BatchNorm2d` layers of `module`, where
+
+        L_l = max_i |gamma_i| / sqrt(running_var_i + eps)
+
+    is the layer's Lipschitz constant (Gouk et al. 2021, Machine Learning 110:393, eq. 28) --
+    the soft, loss-term counterpart of `spectral_norm.SpectralBatchNorm2d`'s hard cap, in the
+    same `sum (top singular value)^2` form as `SpectralRegularizer` (a BN layer is diagonal,
+    so its top singular value is its largest per-channel gain). As in Gouk et al. and DUE the
+    *running* variance is used, so the gradient reaches gamma only, and only its arg-max
+    channel per layer.
+
+    Layers are held in a plain list (never registered as submodules), so the regularized
+    module keeps sole ownership of its parameters and nothing enters `state_dict()`.
+    `forward()` takes no arguments and returns a `SpectralRegOutput` whose `sigmas` are the
+    per-layer L, so it is a drop-in for `SpectralRegularizer` in `SNGPSpectralRegLitModule`.
+    """
+
+    def __init__(self, module: nn.Module) -> None:
+        super().__init__()
+        self._layers: List[Tuple[str, nn.Module]] = [
+            (name, m) for name, m in module.named_modules() if isinstance(m, nn.BatchNorm2d)
+        ]
+        if not self._layers:
+            raise ValueError("BatchNormSpectralRegularizer: `module` has no BatchNorm2d layers to regularize")
+        for name, layer in self._layers:
+            if not layer.affine or not layer.track_running_stats:
+                raise ValueError(
+                    f"BatchNormSpectralRegularizer: BN {name!r} needs affine=True and "
+                    "track_running_stats=True (the penalty is on gamma / running std)"
+                )
+
+    @property
+    def layer_names(self) -> List[str]:
+        """Names (relative to the regularized module) of the penalized layers, in order."""
+        return [name for name, _ in self._layers]
+
+    def __len__(self) -> int:
+        return len(self._layers)
+
+    def extra_repr(self) -> str:
+        return f"num_layers={len(self._layers)}"
+
+    def forward(self) -> SpectralRegOutput:
+        gains = torch.stack([
+            (bn.weight.abs() * (bn.running_var.detach() + bn.eps).rsqrt()).max() for _, bn in self._layers
+        ])
+        return SpectralRegOutput(penalty=(gains**2).sum(), sigmas=gains.detach())

@@ -24,6 +24,12 @@ spectral normalization "does not have precise control of the true spectral norm 
 convolutional kernel", which is why `c` is treated as a hyperparameter to sweep rather than
 a constant to derive -- but it does mean `c` values are not numerically transferable
 between the two estimators.
+
+BatchNorm is a third, separate regime (`apply_bn_spectral_norm`, `SpectralBatchNorm2d`): a BN
+layer is the diagonal map diag(gamma / sqrt(Var[x])), whose Lipschitz constant is
+max_i |gamma_i| / sqrt(running_var_i + eps) (Gouk et al. 2021, eq. 28), and neither the conv
+wrapping above nor spectral regularization constrains it. `SpectralBatchNorm2d` caps it at a
+coefficient, as DUE does (van Amersfoort et al. 2021).
 """
 from typing import Optional
 
@@ -217,3 +223,85 @@ def assert_spectral_norm_compatible(arch: str) -> None:
             f"Spectral normalization (SNGP) is not supported for backbone '{arch}'. "
             f"Supported backbones: {sorted(SPECTRAL_NORM_COMPATIBLE)}"
         )
+
+
+class SpectralBatchNorm2d(nn.BatchNorm2d):
+    """BatchNorm2d whose Lipschitz constant is capped at `coeff`.
+
+    A port of DUE's `_SpectralBatchNorm` (van Amersfoort et al. 2021, arXiv 2102.11409,
+    github.com/y0ast/DUE `due/layers/spectral_batchnorm.py`); the constraint is Gouk et al.
+    (2021, Machine Learning 110:393, eq. 28). Every forward computes
+
+        L = max_i |gamma_i| / sqrt(running_var_i + eps)
+        gamma_eff = gamma / max(L / coeff, 1)
+
+    so the layer's gain diag(gamma_eff / sigma) is at most `coeff`, and untouched when it is
+    already below. Both papers use the *running* variance (the minibatch one is too noisy),
+    so the cap carries no gradient through the statistics; the gradient does flow through the
+    rescaling factor, as in DUE. Normalization itself is plain BatchNorm (batch statistics in
+    train mode, running statistics in eval). One deliberate difference from DUE: `momentum`
+    keeps torch's 0.1 rather than DUE's 0.01, so the cap is the only change to the layer.
+
+    State-dict keys are exactly `nn.BatchNorm2d`'s, so plain and spectral BN checkpoints load
+    into each other with `strict=True`.
+    """
+
+    def __init__(self, num_features: int, coeff: float, **kwargs) -> None:
+        super().__init__(num_features, **kwargs)
+        if not coeff > 0:
+            raise ValueError(f"SpectralBatchNorm2d coeff must be > 0, got {coeff}")
+        self.coeff = float(coeff)
+
+    def lipschitz(self) -> torch.Tensor:
+        """The uncapped L = max_i |gamma_i| / sqrt(running_var_i + eps)."""
+        weight = torch.ones_like(self.running_var) if self.weight is None else self.weight
+        return (weight.abs() * (self.running_var + self.eps).rsqrt()).max()
+
+    def forward(self, input: torch.Tensor) -> torch.Tensor:
+        self._check_input_dim(input)
+        if self.momentum is None:
+            exponential_average_factor = 0.0
+        else:
+            exponential_average_factor = self.momentum
+        if self.training and self.track_running_stats and self.num_batches_tracked is not None:
+            self.num_batches_tracked.add_(1)
+            if self.momentum is None:
+                exponential_average_factor = 1.0 / float(self.num_batches_tracked)
+        bn_training = self.training or (self.running_mean is None and self.running_var is None)
+
+        weight = torch.ones_like(self.running_var) if self.weight is None else self.weight
+        factor = torch.clamp(self.lipschitz() / self.coeff, min=1.0)
+        return F.batch_norm(
+            input,
+            self.running_mean if not self.training or self.track_running_stats else None,
+            self.running_var if not self.training or self.track_running_stats else None,
+            weight / factor,
+            self.bias,
+            bn_training,
+            exponential_average_factor,
+            self.eps,
+        )
+
+    def extra_repr(self) -> str:
+        return f"{super().extra_repr()}, coeff={self.coeff}"
+
+
+def apply_bn_spectral_norm(module: nn.Module, coeff: float) -> int:
+    """Replace every plain `nn.BatchNorm2d` under `module` with a `SpectralBatchNorm2d`
+    capped at `coeff`, carrying over its parameters, running statistics and settings.
+    Layers that are already spectral are left alone. Returns the number replaced."""
+    replaced = 0
+    for name, child in module.named_children():
+        if isinstance(child, nn.BatchNorm2d) and not isinstance(child, SpectralBatchNorm2d):
+            bn = SpectralBatchNorm2d(
+                child.num_features, coeff, eps=child.eps, momentum=child.momentum,
+                affine=child.affine, track_running_stats=child.track_running_stats,
+            )
+            bn.load_state_dict(child.state_dict())  # copies values onto the new layer's tensors
+            bn.to(next(child.buffers(), torch.empty(0)).device)
+            bn.train(child.training)
+            setattr(module, name, bn)
+            replaced += 1
+        else:
+            replaced += apply_bn_spectral_norm(child, coeff)
+    return replaced

@@ -239,3 +239,53 @@ class TestValidation:
         with pytest.raises(NotImplementedError, match="padding_mode"):
             SpectralRegularizer(nn.Sequential(conv), conv_mode="operator")
         SpectralRegularizer(nn.Sequential(conv), conv_mode="reshape")  # fine: kernel-only
+
+
+class TestBatchNormSpectralRegularizer:
+    """`BatchNormSpectralRegularizer`: sum_l (max_i |gamma_i| / sqrt(running_var_i + eps))^2."""
+
+    def _model(self):
+        torch.manual_seed(0)
+        model = nn.Sequential(nn.Conv2d(3, 8, 3), nn.BatchNorm2d(8), nn.ReLU(), nn.Conv2d(8, 4, 3), nn.BatchNorm2d(4))
+        with torch.no_grad():
+            model[1].weight.uniform_(0.5, 2.0)
+            model[4].weight.uniform_(-3.0, 3.0)
+            model[1].running_var.uniform_(0.1, 2.0)
+            model[4].running_var.uniform_(0.1, 2.0)
+        return model
+
+    def test_penalty_is_sum_of_squared_bn_gains(self):
+        from src.models.components.spectral_reg import BatchNormSpectralRegularizer
+
+        model = self._model()
+        reg = BatchNormSpectralRegularizer(model)
+        assert reg.layer_names == ["1", "4"]
+        out = reg()
+        gains = torch.stack([(bn.weight.abs() / (bn.running_var + bn.eps).sqrt()).max() for bn in (model[1], model[4])])
+        torch.testing.assert_close(out.sigmas, gains.detach())
+        torch.testing.assert_close(out.penalty, (gains**2).sum())
+
+    def test_gradient_reaches_bn_gamma_only(self):
+        from src.models.components.spectral_reg import BatchNormSpectralRegularizer
+
+        model = self._model()
+        BatchNormSpectralRegularizer(model)().penalty.backward()
+        for bn in (model[1], model[4]):
+            assert (bn.weight.grad != 0).sum() == 1  # the arg-max channel only
+            assert bn.bias.grad is None
+        assert model[0].weight.grad is None and model[3].weight.grad is None
+
+    def test_enumerates_every_resnet18_batchnorm_and_adds_no_state(self):
+        from src.models.components.spectral_reg import BatchNormSpectralRegularizer
+
+        net = SNGPClassifier(num_classes=4, arch="resnet18", pretrained=False, rff_dim=64, use_spectral_norm=False)
+        reg = BatchNormSpectralRegularizer(net.backbone)
+        assert len(reg) == 20
+        assert torch.isfinite(reg().penalty)
+        assert len(reg.state_dict()) == 0
+
+    def test_refuses_a_module_without_batchnorm(self):
+        from src.models.components.spectral_reg import BatchNormSpectralRegularizer
+
+        with pytest.raises(ValueError, match="no BatchNorm2d"):
+            BatchNormSpectralRegularizer(nn.Sequential(nn.Linear(4, 4)))

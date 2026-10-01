@@ -1,0 +1,95 @@
+# @package _global_
+
+# to execute this experiment run:
+# python train.py experiment=sngp_muon_sgd_bnsn_cifar100_cosine
+#
+# sngp_muon_sgd_cifar100_cosine (GP head on a WRN-28-10 without conv SN, Muon wd 0.1 on the
+# hidden convs, SGD-Nesterov aux, cosine LR, l = 7) with ONE change: every BatchNorm is a
+# SpectralBatchNorm2d whose gain max_i |gamma_i| / sqrt(running_var_i + eps) is capped at 3 --
+# DUE's spectral BatchNorm (van Amersfoort et al. 2021, arXiv 2102.11409,
+# github.com/y0ast/DUE due/layers/spectral_batchnorm.py), with DUE's coeff 3 for its WRN-28-10.
+# The hard-constraint arm; sngp_muon_sgd_bnreg_cifar100_cosine is the soft-penalty one.
+#
+# Why: with the SGD aux group, the Muon wd 0.1 arm still carried excess BatchNorm gain. Measured on
+# last.ckpt, the per-layer BN Lipschitz constant L = max_i |gamma_i| / sqrt(running_var_i + eps)
+# (Gouk et al. 2021, Machine Learning 110:393, eq. 28) peaked at 28 on the final BN, against 15-17
+# for the SGD arms. Its ||h|| / l was 1.59 vs 1.23, and its val-fitted lambda* 69 vs 34-36. Muon
+# bounds the conv updates; nothing bounds BN, and the final BN sets the feature scale the GP
+# kernel sees. Launched by scripts/tmux/cifar100_cosine.sh.
+
+defaults:
+  - override /data: cifar100
+  - override /model: sngp_classifier
+  - override /callbacks: default
+  - override /trainer: default
+
+name: "cifar100_sngp_muon_sgd_bnsn_cosine_wrn28x10"
+WANDB_PROJECT: ${oc.env:PROJECT_NAME}
+tags: ["sngp", "muon", "muon-sgd", "bn-spectral-norm", "no-spectral-norm", "cifar100", "wide_resnet28_10", "benchmark", "cosine", "training"]
+
+seed: 12345
+
+num_classes: 100
+
+trainer:
+  min_epochs: 250
+  max_epochs: 250
+  accelerator: "gpu"
+
+model:
+  # Own output dir: task_name is "train/${model.name}_<dataset>".
+  name: sngp_muon_sgd_bnsn_cosine_classifier
+  optimizer:
+    _target_: src.models.components.optimizers.MuonWithAuxSGD
+    _partial_: true
+    lr: 0.02
+    momentum: 0.95
+    weight_decay: 0.1
+    sgd_lr: 0.04
+    sgd_momentum: 0.9
+    sgd_nesterov: true
+    sgd_weight_decay: 6e-4   # = the SGD arms' L2, on the stem / BN / GP output layer
+  net:
+    arch: wide_resnet28_10
+    num_classes: ${num_classes}
+    pretrained: false
+    use_spectral_norm: false
+    spectral_norm_bound: null
+    # DUE's coeff, on all 25 BN layers (SpectralBatchNorm2d) -- see header.
+    bn_spectral_norm_bound: 3.0
+    length_scale: 7.0
+    scale_random_features: false
+    ridge_penalty: 1.0
+    normalize_input: false
+    mean_field_factor: 7.5
+  compile: false
+  scheduler:
+    # The Acevedo schedule (sngp_acevedo.yaml et al.): cosine from the peak LR to 0 over the
+    # full budget, stepped once per epoch, no warmup. Scales every optimizer param group.
+    _target_: torch.optim.lr_scheduler.CosineAnnealingLR
+    _partial_: true
+    T_max: ${trainer.max_epochs}
+    eta_min: 0.0
+  num_classes: ${num_classes}
+
+data:
+  datamodule:
+    batch_size: 128
+
+logger:
+  wandb:
+    project: "${WANDB_PROJECT}"
+    tags: "${tags_with:${tags},${data.datamodule.institution}}"
+    group: "CIFAR100"
+    name: ${name}
+    log_model: True
+  aim:
+    experiment: ""
+
+callbacks:
+  model_checkpoint:
+    monitor: "val/loss"
+    mode: "min"
+  early_stopping: null
+  test_artifacts:
+    hist_bins: 10
