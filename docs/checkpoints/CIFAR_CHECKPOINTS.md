@@ -244,13 +244,17 @@ the Acevedo schedule (`CosineAnnealingLR` to 0 over 250 epochs, per epoch, no wa
 ℓ = 7. Experiments `sngp_cifar100_cosine` (SN c = 6.0, SGD), `sngp_specreg_cifar100_cosine`
 (spectral penalty, SGD) and `sngp_muon_cifar100_cosine` (no SN, Muon wd 0.1). Tag
 `cosine_2026-10-01_10-17-06`, W&B group `CIFAR100_cosine_2026-10-01_10-17-06`, runs `l602qimv`
-SNGP / `1damijv6` SpecReg / `7qd4u08k` Muon. Compare at `last.ckpt` (epoch 249).
+SNGP / `1damijv6` SpecReg / `7qd4u08k` Muon wd 0.1 / `2bsnyc36` Muon wd 0. The wd-0 arm was added
+an hour later (`ARMS=cos_muon_wd0_s12345` with the same stamp, driver log `driver_add_11-29-00.log`);
+its AdamW group keeps weight decay 0.01, as in the piecewise `muon_wd0` arm. Compare at
+`last.ckpt` (epoch 249).
 
 ```bash
 C=/data1/maheswararao/experiments/uncertainty-aware-ml/overnight/cosine_2026-10-01_10-17-06
 $C/cos_sngp_l7_s12345/checkpoints/{best,last}.ckpt      # SNGP, c = 6.0
 $C/cos_specreg_l7_s12345/checkpoints/{best,last}.ckpt   # SNGP + SpecReg
 $C/cos_muon_wd0.1_s12345/checkpoints/{best,last}.ckpt   # GP head, no SN, Muon wd 0.1
+$C/cos_muon_wd0_s12345/checkpoints/{best,last}.ckpt     # GP head, no SN, Muon wd 0
 ```
 
 The `cosine_smoke_*` tree under `overnight/` is a 1200-step smoke test, not a result.

@@ -4,12 +4,19 @@
 # l = 7. Follow-up of docs/results/CIFAR100_MUON_RESULTS.md, where the piecewise-schedule Muon rows
 # trail every SGD row in-distribution; the experiment headers have the reasoning.
 #
-# One seed (12345), three arms, one per GPU, ~2.7-3 h:
+# One seed (12345), four arms, one per GPU, ~2.7-3 h:
 #   cos_sngp_l7_s12345      experiment=sngp_cifar100_cosine          spectral norm c = 6.0, SGD
 #   cos_specreg_l7_s12345   experiment=sngp_specreg_cifar100_cosine  spectral penalty, SGD
 #   cos_muon_wd0.1_s12345   experiment=sngp_muon_cifar100_cosine     no SN, Muon wd 0.1
+#   cos_muon_wd0_s12345     experiment=sngp_muon_cifar100_cosine     no SN, Muon wd 0 (AdamW group
+#                                                                     keeps its 0.01, as in the
+#                                                                     piecewise muon_wd0 arm)
 #
-# GPUs: the first three idle ones (< 1 GiB in use), unless GPUS="a b c" is given.
+# ARMS="label ..." runs a subset. With CIFAR_COSINE_STAMP=<stamp> of an earlier launch it adds those
+# arms to that launch's tree and W&B group (own tmux session and driver log); that is how
+# cos_muon_wd0_s12345 joined cosine_2026-10-01_10-17-06 after the first three had started.
+#
+# GPUs: the first idle ones (< 1 GiB in use), one per arm, unless GPUS="a b ..." is given.
 #
 # TRAINING ONLY. Evaluation follows the benchmark protocol: last.ckpt (epoch 249), with
 # mean_field_factor fit on val before any comparison (training pins it at 7.5). Every run gets an
@@ -21,13 +28,27 @@
 #
 #   scripts/tmux/cifar100_cosine.sh --smoke   # ~3-epoch check of all arms
 #   scripts/tmux/cifar100_cosine.sh           # full 250-epoch study
+#   CIFAR_COSINE_STAMP=2026-10-01_10-17-06 ARMS=cos_muon_wd0_s12345 scripts/tmux/cifar100_cosine.sh
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 
 if [[ -f .env ]]; then set -a; . ./.env; set +a; fi
 : "${EXPERIMENTS_HOME:?}" "${PROJECT_NAME:?}"
 
-STUDY="cosine"; N_ARMS=3
+STUDY="cosine"
+declare -A ARM_OVERRIDES=(
+  [cos_sngp_l7_s12345]="experiment=sngp_cifar100_cosine"
+  [cos_specreg_l7_s12345]="experiment=sngp_specreg_cifar100_cosine"
+  [cos_muon_wd0.1_s12345]="experiment=sngp_muon_cifar100_cosine"
+  [cos_muon_wd0_s12345]="experiment=sngp_muon_cifar100_cosine model.optimizer.weight_decay=0.0"
+)
+ALL_ARMS="cos_sngp_l7_s12345 cos_specreg_l7_s12345 cos_muon_wd0.1_s12345 cos_muon_wd0_s12345"
+read -r -a ARM_LIST <<< "${ARMS:-${ALL_ARMS}}"
+for label in "${ARM_LIST[@]}"; do
+  [[ -n "${ARM_OVERRIDES[${label}]:-}" ]] || { echo "Unknown arm '${label}'." >&2; exit 1; }
+done
+N_ARMS=${#ARM_LIST[@]}
+
 MODE="full"
 for arg in "$@"; do
   [[ "${arg}" == "--smoke" ]] && MODE="smoke"
@@ -38,7 +59,7 @@ if [[ -z "${GPUS:-}" ]]; then
 fi
 read -r -a GPU_LIST <<< "${GPUS}"
 if (( ${#GPU_LIST[@]} < N_ARMS )); then
-  echo "Need ${N_ARMS} idle GPUs, found ${#GPU_LIST[@]} (${GPUS:-none}); set GPUS=\"a b c\"." >&2
+  echo "Need ${N_ARMS} idle GPUs, found ${#GPU_LIST[@]} (${GPUS:-none}); set GPUS=\"a b ...\"." >&2
   exit 1
 fi
 SMOKE_STEPS="${SMOKE_STEPS:-1200}"
@@ -46,6 +67,9 @@ SMOKE_STEPS="${SMOKE_STEPS:-1200}"
 # Passed down to the re-exec'd child so the parent and child agree on one stamp.
 STAMP="${CIFAR_COSINE_STAMP:-$(date +%Y-%m-%d_%H-%M-%S)}"
 export CIFAR_COSINE_STAMP="${STAMP}"
+# A subset launch gets its own session name and driver log, so it can join an earlier stamp.
+SUFFIX="${CIFAR_COSINE_SUFFIX:-}"
+[[ -z "${SUFFIX}" && -n "${ARMS:-}" ]] && SUFFIX="_add_$(date +%H-%M-%S)"
 ROOT="${EXPERIMENTS_HOME}/${PROJECT_NAME}"
 TAG="${STUDY}_${STAMP}"; [[ "${MODE}" == "smoke" ]] && TAG="${STUDY}_smoke_${STAMP}"
 RUNS="${ROOT}/overnight/${TAG}"
@@ -56,13 +80,14 @@ mkdir -p "${LOGS}"
 # goes through -e: the tmux server does not inherit this shell's environment.
 if [[ "${1:-}" != "--run" ]]; then
   command -v tmux >/dev/null || { echo "tmux is not installed." >&2; exit 1; }
-  SESSION="cifar100_${TAG}"
+  SESSION="cifar100_${TAG}${SUFFIX}"
   CHILD_ARGS="--run"; [[ "${MODE}" == "smoke" ]] && CHILD_ARGS="${CHILD_ARGS} --smoke"
   tmux new-session -d -s "${SESSION}" -e "CIFAR_COSINE_STAMP=${STAMP}" -e "GPUS=${GPU_LIST[*]}" \
-      -e "SMOKE_STEPS=${SMOKE_STEPS}" "bash '$0' ${CHILD_ARGS} 2>&1 | tee '${LOGS}/driver.log'"
-  echo "Launched '${SESSION}' (${MODE}) on GPUs ${GPU_LIST[*]:0:${N_ARMS}}."
+      -e "SMOKE_STEPS=${SMOKE_STEPS}" -e "ARMS=${ARM_LIST[*]}" -e "CIFAR_COSINE_SUFFIX=${SUFFIX}" \
+      "bash '$0' ${CHILD_ARGS} 2>&1 | tee '${LOGS}/driver${SUFFIX}.log'"
+  echo "Launched '${SESSION}' (${MODE}) on GPUs ${GPU_LIST[*]:0:${N_ARMS}}: ${ARM_LIST[*]}."
   echo "  Attach:   tmux attach -t ${SESSION}"
-  echo "  Driver:   tail -f ${LOGS}/driver.log"
+  echo "  Driver:   tail -f ${LOGS}/driver${SUFFIX}.log"
   echo "  Run dirs: ${RUNS}/<label>"
   exit 0
 fi
@@ -89,10 +114,12 @@ run() {
     || echo "[$(date +%H:%M:%S)] FAILED ${label} (see ${LOGS}/${label}.log)"
 }
 
-echo "=== ${STUDY} (${MODE}) -- cosine LR, l = 7, seed 12345: SNGP / SpecReg / Muon wd 0.1 ==="
-run cos_sngp_l7_s12345     "${GPU_LIST[0]}" experiment=sngp_cifar100_cosine &
-run cos_specreg_l7_s12345  "${GPU_LIST[1]}" experiment=sngp_specreg_cifar100_cosine &
-run cos_muon_wd0.1_s12345  "${GPU_LIST[2]}" experiment=sngp_muon_cifar100_cosine &
+echo "=== ${STUDY} (${MODE}) -- cosine LR, l = 7, seed 12345: ${ARM_LIST[*]} ==="
+for i in "${!ARM_LIST[@]}"; do
+  label="${ARM_LIST[$i]}"
+  # shellcheck disable=SC2086  # the override string is a space-separated list of hydra args
+  run "${label}" "${GPU_LIST[$i]}" ${ARM_OVERRIDES[${label}]} &
+done
 wait
 
 echo "[$(date +%H:%M:%S)] ALL DONE. Checkpoints: ${RUNS}/<label>/checkpoints/{last,best}.ckpt"
