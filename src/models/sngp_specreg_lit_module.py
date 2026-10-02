@@ -6,6 +6,7 @@ from src.models.components.spectral_reg import (
     DEFAULT_SPEC_REG_WARMUP_ITERATIONS,
     BatchNormSpectralRegularizer,
     SpectralRegularizer,
+    find_bn_conv_pairs,
 )
 from src.models.outputs import ModelOutput
 from src.models.sngp_lit_module import SNGPLitModule
@@ -13,7 +14,7 @@ from src.utils import RankedLogger
 
 logger = RankedLogger(__name__, rank_zero_only=True)
 
-SPEC_REG_TARGETS = ("conv_linear", "batchnorm")
+SPEC_REG_TARGETS = ("conv_linear", "batchnorm", "bn_conv_folded")
 
 
 class SNGPSpectralRegLitModule(SNGPLitModule):
@@ -53,6 +54,13 @@ class SNGPSpectralRegLitModule(SNGPLitModule):
     Gouk et al. 2021 eq. 28, the soft form of DUE's spectral BatchNorm), and leaves the convs
     alone -- for backbones whose convs are spectrally controlled some other way (Muon). The
     schedule knobs and log keys are shared; `train/sigma_*` then report BN gains.
+
+    `spec_reg_target="bn_conv_folded"` keeps the `conv_linear` penalty but folds each
+    pre-activation block's BN into the conv it feeds: `sigma(W_conv * diag(gamma /
+    sqrt(running_var + eps)))` for `bn1 -> conv1` and `bn2 -> conv2` (`find_bn_conv_pairs`),
+    the plain conv sigma for the stem and shortcuts, and nothing for the final BN. This
+    bounds the BN-ReLU-conv map, which neither the conv nor the BN term does alone (BN gain
+    scales as 1 / ||preceding W||, and BN can undo a conv-only bound). WideResNet only.
 
     Selection caveat: with a burn-in the unregularized phase can post the lowest
     `val/nll`; pair this module with `ModelCheckpointFromEpoch(start_epoch=burn-in)` so
@@ -116,6 +124,7 @@ class SNGPSpectralRegLitModule(SNGPLitModule):
                 n_power_iterations=self.spec_reg_n_power_iterations,
                 conv_mode=self.spec_reg_conv_mode,
                 warmup_iterations=self.spec_reg_warmup_iterations,
+                input_bn=find_bn_conv_pairs(backbone) if self.spec_reg_target == "bn_conv_folded" else None,
             )
         logger.info(
             f"Spectral regularization over {len(self.spec_reg)} backbone layers "

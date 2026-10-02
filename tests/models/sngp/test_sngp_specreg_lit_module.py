@@ -190,6 +190,27 @@ class TestBatchNormTarget:
         assert penalty.item() > 0
         torch.testing.assert_close(total, ce + 0.5 * penalty)
 
+    def test_folded_target_folds_every_wide_resnet_block_conv(self):
+        net = SNGPClassifier(
+            num_classes=4, arch="wide_resnet28_10", pretrained=False, rff_dim=64, use_spectral_norm=False
+        )
+        module = SNGPSpectralRegLitModule(
+            net=net, optimizer=None, scheduler=None, num_classes=4, compile=False,
+            spec_reg_target="bn_conv_folded", spec_reg_every_n_steps=1, spec_reg_warmup_iterations=5,
+        )
+        reg = module.spec_reg
+        assert len(reg) == 28 and len(reg.folded_layer_names) == 24
+        assert module.hparams["spec_reg_target"] == "bn_conv_folded"
+        json.dumps(dict(module.hparams))
+        module.net.eval()
+        module(torch.randn(1, 3, 32, 32))  # records the conv input shapes
+        out = reg()
+        assert torch.isfinite(out.penalty) and out.penalty.item() > 0
+
+    def test_folded_target_refuses_a_non_wide_resnet_backbone(self):
+        with pytest.raises(ValueError, match="WideResNet"):
+            make_module(spec_reg_target="bn_conv_folded")
+
     def test_rejects_an_unknown_target(self):
         with pytest.raises(ValueError, match="spec_reg_target"):
             make_module(spec_reg_target="layernorm")

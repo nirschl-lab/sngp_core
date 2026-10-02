@@ -33,5 +33,7 @@ spec_reg_conv_mode: operator
 spec_reg_warmup_iterations: 20 # power iterations before the first estimate, so step 1 already sees a converged sigma
 # What the penalty is on: `conv_linear` (rep-spectral, sum sigma_max^2 over the backbone's
 # Conv2d/Linear) or `batchnorm` (sum over BN layers of (max|gamma| / sqrt(running_var+eps))^2,
-# Gouk et al. eq. 28 -- the soft form of DUE's spectral BatchNorm; convs untouched).
+# Gouk et al. eq. 28 -- the soft form of DUE's spectral BatchNorm; convs untouched), or
+# `bn_conv_folded` (conv_linear, but each pre-activation block's BN folded into the conv it
+# feeds: sigma(W * diag(gamma / sqrt(running_var+eps))); final BN excluded; WideResNet only).
 spec_reg_target: conv_linear

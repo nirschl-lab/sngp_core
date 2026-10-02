@@ -289,3 +289,103 @@ class TestBatchNormSpectralRegularizer:
 
         with pytest.raises(ValueError, match="no BatchNorm2d"):
             BatchNormSpectralRegularizer(nn.Sequential(nn.Linear(4, 4)))
+
+
+class TestFoldedBatchNormConv:
+    """`input_bn`: a conv fed by a BN is penalized as sigma(K~ G), G = diag(|gamma| /
+    sqrt(running_var + eps)) -- the bound on the BN -> ReLU -> conv map."""
+
+    def _pair(self):
+        torch.manual_seed(0)
+        bn = nn.BatchNorm2d(3)
+        conv = nn.Conv2d(3, 4, 3, stride=2, padding=1, bias=False)
+        with torch.no_grad():
+            bn.weight.uniform_(-2.0, 2.0)
+            bn.running_var.uniform_(0.1, 3.0)
+        return nn.Sequential(bn, nn.ReLU(), conv)
+
+    @staticmethod
+    def _gain(bn: nn.BatchNorm2d) -> torch.Tensor:
+        return (bn.weight.abs() / (bn.running_var + bn.eps).sqrt()).detach()
+
+    @pytest.mark.parametrize("conv_mode", CONV_MODES)
+    def test_matches_the_exact_folded_sigma(self, conv_mode):
+        model = self._pair()
+        bn, conv = model[0], model[2]
+        reg = SpectralRegularizer(model, conv_mode=conv_mode, warmup_iterations=300, input_bn={"2": bn})
+        assert reg.folded_layer_names == ["2"]
+        model.eval()
+        model(torch.randn(1, 3, 7, 6))
+        gain = self._gain(bn)
+        if conv_mode == "operator":
+            dense = _dense_conv_operator(conv, (7, 6))  # [n_out, c*h*w], channel-major columns
+            exact = torch.linalg.matrix_norm(dense * gain.repeat_interleave(7 * 6), ord=2).item()
+        else:
+            exact = _exact_matrix_sigma(conv.weight * gain.reshape(1, -1, 1, 1))
+        assert reg().sigmas.item() == pytest.approx(exact, rel=1e-4)
+
+    def test_unit_gain_reduces_to_the_plain_conv_sigma(self):
+        model = self._pair()
+        with torch.no_grad():
+            model[0].weight.fill_(1.0)
+            model[0].running_var.fill_(1.0 - model[0].eps)
+        folded = SpectralRegularizer(model, warmup_iterations=300, input_bn={"2": model[0]})
+        plain = SpectralRegularizer(model, warmup_iterations=300)
+        model.eval()
+        model(torch.randn(1, 3, 7, 6))
+        torch.manual_seed(1)
+        a = folded().sigmas
+        torch.manual_seed(1)
+        b = plain().sigmas
+        torch.testing.assert_close(a, b)
+
+    def test_gradient_reaches_conv_weight_and_bn_gamma(self):
+        model = self._pair()
+        reg = SpectralRegularizer(model, input_bn={"2": model[0]})
+        model.eval()
+        model(torch.randn(1, 3, 7, 6))
+        reg().penalty.backward()
+        assert model[2].weight.grad is not None and model[2].weight.grad.abs().sum() > 0
+        assert model[0].weight.grad is not None and model[0].weight.grad.abs().sum() > 0
+        assert model[0].bias.grad is None
+        assert len(reg.state_dict()) == 0
+
+    def test_device_and_dtype_moves_still_work(self):
+        """Regression: a helper once named `_apply` shadowed `nn.Module._apply`, which
+        `.to()` / `.double()` dispatch through -- Lightning's device move would crash."""
+        model = self._pair()
+        reg = SpectralRegularizer(model, input_bn={"2": model[0]})
+        reg.double()
+        reg.to("cpu")
+
+    def test_rejects_mismatched_or_unknown_pairs(self):
+        model = self._pair()
+        with pytest.raises(ValueError, match="unknown layer"):
+            SpectralRegularizer(model, input_bn={"9": model[0]})
+        with pytest.raises(ValueError, match="channels"):
+            SpectralRegularizer(model, input_bn={"2": nn.BatchNorm2d(5)})
+
+    def test_wide_resnet_pairs_cover_every_block_conv_and_nothing_else(self):
+        from src.models.backbones import WideResNet
+        from src.models.components.spectral_reg import find_bn_conv_pairs
+
+        net = WideResNet(depth=28, widen_factor=1)  # WRN-28-10's structure at width 1
+        pairs = find_bn_conv_pairs(net)
+        assert len(pairs) == 24
+        assert pairs["layer1.0.conv1"] is net.layer1[0].bn1
+        assert pairs["layer3.3.conv2"] is net.layer3[3].bn2
+        assert "conv1" not in pairs  # stem
+        assert not any("shortcut" in name for name in pairs)
+        assert all(bn is not net.bn for bn in pairs.values())  # final BN feeds the head
+
+        reg = SpectralRegularizer(net, input_bn=pairs)
+        assert len(reg.folded_layer_names) == 24
+        # Unfolded: stem + fc + the layer2/layer3 shortcuts (at width 1 layer1 is 16 -> 16,
+        # so it has no projection; WRN-28-10 has all three).
+        assert len(reg) - len(reg.folded_layer_names) == 4
+
+    def test_find_pairs_refuses_a_non_wide_resnet(self):
+        from src.models.components.spectral_reg import find_bn_conv_pairs
+
+        with pytest.raises(ValueError, match="WideResNet"):
+            find_bn_conv_pairs(self._pair())
