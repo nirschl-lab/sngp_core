@@ -109,6 +109,7 @@ ARMS: Dict[str, str] = {
     "cos_muonsgd01": "[Muon + SGD] GP head, no SN, wd 0.1 (cosine)",
     "cos_muonsgd0": "[Muon + SGD] GP head, no SN, wd 0 (cosine)",
     "cos_muonsgd_bnsn01": "[Muon + SGD] GP head, no SN, wd 0.1, BN spectral norm c = 3 (cosine)",
+    "cos_muonsgd_ln01": "[Muon + SGD] GP head, no SN, wd 0.1, GP-input LayerNorm, ℓ = 20 (cosine)",
 }
 # Muon rows: arm -> (which tag flag, run label stem). One seed each.
 MUON_ARMS = {
@@ -125,6 +126,7 @@ COSINE_ARMS = {
     "cos_muonsgd01": ("cosine_tag", "cos_muonsgd_wd0.1"),
     "cos_muonsgd0": ("cosine_tag", "cos_muonsgd_wd0"),
     "cos_muonsgd_bnsn01": ("cosine_tag", "cos_muonsgd_bnsn_wd0.1"),
+    "cos_muonsgd_ln01": ("cosine_tag", "cos_muonsgd_ln_l20_wd0.1"),
 }
 ONE_SEED_ARMS = {**MUON_ARMS, **COSINE_ARMS}
 MUON_SEEDS = (12345,)
@@ -311,6 +313,8 @@ def main() -> None:
         # BN spectral norm (DUE): against the same recipe without it, and the SGD rows.
         ("cos_muonsgd01", "cos_muonsgd_bnsn01"), ("cos_specreg", "cos_muonsgd_bnsn01"),
         ("cos_sngp", "cos_muonsgd_bnsn01"),
+        # GP-input LayerNorm + l = 20: against the same recipe without it, and the best SGD row.
+        ("cos_muonsgd01", "cos_muonsgd_ln01"), ("cos_specreg", "cos_muonsgd_ln01"),
     ]
     pairs = [(b, a) for a, b in base_pairs if a in by_arm and b in by_arm]
     delta_cols = ["acc", "nll", "smece", "auroc_msp_cifar10", "auroc_msp_svhn", "auroc_ds_svhn", "auroc_var_cifar10", "auroc_var_svhn"]
