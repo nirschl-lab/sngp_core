@@ -859,6 +859,9 @@ Checkpoints: [checkpoints/CIFAR_CHECKPOINTS.md](checkpoints/CIFAR_CHECKPOINTS.md
 # BN spectral norm row (Muon wd 0.1 + SGD aux + SpectralBatchNorm2d c = 3), evaluated 2026-10-02
 /data1/maheswararao/experiments/uncertainty-aware-ml/infer/cosine_2026-10-01_10-17-06_cos_muonsgd_bnsn_wd0.1_s12345__{cifar100,cifar10,svhn}/
 /data1/maheswararao/experiments/uncertainty-aware-ml/tmux_logs/cifar100_cosine_infer_2026-10-02_10-21-31/fit_cosine_2026-10-01_10-17-06_cos_muonsgd_bnsn_wd0.1_s12345.log
+# GP-input LayerNorm row (Muon wd 0.1 + SGD aux, normalize_input true, l = 20), evaluated 2026-10-02
+/data1/maheswararao/experiments/uncertainty-aware-ml/infer/cosine_2026-10-01_10-17-06_cos_muonsgd_ln_l20_wd0.1_s12345__{cifar100,cifar10,svhn}/
+/data1/maheswararao/experiments/uncertainty-aware-ml/tmux_logs/cifar100_cosine_infer_2026-10-02_18-06-58/fit_cosine_2026-10-01_10-17-06_cos_muonsgd_ln_l20_wd0.1_s12345.log
 ```
 
 `cos_muonsgd_bnreg_wd0.1_s12345` (BN SpecReg) trained unstably and is not evaluated. Results:
@@ -874,14 +877,20 @@ scripts/tmux/cifar100_cosine_infer.sh cosine_2026-10-01_10-17-06   # inference +
 CIFAR_COSINE_STAMP=2026-10-01_10-17-06 ARMS="cos_muonsgd_bnsn_wd0.1_s12345 cos_muonsgd_bnreg_wd0.1_s12345" \
     scripts/tmux/cifar100_cosine.sh          # the two BN arms
 LABELS="cos_muonsgd_bnsn_wd0.1_s12345" GPUS=0 scripts/tmux/cifar100_cosine_infer.sh cosine_2026-10-01_10-17-06
+CIFAR_COSINE_STAMP=2026-10-01_10-17-06 ARMS=cos_muonsgd_ln_l20_wd0.1_s12345 GPUS=0 \
+    scripts/tmux/cifar100_cosine.sh          # the GP-input LayerNorm arm
+LABELS=cos_muonsgd_ln_l20_wd0.1_s12345 GPUS=0 scripts/tmux/cifar100_cosine_infer.sh cosine_2026-10-01_10-17-06
+# All 16 arms / 26 rows of figures/cifar100_cosine/cifar100_cosine_per_seed.csv:
 T=/data1/maheswararao/experiments/uncertainty-aware-ml/tmux_logs
 uv run python scripts/metrics/cifar100_evidence_ls_report.py --expect-committed \
-    --tag evidence_ls_2026-09-28_16-10-10 --muon-tag muon_2026-09-30_15-20-01 \
+    --tag evidence_ls_2026-09-28_16-10-10 --ols-tag online_ls_2026-09-29_12-07-14 \
+    --muon-tag muon_2026-09-30_15-20-01 --muon-wsd-tag muon_wsd_2026-09-30_15-54-17 \
     --cosine-tag cosine_2026-10-01_10-17-06 \
-    --arms baseline sngp specreg els muon_pw01 cos_sngp cos_specreg cos_muon01 cos_muonsgd01 cos_muonsgd0 \
-           cos_muonsgd_bnsn01 \
-    --fit-logs $T/cifar100_evidence_ls_2026-09-28_16-10-10_infer $T/cifar100_muon_infer_2026-10-01_09-28-29 \
-               $T/cifar100_cosine_infer_2026-10-01_16-25-28 $T/cifar100_cosine_infer_2026-10-02_10-21-31 \
+    --arms baseline sngp specreg els ols muon_pw0 muon_pw01 muon_wsd0 muon_wsd01 cos_sngp cos_specreg \
+           cos_muon01 cos_muonsgd01 cos_muonsgd0 cos_muonsgd_bnsn01 cos_muonsgd_ln01 \
+    --fit-logs $T/cifar100_evidence_ls_2026-09-28_16-10-10_infer $T/cifar100_online_ls_2026-09-29_12-07-14_infer \
+               $T/cifar100_muon_infer_2026-10-01_09-28-29 $T/cifar100_cosine_infer_2026-10-01_16-25-28 \
+               $T/cifar100_cosine_infer_2026-10-02_10-21-31 $T/cifar100_cosine_infer_2026-10-02_18-06-58 \
     --csv figures/cifar100_cosine/cifar100_cosine_per_seed.csv
 ```
 

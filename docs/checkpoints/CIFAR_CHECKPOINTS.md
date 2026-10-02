@@ -261,6 +261,11 @@ driver log `driver_add_17-03-18.log`):
 - `cos_muonsgd_bnreg_wd0.1_s12345` (W&B `nkkg01xu`), experiment `sngp_muon_sgd_bnreg_cifar100_cosine`:
   the loss gets CE + 0.01·Σ_l (BN gain)² every 24 steps (`spec_reg_target: batchnorm`).
 
+A GP-input LayerNorm arm on the same recipe was added on 2026-10-02 at 15:26 (commit `aa21cfd`, driver log
+`driver_add_15-26-47.log`):
+- `cos_muonsgd_ln_l20_wd0.1_s12345` (W&B `fsch74pv`), experiment `sngp_muon_sgd_cifar100_cosine` with
+  `model.net.normalize_input=true model.net.length_scale=20.0`.
+
 Compare at `last.ckpt` (epoch 249).
 
 ```bash
@@ -273,6 +278,7 @@ $C/cos_muonsgd_wd0.1_s12345/checkpoints/{best,last}.ckpt  # GP head, no SN, Muon
 $C/cos_muonsgd_wd0_s12345/checkpoints/{best,last}.ckpt    # GP head, no SN, Muon wd 0 + SGD aux
 $C/cos_muonsgd_bnsn_wd0.1_s12345/checkpoints/{best,last}.ckpt   # Muon wd 0.1 + SGD aux + BN spectral norm (c = 3)
 $C/cos_muonsgd_bnreg_wd0.1_s12345/checkpoints/{best,last}.ckpt  # Muon wd 0.1 + SGD aux + BN SpecReg (0.01, every 24 steps)
+$C/cos_muonsgd_ln_l20_wd0.1_s12345/checkpoints/{best,last}.ckpt # Muon wd 0.1 + SGD aux + GP-input LayerNorm, l = 20
 ```
 
 The `cosine_smoke_*` tree under `overnight/` is a 1200-step smoke test, not a result.

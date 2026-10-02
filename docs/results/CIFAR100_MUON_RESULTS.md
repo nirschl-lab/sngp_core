@@ -3,10 +3,11 @@
 The CIFAR-100 follow-up of [ACEVEDO_MUON_RESULTS.md](ACEVEDO_MUON_RESULTS.md). The SNGP GP head
 sits on a WRN-28-10 with **no spectral normalization and no spectral penalty on the convs**. It is trained
 with Muon on the 27 hidden convs (`src/models/components/optimizers.py`), at the evidence-picked ℓ = 7.
-The rows below vary three things:
+The rows below vary four things:
 - the LR schedule;
 - the optimizer on the remaining parameters (the stem, BatchNorm and GP output layer);
-- a cap on BatchNorm's gain.
+- a cap on BatchNorm's gain;
+- a LayerNorm on the GP input.
 
 All are set against the SGD-trained SNGP / SpecReg references.
 
@@ -15,7 +16,7 @@ All are set against the SGD-trained SNGP / SpecReg references.
 | Optimizer | `[SGD]`: SGD-Nesterov (0.04, L2 6e-4) on every weight. `[Muon + AdamW]` / `[Muon + SGD]`: Muon (lr 0.02, momentum 0.95, decoupled wd 0 or 0.1) on the hidden convs, with AdamW (lr 1e-3, wd 0.01) or the `[SGD]` recipe on the stem / BN / GP head (`MuonWithAuxAdamW` / `MuonWithAuxSGD`) |
 | Schedule | piecewise (the benchmark's ×0.2 at epochs 75 / 150 / 200, 1 warmup epoch); WSD (1 warmup epoch, flat to 175, linear to 1/75 at 249); cosine (`CosineAnnealingLR` to 0, no warmup — the Acevedo schedule) |
 | BN spectral norm | `SpectralBatchNorm2d` (DUE, van Amersfoort et al. 2021): every BN's gain max_i \|γ_i\|/√(running_var_i+ε) capped at 3. A BN spectral-*regularization* run (loss + 0.01·Σ_l gain²) trained unstably and is not evaluated |
-| Head | σ² 1, ridge 1.0, unscaled features, `gaussian`; ℓ as in the ℓ column (20 is the benchmark recipe; "online" is the [online ℓ page](CIFAR100_ONLINE_LS_RESULTS.md)'s in-training evidence ℓ) |
+| Head | σ² 1, ridge 1.0, unscaled features, `gaussian`; ℓ as in the ℓ column (20 is the benchmark recipe; "online" is the [online ℓ page](CIFAR100_ONLINE_LS_RESULTS.md)'s in-training evidence ℓ). GP input not normalized (the reference's `gp_input_normalization=False`), except the GP-input LayerNorm row (`normalize_input: true`, ℓ = 20 so that ‖h‖/ℓ ≈ √640/20 ≈ 1.26 at init) |
 | Runs | 250 epochs, `last.ckpt`. The five piecewise `[SGD]` rows are 3 seeds (12345 / 1 / 2); every other row is seed 12345 only. [../checkpoints/CIFAR_CHECKPOINTS.md](../checkpoints/CIFAR_CHECKPOINTS.md), sections "muon" and "cosine" |
 | Protocol | One post-hoc knob per row, fit on **val** NLL (λ for SNGP arms, T for the baseline); metrics on **test**. `±` is the std across 3 seeds. Bold is the best value per column across all rows |
 | Data, commands | [../MASTER_INFER_RESULTS_PATH.md](../MASTER_INFER_RESULTS_PATH.md), sections "muon" and "cosine" |
@@ -39,15 +40,16 @@ All are set against the SGD-trained SNGP / SpecReg references.
 | GP head, no SN, wd 0.1 | [Muon + SGD] | cosine | 7 | 1 | 0.7906 | 0.7572 | 0.0242 | λ 68.7 |
 | GP head, no SN, wd 0 | [Muon + SGD] | cosine | 7 | 1 | 0.7903 | 0.8355 | 0.0354 | λ 29.7 |
 | GP head, no SN, wd 0.1, BN spectral norm `c = 3` | [Muon + SGD] | cosine | 7 | 1 | 0.7793 | 0.9184 | 0.1220 | λ 0.0 |
+| GP head, no SN, wd 0.1, GP-input LayerNorm | [Muon + SGD] | cosine | 20 | 1 | 0.7888 | 0.7789 | 0.0276 | λ 52.2 |
 
 | Arm | Optimizer | Schedule | MSP C-10 | MSP SVHN | DS C-10 | DS SVHN | Var C-10 | Var SVHN | FPR95 MSP SVHN ↓ |
 |---|---|---|---:|---:|---:|---:|---:|---:|---:|
 | Baseline | [SGD] | piecewise | **0.8101 ± 0.0023** | 0.7309 ± 0.0373 | 0.8121 ± 0.0020 | 0.7496 ± 0.0383 | — | — | 0.855 ± 0.025 |
-| SNGP (`c = 6.0`) | [SGD] | piecewise | 0.8059 ± 0.0031 | 0.7620 ± 0.0053 | 0.8082 ± 0.0029 | 0.8047 ± 0.0032 | **0.437 ± 0.012** | 0.580 ± 0.018 | 0.828 ± 0.011 |
+| SNGP (`c = 6.0`) | [SGD] | piecewise | 0.8059 ± 0.0031 | 0.7620 ± 0.0053 | 0.8082 ± 0.0029 | 0.8047 ± 0.0032 | 0.437 ± 0.012 | 0.580 ± 0.018 | 0.828 ± 0.011 |
 | SNGP + SpecReg | [SGD] | piecewise | 0.8092 ± 0.0016 | 0.7948 ± 0.0060 | 0.8110 ± 0.0020 | 0.8330 ± 0.0068 | 0.314 ± 0.001 | 0.410 ± 0.046 | 0.794 ± 0.023 |
 | SNGP + SpecReg + evidence ℓ | [SGD] | piecewise | 0.7948 ± 0.0014 | 0.8016 ± 0.0269 | 0.7846 ± 0.0036 | 0.8571 ± 0.0230 | 0.336 ± 0.007 | 0.449 ± 0.030 | 0.778 ± 0.036 |
 | SNGP + SpecReg + online evidence ℓ | [SGD] | piecewise | 0.7866 ± 0.0066 | 0.7667 ± 0.0113 | 0.7618 ± 0.0127 | 0.8012 ± 0.0143 | 0.294 ± 0.010 | 0.297 ± 0.044 | 0.824 ± 0.017 |
-| SNGP (`c = 6.0`) | [SGD] | cosine | 0.7987 | 0.7578 | 0.7995 | 0.8198 | 0.393 | **0.595** | 0.841 |
+| SNGP (`c = 6.0`) | [SGD] | cosine | 0.7987 | 0.7578 | 0.7995 | 0.8198 | 0.393 | 0.595 | 0.841 |
 | SNGP + SpecReg | [SGD] | cosine | 0.8032 | 0.7984 | 0.7967 | 0.8557 | 0.315 | 0.353 | 0.800 |
 | GP head, no SN, wd 0 | [Muon + AdamW] | piecewise | 0.7615 | 0.8120 | 0.7135 | 0.8777 | 0.370 | 0.427 | 0.757 |
 | GP head, no SN, wd 0.1 | [Muon + AdamW] | piecewise | 0.7685 | 0.7507 | 0.7321 | 0.8441 | 0.410 | 0.416 | 0.796 |
@@ -57,6 +59,7 @@ All are set against the SGD-trained SNGP / SpecReg references.
 | GP head, no SN, wd 0.1 | [Muon + SGD] | cosine | 0.7862 | 0.7465 | 0.7556 | 0.8328 | 0.351 | 0.376 | 0.808 |
 | GP head, no SN, wd 0 | [Muon + SGD] | cosine | 0.8044 | 0.8281 | 0.8114 | 0.8523 | 0.297 | 0.430 | 0.736 |
 | GP head, no SN, wd 0.1, BN spectral norm `c = 3` | [Muon + SGD] | cosine | 0.8075 | 0.8257 | **0.8139** | 0.8591 | 0.212 | 0.498 | 0.792 |
+| GP head, no SN, wd 0.1, GP-input LayerNorm | [Muon + SGD] | cosine | 0.7942 | 0.7887 | 0.7758 | 0.8535 | **0.661** | **0.607** | 0.745 |
 
 Paired at seed 12345 (row − row), each row at its own λ\*:
 
@@ -71,6 +74,7 @@ Paired at seed 12345 (row − row), each row at its own λ\*:
 | [Muon + SGD] wd 0.1, cosine − [SGD] SpecReg, cosine | −0.0146 | +0.0145 | −0.0035 | −0.0171 | −0.0518 | −0.0229 | +0.0361 | +0.0232 |
 | [Muon + SGD] wd 0, cosine − [SGD] SpecReg, cosine | −0.0149 | +0.0928 | +0.0077 | +0.0012 | +0.0298 | −0.0034 | −0.0185 | +0.0774 |
 | [Muon + SGD] wd 0.1 + BN SN, cosine − [SGD] SpecReg, cosine | −0.0259 | +0.1757 | +0.0943 | +0.0042 | +0.0273 | +0.0034 | −0.1033 | +0.1453 |
+| [Muon + SGD] wd 0.1 + GP-input LN, cosine − [SGD] SpecReg, cosine | −0.0164 | +0.0362 | −0.0001 | −0.0091 | −0.0096 | −0.0022 | +0.3460 | +0.2543 |
 | *Schedule* | | | | | | | | |
 | [Muon + AdamW] wd 0: WSD − piecewise | −0.0089 | +0.0274 | −0.0004 | +0.0009 | +0.0130 | +0.0076 | +0.0175 | +0.1398 |
 | [Muon + AdamW] wd 0.1: WSD − piecewise | −0.0267 | +0.0721 | −0.0030 | −0.0084 | +0.0793 | +0.0479 | +0.0208 | +0.0543 |
@@ -80,6 +84,8 @@ Paired at seed 12345 (row − row), each row at its own λ\*:
 | Muon wd 0.1, cosine: [Muon + SGD] − [Muon + AdamW] | +0.0271 | −0.0929 | +0.0098 | +0.0137 | −0.0328 | −0.0346 | −0.0648 | −0.0739 |
 | *BN spectral norm* | | | | | | | | |
 | [Muon + SGD] wd 0.1, cosine: with − without | −0.0113 | +0.1612 | +0.0978 | +0.0213 | +0.0791 | +0.0263 | −0.1394 | +0.1222 |
+| *GP-input LayerNorm (ℓ 7 → 20)* | | | | | | | | |
+| [Muon + SGD] wd 0.1, cosine: with − without | −0.0018 | +0.0217 | +0.0034 | +0.0080 | +0.0422 | +0.0207 | +0.3099 | +0.2311 |
 
 - **Muon + AdamW: worse in-distribution than every SGD row.** Accuracy is down 2.7–5.4 points and NLL
   up 0.08–0.17 against evidence ℓ = 7. The val-fitted λ\* is 63–240, against 33–49 for the SGD rows, so
@@ -106,6 +112,16 @@ Paired at seed 12345 (row − row), each row at its own λ\*:
   - **Effect:** distances between val features are 0.06–0.11 ℓ, the kernel is about 0.99 between any
     two images, and the logits stay small.
   - **Why ℓ matters:** DUE learns ℓ, which would absorb this; the fixed ℓ = 7 does not.
+- **GP-input LayerNorm (ℓ = 20): the only row whose GP variance ranks OOD above ID on both sets.**
+  Var AUROC is 0.661 on CIFAR-10 and 0.607 on SVHN, against 0.351 / 0.376 on the same recipe without
+  it. Every other row is below 0.44 on CIFAR-10. MSP SVHN is up 0.042 and FPR95 drops from 0.808 to
+  0.745. In-distribution it is slightly worse: −0.2 points of accuracy, +0.022 NLL.
+  - **It did not stop the λ drift it was run to test.** The val-fit λ still climbs from epoch 150
+    (7.7 → 52.2 at epoch 249, against 7.3 → 68.7 without it). ‖β‖_F is 19.9 against 18.8 without it
+    and 12.1 for SpecReg, so the drift tracks the GP output layer, not the feature scale.
+  - **Feature scale at `last.ckpt`** (2000 val images): L2 shrinks the LayerNorm gain to 0.50, so
+    ‖h‖/ℓ is 0.95, not the 1.26 at init. Pairwise distances stay at the no-LayerNorm level: same-class
+    d/ℓ 1.00 against 1.07, and 0.75 for SpecReg.
 
 Caveats:
 - **Seeds:** every non-piecewise-SGD row is one seed. The SGD rows' seed spread is about ±0.004 for
