@@ -59,6 +59,7 @@ predictions and val fits come from scripts/tmux/cifar100_cosine_infer.sh:
         --tag evidence_ls_2026-09-28_16-10-10 --muon-tag muon_2026-09-30_15-20-01 \\
         --cosine-tag cosine_2026-10-01_10-17-06 \\
         --arms baseline sngp specreg els muon_pw01 cos_sngp cos_specreg cos_muon01 cos_muonsgd01 cos_muonsgd0 \\
+               cos_muonsgd_bnsn01 \\
         --fit-logs <evidence_ls _infer dir> <cifar100_muon_infer_<stamp> dir> <cifar100_cosine_infer_<stamp> dir> \\
         --csv figures/cifar100_cosine/cifar100_cosine_per_seed.csv
 """
@@ -91,20 +92,23 @@ OVERNIGHT_TAG = "overnight_2026-09-20_21-38-42"
 OOD_SETS = ("cifar10", "svhn")
 # key -> display. Order is the table order.
 ARMS: Dict[str, str] = {
-    "baseline": "Baseline",
-    "sngp": "SNGP (c = 6.0)",
-    "specreg": "SNGP + SpecReg",
-    "els": "SNGP + SpecReg + evidence ℓ = 7",
-    "ols": "SNGP + SpecReg + online evidence ℓ",
-    "muon_pw0": "GP head, no SN, Muon wd 0 (piecewise)",
-    "muon_pw01": "GP head, no SN, Muon wd 0.1 (piecewise)",
-    "muon_wsd0": "GP head, no SN, Muon wd 0 (WSD)",
-    "muon_wsd01": "GP head, no SN, Muon wd 0.1 (WSD)",
-    "cos_sngp": "SNGP (c = 6.0), ℓ = 7 (cosine)",
-    "cos_specreg": "SNGP + SpecReg, ℓ = 7 (cosine)",
-    "cos_muon01": "GP head, no SN, Muon wd 0.1 + AdamW aux (cosine)",
-    "cos_muonsgd01": "GP head, no SN, Muon wd 0.1 + SGD aux (cosine)",
-    "cos_muonsgd0": "GP head, no SN, Muon wd 0 + SGD aux (cosine)",
+    # The [optimizer] prefix names what trained the backbone, so SGD and Muon rows (and the
+    # Muon rows' aux optimizer: AdamW or SGD on the stem / BN / GP head) read apart at a glance.
+    "baseline": "[SGD] Baseline",
+    "sngp": "[SGD] SNGP (c = 6.0)",
+    "specreg": "[SGD] SNGP + SpecReg",
+    "els": "[SGD] SNGP + SpecReg + evidence ℓ = 7",
+    "ols": "[SGD] SNGP + SpecReg + online evidence ℓ",
+    "muon_pw0": "[Muon + AdamW] GP head, no SN, wd 0 (piecewise)",
+    "muon_pw01": "[Muon + AdamW] GP head, no SN, wd 0.1 (piecewise)",
+    "muon_wsd0": "[Muon + AdamW] GP head, no SN, wd 0 (WSD)",
+    "muon_wsd01": "[Muon + AdamW] GP head, no SN, wd 0.1 (WSD)",
+    "cos_sngp": "[SGD] SNGP (c = 6.0), ℓ = 7 (cosine)",
+    "cos_specreg": "[SGD] SNGP + SpecReg, ℓ = 7 (cosine)",
+    "cos_muon01": "[Muon + AdamW] GP head, no SN, wd 0.1 (cosine)",
+    "cos_muonsgd01": "[Muon + SGD] GP head, no SN, wd 0.1 (cosine)",
+    "cos_muonsgd0": "[Muon + SGD] GP head, no SN, wd 0 (cosine)",
+    "cos_muonsgd_bnsn01": "[Muon + SGD] GP head, no SN, wd 0.1, BN spectral norm c = 3 (cosine)",
 }
 # Muon rows: arm -> (which tag flag, run label stem). One seed each.
 MUON_ARMS = {
@@ -120,6 +124,7 @@ COSINE_ARMS = {
     "cos_muon01": ("cosine_tag", "cos_muon_wd0.1"),
     "cos_muonsgd01": ("cosine_tag", "cos_muonsgd_wd0.1"),
     "cos_muonsgd0": ("cosine_tag", "cos_muonsgd_wd0"),
+    "cos_muonsgd_bnsn01": ("cosine_tag", "cos_muonsgd_bnsn_wd0.1"),
 }
 ONE_SEED_ARMS = {**MUON_ARMS, **COSINE_ARMS}
 MUON_SEEDS = (12345,)
@@ -303,6 +308,9 @@ def main() -> None:
         ("cos_muon01", "cos_muonsgd01"), ("cos_muonsgd01", "cos_muonsgd0"), ("cos_sngp", "cos_specreg"),
         ("cos_specreg", "cos_muonsgd01"), ("cos_specreg", "cos_muonsgd0"),
         ("cos_sngp", "cos_muonsgd01"), ("cos_sngp", "cos_muonsgd0"),
+        # BN spectral norm (DUE): against the same recipe without it, and the SGD rows.
+        ("cos_muonsgd01", "cos_muonsgd_bnsn01"), ("cos_specreg", "cos_muonsgd_bnsn01"),
+        ("cos_sngp", "cos_muonsgd_bnsn01"),
     ]
     pairs = [(b, a) for a, b in base_pairs if a in by_arm and b in by_arm]
     delta_cols = ["acc", "nll", "smece", "auroc_msp_cifar10", "auroc_msp_svhn", "auroc_ds_svhn", "auroc_var_cifar10", "auroc_var_svhn"]
