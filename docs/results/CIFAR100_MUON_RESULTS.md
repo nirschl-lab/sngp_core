@@ -40,7 +40,7 @@ All are set against the SGD-trained SNGP / SpecReg references.
 | GP head, no SN, wd 0 | [Muon + AdamW] | WSD | 7 | 1 | 0.7537 | 0.9129 | 0.0168 | λ 240.4 |
 | GP head, no SN, wd 0.1 | [Muon + AdamW] | WSD | 7 | 1 | 0.7462 | 0.9003 | **0.0127** | λ 63.5 |
 | GP head, no SN, wd 0.1 | [Muon + AdamW] | cosine | 7 | 1 | 0.7635 | 0.8501 | 0.0144 | λ 95.0 |
-| Baseline, wd 0.1 | [Muon + SGD] | cosine | — | 1 | 0.7963 | 0.7658 | 0.0318 | T 1.51 |
+| Baseline + Muon, wd 0.1 | [Muon + SGD] | cosine | — | 1 | 0.7963 | 0.7658 | 0.0318 | T 1.51 |
 | GP head, no SN, wd 0.1 | [Muon + SGD] | cosine | 7 | 1 | 0.7906 | 0.7572 | 0.0242 | λ 68.7 |
 | GP head, no SN, wd 0 | [Muon + SGD] | cosine | 7 | 1 | 0.7903 | 0.8355 | 0.0354 | λ 29.7 |
 | GP head, no SN, wd 0.1, BN spectral norm `c = 3` | [Muon + SGD] | cosine | 7 | 1 | 0.7793 | 0.9184 | 0.1220 | λ 0.0 |
@@ -61,7 +61,7 @@ All are set against the SGD-trained SNGP / SpecReg references.
 | GP head, no SN, wd 0 | [Muon + AdamW] | WSD | 0.7624 | 0.8249 | 0.7229 | 0.8853 | 0.388 | 0.567 | 0.729 |
 | GP head, no SN, wd 0.1 | [Muon + AdamW] | WSD | 0.7601 | **0.8301** | 0.7205 | **0.8919** | 0.431 | 0.470 | **0.699** |
 | GP head, no SN, wd 0.1 | [Muon + AdamW] | cosine | 0.7724 | 0.7793 | 0.7353 | 0.8674 | 0.416 | 0.450 | 0.750 |
-| Baseline, wd 0.1 | [Muon + SGD] | cosine | 0.8095 | 0.7458 | 0.8118 | 0.7927 | — | — | 0.822 |
+| Baseline + Muon, wd 0.1 | [Muon + SGD] | cosine | 0.8095 | 0.7458 | 0.8118 | 0.7927 | — | — | 0.822 |
 | GP head, no SN, wd 0.1 | [Muon + SGD] | cosine | 0.7862 | 0.7465 | 0.7556 | 0.8328 | 0.351 | 0.376 | 0.808 |
 | GP head, no SN, wd 0 | [Muon + SGD] | cosine | 0.8044 | 0.8281 | 0.8114 | 0.8523 | 0.297 | 0.430 | 0.736 |
 | GP head, no SN, wd 0.1, BN spectral norm `c = 3` | [Muon + SGD] | cosine | 0.8075 | 0.8257 | **0.8139** | 0.8591 | 0.212 | 0.498 | 0.792 |
@@ -172,7 +172,7 @@ Per-seed CSV: [figures/cifar100_cosine/cifar100_cosine_per_seed_pi8.csv](../../f
 | GP head, no SN, wd 0 | [Muon + AdamW] | WSD | 7 | 1 | 0.7537 | 1.5775 | 0.1594 |
 | GP head, no SN, wd 0.1 | [Muon + AdamW] | WSD | 7 | 1 | 0.7462 | 1.0708 | 0.1151 |
 | GP head, no SN, wd 0.1 | [Muon + AdamW] | cosine | 7 | 1 | 0.7635 | 1.0978 | 0.1247 |
-| Baseline, wd 0.1 | [Muon + SGD] | cosine | — | 1 | 0.7963 | 0.8654 | 0.0884 |
+| Baseline + Muon, wd 0.1 | [Muon + SGD] | cosine | — | 1 | 0.7963 | 0.8654 | 0.0884 |
 | GP head, no SN, wd 0.1 | [Muon + SGD] | cosine | 7 | 1 | 0.7906 | 0.8972 | 0.1008 |
 | GP head, no SN, wd 0 | [Muon + SGD] | cosine | 7 | 1 | 0.7903 | 0.8748 | **0.0674** |
 | GP head, no SN, wd 0.1, BN spectral norm `c = 3` | [Muon + SGD] | cosine | 7 | 1 | 0.7793 | 0.9191 | 0.1225 |
@@ -197,7 +197,7 @@ Per-seed CSV: [figures/cifar100_cosine/cifar100_cosine_per_seed_pi8.csv](../../f
 | GP head, no SN, wd 0 | [Muon + AdamW] | WSD | 7 | 0.7569 | 0.7714 | 0.7561 | 0.8598 | 0.388 | 0.567 | 0.833 |
 | GP head, no SN, wd 0.1 | [Muon + AdamW] | WSD | 7 | 0.7525 | 0.7973 | 0.7378 | **0.8921** | 0.431 | 0.470 | 0.767 |
 | GP head, no SN, wd 0.1 | [Muon + AdamW] | cosine | 7 | 0.7653 | 0.7426 | 0.7560 | 0.8645 | 0.416 | 0.450 | 0.814 |
-| Baseline, wd 0.1 | [Muon + SGD] | cosine | — | 0.8011 | 0.7237 | 0.8135 | 0.7900 | — | — | 0.841 |
+| Baseline + Muon, wd 0.1 | [Muon + SGD] | cosine | — | 0.8011 | 0.7237 | 0.8135 | 0.7900 | — | — | 0.841 |
 | GP head, no SN, wd 0.1 | [Muon + SGD] | cosine | 7 | 0.7886 | 0.7250 | 0.7942 | 0.8422 | 0.351 | 0.376 | 0.840 |
 | GP head, no SN, wd 0 | [Muon + SGD] | cosine | 7 | 0.8064 | 0.8189 | 0.8204 | 0.8423 | 0.297 | 0.430 | **0.747** |
 | GP head, no SN, wd 0.1, BN spectral norm `c = 3` | [Muon + SGD] | cosine | 7 | 0.8074 | **0.8258** | 0.8139 | 0.8592 | 0.212 | 0.498 | 0.792 |
