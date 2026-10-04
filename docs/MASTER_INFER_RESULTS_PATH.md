@@ -902,6 +902,10 @@ uv run python scripts/metrics/cifar100_evidence_ls_report.py --expect-committed 
                $T/cifar100_cosine_infer_2026-10-02_10-21-31 $T/cifar100_cosine_infer_2026-10-02_18-06-58 \
                $T/cifar100_cosine_infer_2026-10-04_10-43-34 \
     --csv figures/cifar100_cosine/cifar100_cosine_per_seed.csv
+# Same 20 arms with nothing fit post hoc (lambda = pi/8 on GP rows, T = 1 on the Baseline), the
+# "Fixed mean-field factor" section of results/CIFAR100_MUON_RESULTS.md: the command above with
+# --expect-committed dropped (it gates on val-fit NLL) and
+#     --mean-field-factor pi/8 --csv figures/cifar100_cosine/cifar100_cosine_per_seed_pi8.csv
 # Feature scale per checkpoint (figures/cifar100_cosine/cifar100_gp_head_diag.csv), then the sweep figure:
 uv run python scripts/metrics/cifar100_gp_head_diag.py --tag cosine_2026-10-01_10-17-06 \
     --labels cos_muonsgd_l2_wd0.1_s12345 cos_muonsgd_l3.5_wd0.1_s12345 cos_muonsgd_wd0.1_s12345 \

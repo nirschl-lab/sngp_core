@@ -62,9 +62,18 @@ predictions and val fits come from scripts/tmux/cifar100_cosine_infer.sh:
                cos_muonsgd_bnsn01 \\
         --fit-logs <evidence_ls _infer dir> <cifar100_muon_infer_<stamp> dir> <cifar100_cosine_infer_<stamp> dir> \\
         --csv figures/cifar100_cosine/cifar100_cosine_per_seed.csv
+
+`--mean-field-factor pi/8` (or any float) drops the post-hoc fit: every GP row is scored at that
+lambda and every linear-head row at T = 1 (raw logits). The val fit is still read and written to the
+CSV's `fitted` column; `scored_knob` holds the value the metrics were computed at. Accuracy and the
+Var AUROC columns do not depend on lambda, so only NLL / Brier / smECE / MSP / DS / FPR95 move:
+
+    uv run python scripts/metrics/cifar100_evidence_ls_report.py --mean-field-factor pi/8 <same args> \\
+        --csv figures/cifar100_cosine/cifar100_cosine_per_seed_pi8.csv
 """
 import argparse
 import csv
+import math
 import os
 import re
 import statistics
@@ -158,7 +167,7 @@ FIT_RE = re.compile(r"^fitted (\w+)=([0-9.eE+-]+)", re.M)
 CURRENT_RE = re.compile(r"knob=(\w+)\s+current=([0-9.eE+-]+)")
 
 FIELDS = [
-    "arm", "seed", "knob", "trained", "fitted",
+    "arm", "seed", "knob", "trained", "fitted", "scored_knob",
     "acc", "nll", "brier", "smece",
     "auroc_msp_cifar10", "auroc_msp_svhn", "auroc_ds_cifar10", "auroc_ds_svhn",
     "auroc_var_cifar10", "auroc_var_svhn", "fpr95_msp_cifar10", "fpr95_msp_svhn",
@@ -233,6 +242,13 @@ def _score(arm: ArmData, lam: float, with_variance: bool) -> Dict[str, float]:
     return out
 
 
+def _factor(text: str) -> float:
+    """A float, or `pi/<k>` (e.g. `pi/8`, the probit-approximation mean-field factor)."""
+    if text.startswith("pi/"):
+        return math.pi / float(text[3:])
+    return float(text)
+
+
 def _mean_sd(values: List[float], places: int = 4) -> str:
     vals = [v for v in values if v is not None and not np.isnan(v)]
     if not vals:
@@ -253,7 +269,11 @@ def main() -> None:
     ap.add_argument("--csv", required=True, type=Path)
     ap.add_argument("--arms", nargs="+", default=["baseline", "sngp", "specreg", "els"], choices=list(ARMS))
     ap.add_argument("--expect-committed", action="store_true", help="gate the SNGP / SpecReg rows on CIFAR100_RESULTS.md")
+    ap.add_argument("--mean-field-factor", type=_factor, default=None,
+                    help="score GP rows at this fixed lambda (float or pi/<k>) and linear-head rows at T = 1, "
+                         "instead of each row's val-fitted knob")
     args = ap.parse_args()
+    fixed = args.mean_field_factor
 
     infer_root = Path(os.environ["EXPERIMENTS_HOME"]) / os.environ["PROJECT_NAME"] / "infer"
     rows: List[Dict[str, object]] = []
@@ -263,26 +283,30 @@ def main() -> None:
             tag, label, fit_row = _source(arm_key, seed, args.tag, args.ols_tag, muon_tags)
             knob, trained, fitted = _fit(args.fit_logs, fit_row)
             if arm_key in BASELINE_ARMS:
-                arm, published, logits = _baseline_arm(infer_root, tag, label, fitted, arm_key)
+                scored_knob = fitted if fixed is None else 1.0
+                arm, published, logits = _baseline_arm(infer_root, tag, label, scored_knob, arm_key)
                 probs_trained = torch.softmax(logits / trained, dim=1).numpy()
                 at_trained = _baseline_arm(infer_root, tag, label, trained, arm_key)[0]
                 scored, scored_trained = _score(arm, 0.0, False), _score(at_trained, 0.0, False)
             else:
+                scored_knob = fitted if fixed is None else fixed
                 arm = _collect(infer_root, tag, label, ARMS[arm_key], arm_key)
                 if arm is None or set(arm.ood) != set(OOD_SETS):
                     raise SystemExit(f"missing predictions for {arm_key} seed {seed} ({tag}_{label})")
                 raw, var, _ = arm.id
                 published = arm.published_probs
                 probs_trained = torch.softmax(mean_field_scale(raw, var, trained), dim=1).numpy()
-                scored, scored_trained = _score(arm, fitted, True), _score(arm, trained, False)
+                scored, scored_trained = _score(arm, scored_knob, True), _score(arm, trained, False)
 
             gate = float(np.abs(probs_trained - published).max())
             if gate > 1e-4:
                 raise SystemExit(f"{arm_key} s{seed}: offline softmax at {knob}={trained:g} does not reproduce class_probs ({gate:.1e})")
             if scored["acc"] != scored_trained["acc"]:
                 raise SystemExit(f"{arm_key} s{seed}: accuracy moved with the calibration knob")
-            print(f"gate {arm_key:9s} s{seed:<6d} {knob}={trained:g} -> {fitted:.4g} (val)   max |delta prob| {gate:.1e}")
-            rows.append({"arm": arm_key, "seed": seed, "knob": knob, "trained": trained, "fitted": fitted, **scored})
+            print(f"gate {arm_key:9s} s{seed:<6d} {knob}={trained:g} -> {fitted:.4g} (val), scored at {scored_knob:.4g}"
+                  f"   max |delta prob| {gate:.1e}")
+            rows.append({"arm": arm_key, "seed": seed, "knob": knob, "trained": trained, "fitted": fitted,
+                         "scored_knob": scored_knob, **scored})
 
     if args.expect_committed:
         for arm_key, want in COMMITTED_NLL.items():
@@ -300,7 +324,7 @@ def main() -> None:
 
     by_arm = {a: [r for r in rows if r["arm"] == a] for a in args.arms}
     tables = [
-        ("In-distribution (CIFAR-100 test)", [("acc", "Acc"), ("nll", "NLL"), ("brier", "Brier"), ("smece", "smECE"), ("fitted", "knob*")]),
+        ("In-distribution (CIFAR-100 test)", [("acc", "Acc"), ("nll", "NLL"), ("brier", "Brier"), ("smece", "smECE"), ("scored_knob", "knob")]),
         ("OOD AUROC", [("auroc_msp_cifar10", "MSP C-10"), ("auroc_msp_svhn", "MSP SVHN"), ("auroc_ds_cifar10", "DS C-10"),
                        ("auroc_ds_svhn", "DS SVHN"), ("auroc_var_cifar10", "Var C-10"), ("auroc_var_svhn", "Var SVHN"),
                        ("fpr95_msp_svhn", "FPR95 MSP SVHN ↓")]),
@@ -310,7 +334,7 @@ def main() -> None:
         print("| Arm | " + " | ".join(c for _, c in cols) + " |")
         print("|---|" + "---:|" * len(cols))
         for a, rs in by_arm.items():
-            cells = [_mean_sd([r.get(k) for r in rs], 3 if k == "fitted" else 4) for k, _ in cols]
+            cells = [_mean_sd([r.get(k) for r in rs], 3 if k == "scored_knob" else 4) for k, _ in cols]
             print(f"| {ARMS[a]} | " + " | ".join(cells) + " |")
         print()
 

@@ -129,6 +129,70 @@ Caveats:
   accuracy, ±0.01 for NLL and ±0.02–0.04 for DS SVHN.
 - **Muon recipe:** Muon's lr and momentum are the reference defaults, untuned on this backbone.
 
+## Fixed mean-field factor λ = π/8
+
+The same rows, plus the four ℓ-sweep rows (ℓ = 2 / 3.5 / 14 / 20), with **nothing fit post hoc**: λ = π/8
+(the probit-approximation value) on every GP row and T = 1 on the Baseline. `±` is the std across 3 seeds.
+Bold is the best value per column in this table. Accuracy and Var AUROC do not depend on λ, so they match the tables above.
+Per-seed CSV: [figures/cifar100_cosine/cifar100_cosine_per_seed_pi8.csv](../../figures/cifar100_cosine/cifar100_cosine_per_seed_pi8.csv).
+
+| Arm | Optimizer | Schedule | ℓ | Seeds | Acc | NLL | smECE |
+|---|---|---|---|---:|---:|---:|---:|
+| Baseline | [SGD] | piecewise | — | 3 | **0.8061 ± 0.0027** | 0.8074 ± 0.0096 | 0.0779 ± 0.0038 |
+| SNGP (`c = 6.0`) | [SGD] | piecewise | 20 | 3 | 0.8025 ± 0.0045 | 0.8184 ± 0.0078 | 0.0800 ± 0.0043 |
+| SNGP + SpecReg | [SGD] | piecewise | 20 | 3 | 0.8048 ± 0.0036 | 0.7947 ± 0.0113 | 0.0702 ± 0.0020 |
+| SNGP + SpecReg + evidence ℓ | [SGD] | piecewise | 7 | 3 | 0.7978 ± 0.0017 | 0.8224 ± 0.0087 | 0.0816 ± 0.0021 |
+| SNGP + SpecReg + online evidence ℓ | [SGD] | piecewise | online | 3 | 0.7999 ± 0.0003 | 0.8466 ± 0.0037 | 0.0895 ± 0.0010 |
+| SNGP (`c = 6.0`) | [SGD] | cosine | 7 | 1 | 0.7993 | 0.8325 | 0.0778 |
+| SNGP + SpecReg | [SGD] | cosine | 7 | 1 | 0.8052 | **0.7937** | 0.0700 |
+| GP head, no SN, wd 0 | [Muon + AdamW] | piecewise | 7 | 1 | 0.7626 | 1.4122 | 0.1468 |
+| GP head, no SN, wd 0.1 | [Muon + AdamW] | piecewise | 7 | 1 | 0.7729 | 1.1062 | 0.1231 |
+| GP head, no SN, wd 0 | [Muon + AdamW] | WSD | 7 | 1 | 0.7537 | 1.5775 | 0.1594 |
+| GP head, no SN, wd 0.1 | [Muon + AdamW] | WSD | 7 | 1 | 0.7462 | 1.0708 | 0.1151 |
+| GP head, no SN, wd 0.1 | [Muon + AdamW] | cosine | 7 | 1 | 0.7635 | 1.0978 | 0.1247 |
+| GP head, no SN, wd 0.1 | [Muon + SGD] | cosine | 7 | 1 | 0.7906 | 0.8972 | 0.1008 |
+| GP head, no SN, wd 0 | [Muon + SGD] | cosine | 7 | 1 | 0.7903 | 0.8748 | **0.0674** |
+| GP head, no SN, wd 0.1, BN spectral norm `c = 3` | [Muon + SGD] | cosine | 7 | 1 | 0.7793 | 0.9191 | 0.1225 |
+| GP head, no SN, wd 0.1, GP-input LayerNorm | [Muon + SGD] | cosine | 20 | 1 | 0.7888 | 0.8793 | 0.0939 |
+| GP head, no SN, wd 0.1 | [Muon + SGD] | cosine | 2 | 1 | 0.7860 | 0.8686 | 0.0921 |
+| GP head, no SN, wd 0.1 | [Muon + SGD] | cosine | 3.5 | 1 | 0.7894 | 0.8756 | 0.0930 |
+| GP head, no SN, wd 0.1 | [Muon + SGD] | cosine | 14 | 1 | 0.7930 | 0.9152 | 0.1019 |
+| GP head, no SN, wd 0.1 | [Muon + SGD] | cosine | 20 | 1 | 0.7964 | 0.8778 | 0.0936 |
+
+| Arm | Optimizer | Schedule | ℓ | MSP C-10 | MSP SVHN | DS C-10 | DS SVHN | Var C-10 | Var SVHN | FPR95 MSP SVHN ↓ |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|
+| Baseline | [SGD] | piecewise | — | 0.8056 ± 0.0024 | 0.7235 ± 0.0378 | 0.8129 ± 0.0020 | 0.7487 ± 0.0382 | — | — | 0.855 ± 0.028 |
+| SNGP (`c = 6.0`) | [SGD] | piecewise | 20 | 0.8068 ± 0.0034 | 0.7424 ± 0.0057 | 0.8173 ± 0.0041 | 0.7859 ± 0.0053 | 0.437 ± 0.012 | 0.580 ± 0.018 | 0.849 ± 0.011 |
+| SNGP + SpecReg | [SGD] | piecewise | 20 | **0.8113 ± 0.0014** | 0.7823 ± 0.0090 | **0.8212 ± 0.0020** | 0.8228 ± 0.0136 | 0.314 ± 0.001 | 0.410 ± 0.046 | 0.809 ± 0.020 |
+| SNGP + SpecReg + evidence ℓ | [SGD] | piecewise | 7 | 0.8001 ± 0.0013 | 0.7844 ± 0.0302 | 0.8122 ± 0.0027 | 0.8491 ± 0.0278 | 0.336 ± 0.007 | 0.449 ± 0.030 | 0.804 ± 0.031 |
+| SNGP + SpecReg + online evidence ℓ | [SGD] | piecewise | online | 0.7981 ± 0.0044 | 0.7728 ± 0.0123 | 0.8067 ± 0.0072 | 0.8300 ± 0.0197 | 0.294 ± 0.010 | 0.297 ± 0.044 | 0.830 ± 0.022 |
+| SNGP (`c = 6.0`) | [SGD] | cosine | 7 | 0.8008 | 0.7271 | 0.8153 | 0.7903 | 0.393 | 0.595 | 0.866 |
+| SNGP + SpecReg | [SGD] | cosine | 7 | 0.8081 | 0.7886 | 0.8166 | 0.8527 | 0.315 | 0.353 | 0.805 |
+| GP head, no SN, wd 0 | [Muon + AdamW] | piecewise | 7 | 0.7583 | 0.7690 | 0.7530 | 0.8799 | 0.370 | 0.427 | 0.834 |
+| GP head, no SN, wd 0.1 | [Muon + AdamW] | piecewise | 7 | 0.7621 | 0.7152 | 0.7534 | 0.8436 | 0.410 | 0.416 | 0.845 |
+| GP head, no SN, wd 0 | [Muon + AdamW] | WSD | 7 | 0.7569 | 0.7714 | 0.7561 | 0.8598 | 0.388 | 0.567 | 0.833 |
+| GP head, no SN, wd 0.1 | [Muon + AdamW] | WSD | 7 | 0.7525 | 0.7973 | 0.7378 | **0.8921** | 0.431 | 0.470 | 0.767 |
+| GP head, no SN, wd 0.1 | [Muon + AdamW] | cosine | 7 | 0.7653 | 0.7426 | 0.7560 | 0.8645 | 0.416 | 0.450 | 0.814 |
+| GP head, no SN, wd 0.1 | [Muon + SGD] | cosine | 7 | 0.7886 | 0.7250 | 0.7942 | 0.8422 | 0.351 | 0.376 | 0.840 |
+| GP head, no SN, wd 0 | [Muon + SGD] | cosine | 7 | 0.8064 | 0.8189 | 0.8204 | 0.8423 | 0.297 | 0.430 | **0.747** |
+| GP head, no SN, wd 0.1, BN spectral norm `c = 3` | [Muon + SGD] | cosine | 7 | 0.8074 | **0.8258** | 0.8139 | 0.8592 | 0.212 | 0.498 | 0.792 |
+| GP head, no SN, wd 0.1, GP-input LayerNorm | [Muon + SGD] | cosine | 20 | 0.7905 | 0.7669 | 0.7874 | 0.8625 | **0.661** | **0.607** | 0.779 |
+| GP head, no SN, wd 0.1 | [Muon + SGD] | cosine | 2 | 0.7844 | 0.7573 | 0.7763 | 0.8337 | 0.350 | 0.312 | 0.833 |
+| GP head, no SN, wd 0.1 | [Muon + SGD] | cosine | 3.5 | 0.7827 | 0.7195 | 0.7780 | 0.8210 | 0.354 | 0.405 | 0.832 |
+| GP head, no SN, wd 0.1 | [Muon + SGD] | cosine | 14 | 0.7950 | 0.7444 | 0.8007 | 0.8281 | 0.327 | 0.357 | 0.821 |
+| GP head, no SN, wd 0.1 | [Muon + SGD] | cosine | 20 | 0.7985 | 0.7523 | 0.8087 | 0.8311 | 0.313 | 0.339 | 0.826 |
+
+- **NLL rises on every row, roughly in proportion to λ\*.** Against each row's val-fit λ\*: +0.05 to +0.09 for the
+  SGD rows (λ\* 32–49) and +0.050 for the Baseline at T = 1, +0.09 to +0.16 for the `[Muon + SGD]` wd 0.1 rows
+  (λ\* 45–80), +0.17 to +0.66 for `[Muon + AdamW]` (λ\* 63–240). The BN spectral norm row (λ\* 0) barely moves (+0.001).
+  The two SpecReg rows have the best NLL (0.794 / 0.795), ahead of the T = 1 Baseline (0.807). `[Muon + SGD]` wd 0
+  (λ\* 29.7) is the best Muon row, with NLL 0.875 and the lowest smECE (0.067).
+- **Near-OOD:** DS C-10 is higher at π/8 than at λ\* on every GP row but the BN spectral norm row (unchanged; e.g. evidence ℓ 0.785 → 0.812,
+  `[Muon + AdamW]` 0.71–0.74 → 0.74–0.76). Piecewise SpecReg is still the best on MSP and DS C-10.
+- **Far-OOD:** without its large λ\*, `[Muon + AdamW]` loses its MSP SVHN lead (0.75–0.83 → 0.72–0.80) and its FPR95
+  (0.70–0.80 → 0.77–0.85); its DS SVHN stays highest (0.892, WSD wd 0.1). The best MSP SVHN and FPR95 move to the two
+  small-λ\* `[Muon + SGD]` rows: BN spectral norm (0.826) and wd 0 (FPR95 0.747).
+
 ## Length-scale sweep (no LayerNorm)
 
 `[Muon + SGD]` wd 0.1, cosine, GP input **not** normalized, seed 12345. Only `model.net.length_scale`
