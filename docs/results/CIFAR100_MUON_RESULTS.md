@@ -244,4 +244,35 @@ OOD AUROC:
 - **λ\* rises with ℓ** (45 → 80) while ‖β‖_F stays at 18–20. So the post-hoc λ is not set by ‖β‖
   alone; it also grows as the kernel widens.
 
+### Length-scale sweep at λ = π/8
+
+The same six checkpoints at λ = π/8 with nothing fit post hoc (rows from the
+[fixed-λ section](#fixed-mean-field-factor-λ--π8)). Accuracy and Var AUROC match the tables above. Bold is the best per column.
+
+| ℓ | Acc | NLL | Brier | smECE |
+|---|---:|---:|---:|---:|
+| 2 | 0.7860 | **0.8686** | 0.3125 | **0.0921** |
+| 3.5 | 0.7894 | 0.8756 | 0.3113 | 0.0930 |
+| 7 | 0.7906 | 0.8972 | 0.3146 | 0.1008 |
+| 14 | 0.7930 | 0.9152 | 0.3140 | 0.1019 |
+| 20 | **0.7964** | 0.8778 | **0.3062** | 0.0936 |
+| 20, GP-input LayerNorm | 0.7888 | 0.8793 | 0.3125 | 0.0939 |
+
+| ℓ | MSP C-10 | MSP SVHN | DS C-10 | DS SVHN | Var C-10 | Var SVHN | FPR95 MSP SVHN ↓ |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| 2 | 0.7844 | 0.7573 | 0.7763 | 0.8337 | 0.350 | 0.312 | 0.833 |
+| 3.5 | 0.7827 | 0.7195 | 0.7780 | 0.8210 | 0.354 | 0.405 | 0.832 |
+| 7 | 0.7886 | 0.7250 | 0.7942 | 0.8422 | 0.351 | 0.376 | 0.840 |
+| 14 | 0.7950 | 0.7444 | 0.8007 | 0.8281 | 0.327 | 0.357 | 0.821 |
+| 20 | **0.7985** | 0.7523 | **0.8087** | 0.8311 | 0.313 | 0.339 | 0.826 |
+| 20, GP-input LayerNorm | 0.7905 | **0.7669** | 0.7874 | **0.8625** | **0.661** | **0.607** | **0.779** |
+
+- **NLL: the larger-ℓ advantage goes away.** At λ\* NLL falls with ℓ (0.780 → 0.751). At π/8 it is
+  0.869–0.915 with no order (ℓ = 2 lowest, ℓ = 14 highest). The π/8 penalty grows with λ\*: +0.089 at ℓ = 2
+  (λ\* 45), +0.13 to +0.16 at ℓ 7–20 (λ\* 69–80).
+- **Near-OOD: the trend holds.** DS C-10 rises monotonically with ℓ (0.776 → 0.809), and MSP C-10 rises with one
+  out-of-order step (0.784 → 0.799).
+- **Far-OOD: still no trend.** MSP SVHN 0.72–0.76, DS SVHN 0.82–0.84, FPR95 0.82–0.84. FPR95 is worse than at λ\* at every ℓ.
+  The LayerNorm row is still the best on far-OOD, but by less: MSP SVHN 0.767, against 0.789 at λ\*.
+
 Caveat: one seed per ℓ.
