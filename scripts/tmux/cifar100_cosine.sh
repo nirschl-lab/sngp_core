@@ -22,6 +22,9 @@
 #   cos_muonsgd_l{2,3.5,14,20}_wd0.1_s12345  experiment=sngp_muon_sgd_cifar100_cosine  length-scale
 #                                   sweep without the LayerNorm (cos_muonsgd_wd0.1_s12345 is l = 7); not
 #                                   in the default list, launch with ARMS=
+#   cos_baseline_s12345               experiment=baseline_cifar100_cosine           linear head, no GP, SGD
+#   cos_baseline_muonsgd_wd0.1_s12345 experiment=baseline_muon_sgd_cifar100_cosine  linear head, no GP,
+#                                   Muon wd 0.1 + SGD aux: the optimizer alone; launch with ARMS=
 #
 # In cosine_2026-10-01_10-17-06, cos_muon_wd0_s12345 was stopped at epoch 152: the AdamW aux group
 # let the final BN gamma and the GP output layer drift (see sngp_muon_sgd_cifar100_cosine.yaml),
@@ -65,6 +68,8 @@ declare -A ARM_OVERRIDES=(
   [cos_muonsgd_l3.5_wd0.1_s12345]="experiment=sngp_muon_sgd_cifar100_cosine model.net.length_scale=3.5"
   [cos_muonsgd_l14_wd0.1_s12345]="experiment=sngp_muon_sgd_cifar100_cosine model.net.length_scale=14.0"
   [cos_muonsgd_l20_wd0.1_s12345]="experiment=sngp_muon_sgd_cifar100_cosine model.net.length_scale=20.0"
+  [cos_baseline_s12345]="experiment=baseline_cifar100_cosine"
+  [cos_baseline_muonsgd_wd0.1_s12345]="experiment=baseline_muon_sgd_cifar100_cosine"
 )
 ALL_ARMS="cos_sngp_l7_s12345 cos_specreg_l7_s12345 cos_muon_wd0.1_s12345 cos_muon_wd0_s12345"
 ALL_ARMS+=" cos_muonsgd_wd0.1_s12345 cos_muonsgd_wd0_s12345"

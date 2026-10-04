@@ -272,6 +272,8 @@ class TestExperimentProtocolConsistency:
             "sngp_muon_sgd_cifar100_cosine",
             "sngp_muon_sgd_bnsn_cifar100_cosine",
             "sngp_muon_sgd_bnreg_cifar100_cosine",
+            "baseline_cifar100_cosine",
+            "baseline_muon_sgd_cifar100_cosine",
         ],
     }
     _ALL_EXPERIMENTS = sorted(e for group in _EXPERIMENTS_BY_DATASET.values() for e in group)
@@ -317,6 +319,8 @@ class TestExperimentProtocolConsistency:
         "sngp_muon_sgd_cifar100_cosine": {"monitor": "val/loss", "early_stopping": None},
         "sngp_muon_sgd_bnsn_cifar100_cosine": {"monitor": "val/loss", "early_stopping": None},
         "sngp_muon_sgd_bnreg_cifar100_cosine": {"monitor": "val/loss", "early_stopping": None},
+        "baseline_cifar100_cosine": {"monitor": "val/loss", "early_stopping": None},
+        "baseline_muon_sgd_cifar100_cosine": {"monitor": "val/loss", "early_stopping": None},
     }
 
     # sngp_specreg_* experiments normally must have weight_decay == 0, so the spectral

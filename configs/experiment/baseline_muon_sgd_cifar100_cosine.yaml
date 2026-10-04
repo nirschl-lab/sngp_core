@@ -1,0 +1,93 @@
+# @package _global_
+
+# to execute this experiment run:
+# python train.py experiment=baseline_muon_sgd_cifar100_cosine
+#
+# baseline_cifar100_cosine (deterministic WRN-28-10, linear head, cosine LR) with ONE change: the
+# optimizer of sngp_muon_sgd_cifar100_cosine -- Muon (lr 0.02, momentum 0.95, Nesterov, wd 0.1) on
+# the hidden convs, SGD-Nesterov 0.04 / L2 6e-4 on the stem / BN / output layer.
+#
+# Why: with the GP head, [Muon + SGD] wd 0.1 trails [SGD] SpecReg by -1.5 pts accuracy at l = 7
+# (docs/results/CIFAR100_MUON_RESULTS.md). With no GP head, this pair tells whether the optimizer
+# itself costs that, or whether it comes from Muon x kernel (feature scale). Launched by
+# scripts/tmux/cifar100_cosine.sh (arm cos_baseline_muonsgd_wd0.1_s12345).
+#
+# Deviations from the protocol defaults, mirrored in tests/test_configs.py::_SELECTION_OVERRIDES:
+# no early stopping and selection on `val/loss` (the CIFAR benchmark recipe).
+
+defaults:
+  - override /data: cifar100
+  - override /model: baseline_classifier
+  - override /callbacks: default
+  - override /trainer: default
+
+name: "cifar100_baseline_muon_sgd_cosine_wrn28x10"
+WANDB_PROJECT: ${oc.env:PROJECT_NAME}
+tags: ["baseline", "muon", "muon-sgd", "cifar100", "wide_resnet28_10", "benchmark", "cosine", "training"]
+
+seed: 12345
+
+num_classes: 100
+
+trainer:
+  min_epochs: 250
+  max_epochs: 250
+  accelerator: "gpu"
+
+model:
+  # Own output dir: task_name is "train/${model.name}_<dataset>".
+  name: baseline_muon_sgd_cosine_classifier
+  optimizer:
+    # Verbatim from sngp_muon_sgd_cifar100_cosine.yaml: Muon on the 27 hidden convs; the stem
+    # (3 input channels), every BatchNorm affine and the linear output layer get the SGD arms'
+    # exact rule (src.models.components.optimizers.is_muon_param splits by shape).
+    _target_: src.models.components.optimizers.MuonWithAuxSGD
+    _partial_: true
+    lr: 0.02
+    momentum: 0.95
+    weight_decay: 0.1
+    sgd_lr: 0.04
+    sgd_momentum: 0.9
+    sgd_nesterov: true
+    sgd_weight_decay: 6e-4   # = the SGD arms' L2, on the stem / BN / output layer
+  net:
+    arch: wide_resnet28_10
+    num_classes: ${num_classes}
+    pretrained: false
+    # 0.0, not the family's 0.2: the reference deterministic WRN has no head dropout.
+    # The backbone still carries the reference's filter-wise dropout 0.1 internally, which
+    # every CIFAR arm shares. Consequence: MC-Dropout at inference is not meaningful for
+    # this checkpoint, which is fine -- it is an accuracy/calibration anchor, not an
+    # uncertainty method.
+    dropout_p: 0.0
+  compile: false
+  scheduler:
+    # The Acevedo schedule, as in the *_cifar100_cosine SNGP experiments: cosine from the peak
+    # LR to 0 over the full budget, stepped once per epoch, no warmup. Scales every param group.
+    _target_: torch.optim.lr_scheduler.CosineAnnealingLR
+    _partial_: true
+    T_max: ${trainer.max_epochs}
+    eta_min: 0.0
+  num_classes: ${num_classes}
+
+data:
+  datamodule:
+    batch_size: 128
+
+logger:
+  wandb:
+    project: "${WANDB_PROJECT}"
+    tags: "${tags_with:${tags},${data.datamodule.institution}}"
+    group: "CIFAR100"
+    name: ${name}
+    log_model: True
+  aim:
+    experiment: ""
+
+callbacks:
+  model_checkpoint:
+    monitor: "val/loss"
+    mode: "min"
+  early_stopping: null
+  test_artifacts:
+    hist_bins: 10

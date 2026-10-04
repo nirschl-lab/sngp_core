@@ -115,6 +115,9 @@ ARMS: Dict[str, str] = {
     "cos_muonsgd01_l3.5": "[Muon + SGD] GP head, no SN, wd 0.1, ℓ = 3.5 (cosine)",
     "cos_muonsgd01_l14": "[Muon + SGD] GP head, no SN, wd 0.1, ℓ = 14 (cosine)",
     "cos_muonsgd01_l20": "[Muon + SGD] GP head, no SN, wd 0.1, ℓ = 20 (cosine)",
+    # The optimizer alone: linear head, no GP.
+    "cos_baseline": "[SGD] Baseline (cosine)",
+    "cos_baseline_muonsgd01": "[Muon + SGD] Baseline, wd 0.1 (cosine)",
 }
 # Muon rows: arm -> (which tag flag, run label stem). One seed each.
 MUON_ARMS = {
@@ -136,8 +139,12 @@ COSINE_ARMS = {
     "cos_muonsgd01_l3.5": ("cosine_tag", "cos_muonsgd_l3.5_wd0.1"),
     "cos_muonsgd01_l14": ("cosine_tag", "cos_muonsgd_l14_wd0.1"),
     "cos_muonsgd01_l20": ("cosine_tag", "cos_muonsgd_l20_wd0.1"),
+    "cos_baseline": ("cosine_tag", "cos_baseline"),
+    "cos_baseline_muonsgd01": ("cosine_tag", "cos_baseline_muonsgd_wd0.1"),
 }
 ONE_SEED_ARMS = {**MUON_ARMS, **COSINE_ARMS}
+# Linear-head rows: scored at logits / T, no GP variance.
+BASELINE_ARMS = frozenset({"baseline", "cos_baseline", "cos_baseline_muonsgd01"})
 MUON_SEEDS = (12345,)
 
 
@@ -191,14 +198,15 @@ def _fit(log_dirs: Sequence[Path], row: str) -> Tuple[str, float, float]:
     return fitted.group(1), float(current.group(2)), float(fitted.group(2))
 
 
-def _baseline_arm(root: Path, tag: str, label: str, temperature: float) -> Tuple[ArmData, np.ndarray, torch.Tensor]:
+def _baseline_arm(root: Path, tag: str, label: str, temperature: float,
+                  arm_key: str = "baseline") -> Tuple[ArmData, np.ndarray, torch.Tensor]:
     """The baseline as an ArmData at logits / T, plus its written probs and raw logits.
 
     The variance is a constant `_NO_VAR`, not 0: at lambda = 0 it never enters a metric
     (sqrt(1 + 0 * var) == 1 exactly), but `_sweep_rows` also builds a lambda -> infinity row
     that divides by sigma.
     """
-    arm = ArmData(label, ARMS["baseline"], "baseline")
+    arm = ArmData(label, ARMS[arm_key], arm_key)
     frame = load_predictions(str(_infer_dir(root, tag, label, "cifar100") / "predictions.csv"), fold="test")
     logits = torch.from_numpy(logits_array(frame)).to(torch.float64)
     col = next(c for c in LABEL_COLS if c in frame.df.columns)
@@ -254,10 +262,10 @@ def main() -> None:
         for seed in _seeds(arm_key):
             tag, label, fit_row = _source(arm_key, seed, args.tag, args.ols_tag, muon_tags)
             knob, trained, fitted = _fit(args.fit_logs, fit_row)
-            if arm_key == "baseline":
-                arm, published, logits = _baseline_arm(infer_root, tag, label, fitted)
+            if arm_key in BASELINE_ARMS:
+                arm, published, logits = _baseline_arm(infer_root, tag, label, fitted, arm_key)
                 probs_trained = torch.softmax(logits / trained, dim=1).numpy()
-                at_trained = _baseline_arm(infer_root, tag, label, trained)[0]
+                at_trained = _baseline_arm(infer_root, tag, label, trained, arm_key)[0]
                 scored, scored_trained = _score(arm, 0.0, False), _score(at_trained, 0.0, False)
             else:
                 arm = _collect(infer_root, tag, label, ARMS[arm_key], arm_key)
