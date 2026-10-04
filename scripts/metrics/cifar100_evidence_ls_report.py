@@ -110,6 +110,11 @@ ARMS: Dict[str, str] = {
     "cos_muonsgd0": "[Muon + SGD] GP head, no SN, wd 0 (cosine)",
     "cos_muonsgd_bnsn01": "[Muon + SGD] GP head, no SN, wd 0.1, BN spectral norm c = 3 (cosine)",
     "cos_muonsgd_ln01": "[Muon + SGD] GP head, no SN, wd 0.1, GP-input LayerNorm, ℓ = 20 (cosine)",
+    # Length-scale sweep of cos_muonsgd01 (ℓ = 7) without the LayerNorm.
+    "cos_muonsgd01_l2": "[Muon + SGD] GP head, no SN, wd 0.1, ℓ = 2 (cosine)",
+    "cos_muonsgd01_l3.5": "[Muon + SGD] GP head, no SN, wd 0.1, ℓ = 3.5 (cosine)",
+    "cos_muonsgd01_l14": "[Muon + SGD] GP head, no SN, wd 0.1, ℓ = 14 (cosine)",
+    "cos_muonsgd01_l20": "[Muon + SGD] GP head, no SN, wd 0.1, ℓ = 20 (cosine)",
 }
 # Muon rows: arm -> (which tag flag, run label stem). One seed each.
 MUON_ARMS = {
@@ -127,6 +132,10 @@ COSINE_ARMS = {
     "cos_muonsgd0": ("cosine_tag", "cos_muonsgd_wd0"),
     "cos_muonsgd_bnsn01": ("cosine_tag", "cos_muonsgd_bnsn_wd0.1"),
     "cos_muonsgd_ln01": ("cosine_tag", "cos_muonsgd_ln_l20_wd0.1"),
+    "cos_muonsgd01_l2": ("cosine_tag", "cos_muonsgd_l2_wd0.1"),
+    "cos_muonsgd01_l3.5": ("cosine_tag", "cos_muonsgd_l3.5_wd0.1"),
+    "cos_muonsgd01_l14": ("cosine_tag", "cos_muonsgd_l14_wd0.1"),
+    "cos_muonsgd01_l20": ("cosine_tag", "cos_muonsgd_l20_wd0.1"),
 }
 ONE_SEED_ARMS = {**MUON_ARMS, **COSINE_ARMS}
 MUON_SEEDS = (12345,)

@@ -19,6 +19,9 @@
 #   cos_muonsgd_ln_l20_wd0.1_s12345 experiment=sngp_muon_sgd_cifar100_cosine  + LayerNorm on the GP
 #                                   input, l = 20 (||h|| = sqrt(640) ~ 25 at init, so ||h|| / l ~ 1.26,
 #                                   SpecReg's 1.23): pins the feature scale the kernel sees
+#   cos_muonsgd_l{2,3.5,14,20}_wd0.1_s12345  experiment=sngp_muon_sgd_cifar100_cosine  length-scale
+#                                   sweep without the LayerNorm (cos_muonsgd_wd0.1_s12345 is l = 7); not
+#                                   in the default list, launch with ARMS=
 #
 # In cosine_2026-10-01_10-17-06, cos_muon_wd0_s12345 was stopped at epoch 152: the AdamW aux group
 # let the final BN gamma and the GP output layer drift (see sngp_muon_sgd_cifar100_cosine.yaml),
@@ -58,6 +61,10 @@ declare -A ARM_OVERRIDES=(
   [cos_muonsgd_bnsn_wd0.1_s12345]="experiment=sngp_muon_sgd_bnsn_cifar100_cosine"
   [cos_muonsgd_bnreg_wd0.1_s12345]="experiment=sngp_muon_sgd_bnreg_cifar100_cosine"
   [cos_muonsgd_ln_l20_wd0.1_s12345]="experiment=sngp_muon_sgd_cifar100_cosine model.net.normalize_input=true model.net.length_scale=20.0"
+  [cos_muonsgd_l2_wd0.1_s12345]="experiment=sngp_muon_sgd_cifar100_cosine model.net.length_scale=2.0"
+  [cos_muonsgd_l3.5_wd0.1_s12345]="experiment=sngp_muon_sgd_cifar100_cosine model.net.length_scale=3.5"
+  [cos_muonsgd_l14_wd0.1_s12345]="experiment=sngp_muon_sgd_cifar100_cosine model.net.length_scale=14.0"
+  [cos_muonsgd_l20_wd0.1_s12345]="experiment=sngp_muon_sgd_cifar100_cosine model.net.length_scale=20.0"
 )
 ALL_ARMS="cos_sngp_l7_s12345 cos_specreg_l7_s12345 cos_muon_wd0.1_s12345 cos_muon_wd0_s12345"
 ALL_ARMS+=" cos_muonsgd_wd0.1_s12345 cos_muonsgd_wd0_s12345"
@@ -134,7 +141,7 @@ run() {
     || echo "[$(date +%H:%M:%S)] FAILED ${label} (see ${LOGS}/${label}.log)"
 }
 
-echo "=== ${STUDY} (${MODE}) -- cosine LR, l = 7, seed 12345: ${ARM_LIST[*]} ==="
+echo "=== ${STUDY} (${MODE}) -- cosine LR, seed 12345: ${ARM_LIST[*]} ==="
 for i in "${!ARM_LIST[@]}"; do
   label="${ARM_LIST[$i]}"
   # shellcheck disable=SC2086  # the override string is a space-separated list of hydra args
