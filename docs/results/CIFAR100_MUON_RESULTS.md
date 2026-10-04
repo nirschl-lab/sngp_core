@@ -7,7 +7,8 @@ The rows below vary four things:
 - the LR schedule;
 - the optimizer on the remaining parameters (the stem, BatchNorm and GP output layer);
 - a cap on BatchNorm's gain;
-- a LayerNorm on the GP input.
+- a LayerNorm on the GP input;
+- the GP length scale ℓ, without the LayerNorm ([section below](#length-scale-sweep-no-layernorm)).
 
 All are set against the SGD-trained SNGP / SpecReg references.
 
@@ -127,3 +128,56 @@ Caveats:
 - **Seeds:** every non-piecewise-SGD row is one seed. The SGD rows' seed spread is about ±0.004 for
   accuracy, ±0.01 for NLL and ±0.02–0.04 for DS SVHN.
 - **Muon recipe:** Muon's lr and momentum are the reference defaults, untuned on this backbone.
+
+## Length-scale sweep (no LayerNorm)
+
+`[Muon + SGD]` wd 0.1, cosine, GP input **not** normalized, seed 12345. Only `model.net.length_scale`
+changes; ℓ = 7 is the "GP head, no SN, wd 0.1 [Muon + SGD] cosine" row above. The hollow marker is
+the GP-input LayerNorm row (ℓ = 20), the dashed line `[SGD]` SpecReg at ℓ = 7 (cosine).
+
+![CIFAR-100 length-scale sweep](../../figures/cifar100_cosine/cifar100_length_scale_sweep.png)
+
+In-distribution, and the feature scale the kernel sees (2000 val images, `last.ckpt`,
+`scripts/metrics/cifar100_gp_head_diag.py`; k is the exact RBF kernel averaged over same- / different-class pairs):
+
+| ℓ | Acc | NLL | smECE | λ\* | ‖h‖ | ‖h‖/ℓ | k same | k diff | ‖β‖_F |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 2 | 0.7860 | 0.7798 | 0.0214 | 45.0 | 5.2 | 2.59 | 0.30 | 0.15 | 19.8 |
+| 3.5 | 0.7894 | 0.7727 | **0.0194** | 53.9 | 7.9 | 2.26 | 0.36 | 0.19 | 19.4 |
+| 7 | 0.7906 | 0.7572 | 0.0242 | 68.7 | 11.2 | 1.60 | 0.57 | 0.39 | 18.8 |
+| 14 | 0.7930 | 0.7599 | 0.0262 | 80.1 | 14.1 | 1.01 | 0.82 | 0.68 | 18.3 |
+| 20 | **0.7964** | **0.7514** | 0.0267 | 75.8 | 14.7 | 0.74 | 0.90 | 0.80 | 18.5 |
+| 20, GP-input LayerNorm | 0.7888 | 0.7789 | 0.0276 | 52.2 | 0.64 (post-LN 19.0) | 0.95 | 0.60 | 0.44 | 19.9 |
+
+OOD AUROC:
+
+| ℓ | MSP C-10 | MSP SVHN | DS C-10 | DS SVHN | Var C-10 | Var SVHN | FPR95 MSP SVHN ↓ |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| 2 | 0.7838 | 0.7648 | 0.7518 | 0.8165 | 0.350 | 0.312 | 0.818 |
+| 3.5 | 0.7817 | 0.7384 | 0.7474 | 0.8120 | 0.354 | 0.405 | 0.795 |
+| 7 | 0.7862 | 0.7465 | 0.7556 | 0.8328 | 0.351 | 0.376 | 0.808 |
+| 14 | 0.7917 | 0.7589 | 0.7672 | 0.8242 | 0.327 | 0.357 | 0.797 |
+| 20 | **0.7964** | 0.7692 | **0.7854** | 0.8322 | 0.313 | 0.339 | 0.803 |
+| 20, GP-input LayerNorm | 0.7942 | **0.7887** | 0.7758 | **0.8535** | **0.661** | **0.607** | **0.745** |
+
+- **ℓ is a real knob here, only partly absorbed.** Over ℓ 2 → 20 (×10) the backbone grows ‖h‖ ×2.8,
+  so ‖h‖/ℓ still falls 2.59 → 0.74 and the same-class kernel widens 0.30 → 0.90. (In the
+  [learnable-ℓ study](CIFAR100_LEARNABLE_LS_RESULTS.md) ‖h‖/ℓ locked at ~2.2 instead.)
+- **In-distribution and near-OOD: larger ℓ is better.** ℓ 2 → 20: accuracy +1.0 point (monotone over
+  all five ℓ), NLL −0.028, MSP C-10 +0.013, DS C-10 +0.034 (each with one out-of-order step). The ℓ = 20 row is the best `[Muon + SGD]` wd 0.1 row,
+  still −0.9 points of accuracy and +0.009 NLL behind `[SGD]` SpecReg.
+- **Far-OOD (SVHN): no trend.** MSP 0.738–0.769, DS 0.812–0.833 and FPR95 0.79–0.82 move without
+  order, within the ±0.02–0.04 seed spread. A small ℓ does not buy far-OOD.
+- **GP variance: inverted at every ℓ** (AUROC 0.31–0.41). Changing ℓ does not un-invert it; the
+  LayerNorm does. Ad hoc check (2000 test images per set against 4000 CIFAR-100 val features): without the
+  LayerNorm, CIFAR-10 / SVHN features are 3–13 % shorter than CIFAR-100 test features and sit closer to the
+  centre of the CIFAR-100 cloud. Their nearest-neighbour distance is only +5 % / +1 % above ID at ℓ = 7,
+  and ℓ rescales every distance alike. With the LayerNorm, SVHN's raw ‖h‖ is half of ID's, but the LayerNorm
+  normalizes it away, and the nearest-neighbour gap becomes +17 % / +11 %.
+- **LayerNorm at matched ℓ = 20:** −0.8 points of accuracy, +0.028 NLL, MSP C-10 −0.002; MSP SVHN +0.020,
+  DS SVHN +0.021, FPR95 −0.058, Var AUROC +0.35 / +0.27. So its in-distribution cost is larger than
+  the −0.2 points measured against ℓ = 7.
+- **λ\* rises with ℓ** (45 → 80) while ‖β‖_F stays at 18–20. So the post-hoc λ is not set by ‖β‖
+  alone; it also grows as the kernel widens.
+
+Caveat: one seed per ℓ.

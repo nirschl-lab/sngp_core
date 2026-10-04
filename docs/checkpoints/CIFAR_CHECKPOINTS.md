@@ -266,6 +266,12 @@ A GP-input LayerNorm arm on the same recipe was added on 2026-10-02 at 15:26 (co
 - `cos_muonsgd_ln_l20_wd0.1_s12345` (W&B `fsch74pv`), experiment `sngp_muon_sgd_cifar100_cosine` with
   `model.net.normalize_input=true model.net.length_scale=20.0`.
 
+A length-scale sweep on the same recipe, without the LayerNorm, was added on 2026-10-04 at 07:57 (commit
+`4bbc175`, driver log `driver_add_07-57-01.log`). Experiment `sngp_muon_sgd_cifar100_cosine` with only
+`model.net.length_scale` changed; `cos_muonsgd_wd0.1_s12345` is the ℓ = 7 point:
+- `cos_muonsgd_l2_wd0.1_s12345` (W&B `2hg4e81a`), `cos_muonsgd_l3.5_wd0.1_s12345` (`z6umlfsi`),
+  `cos_muonsgd_l14_wd0.1_s12345` (`ucm05z4g`), `cos_muonsgd_l20_wd0.1_s12345` (`086viyk3`).
+
 Compare at `last.ckpt` (epoch 249).
 
 ```bash
@@ -279,6 +285,7 @@ $C/cos_muonsgd_wd0_s12345/checkpoints/{best,last}.ckpt    # GP head, no SN, Muon
 $C/cos_muonsgd_bnsn_wd0.1_s12345/checkpoints/{best,last}.ckpt   # Muon wd 0.1 + SGD aux + BN spectral norm (c = 3)
 $C/cos_muonsgd_bnreg_wd0.1_s12345/checkpoints/{best,last}.ckpt  # Muon wd 0.1 + SGD aux + BN SpecReg (0.01, every 24 steps)
 $C/cos_muonsgd_ln_l20_wd0.1_s12345/checkpoints/{best,last}.ckpt # Muon wd 0.1 + SGD aux + GP-input LayerNorm, l = 20
+$C/cos_muonsgd_l{2,3.5,14,20}_wd0.1_s12345/checkpoints/{best,last}.ckpt # Muon wd 0.1 + SGD aux, no LayerNorm, l sweep
 ```
 
 The `cosine_smoke_*` tree under `overnight/` is a 1200-step smoke test, not a result.
