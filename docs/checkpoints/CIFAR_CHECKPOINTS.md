@@ -272,6 +272,12 @@ A length-scale sweep on the same recipe, without the LayerNorm, was added on 202
 - `cos_muonsgd_l2_wd0.1_s12345` (W&B `2hg4e81a`), `cos_muonsgd_l3.5_wd0.1_s12345` (`z6umlfsi`),
   `cos_muonsgd_l14_wd0.1_s12345` (`ucm05z4g`), `cos_muonsgd_l20_wd0.1_s12345` (`086viyk3`).
 
+Two linear-head baselines (no GP head), one per optimizer, were added on 2026-10-04 at 14:18 (commit
+`09fa718`, driver log `driver_add_14-18-54.log`):
+- `cos_baseline_s12345` (W&B `164bbcyn`), experiment `baseline_cifar100_cosine`: SGD-Nesterov 0.04, L2 6e-4.
+- `cos_baseline_muonsgd_wd0.1_s12345` (W&B `82mi4hny`), experiment `baseline_muon_sgd_cifar100_cosine`:
+  `MuonWithAuxSGD` as in `sngp_muon_sgd_cifar100_cosine` (Muon wd 0.1 on the 27 hidden convs, SGD on stem / BN / fc).
+
 Compare at `last.ckpt` (epoch 249).
 
 ```bash
@@ -286,6 +292,8 @@ $C/cos_muonsgd_bnsn_wd0.1_s12345/checkpoints/{best,last}.ckpt   # Muon wd 0.1 + 
 $C/cos_muonsgd_bnreg_wd0.1_s12345/checkpoints/{best,last}.ckpt  # Muon wd 0.1 + SGD aux + BN SpecReg (0.01, every 24 steps)
 $C/cos_muonsgd_ln_l20_wd0.1_s12345/checkpoints/{best,last}.ckpt # Muon wd 0.1 + SGD aux + GP-input LayerNorm, l = 20
 $C/cos_muonsgd_l{2,3.5,14,20}_wd0.1_s12345/checkpoints/{best,last}.ckpt # Muon wd 0.1 + SGD aux, no LayerNorm, l sweep
+$C/cos_baseline_s12345/checkpoints/{best,last}.ckpt                # linear-head baseline, SGD
+$C/cos_baseline_muonsgd_wd0.1_s12345/checkpoints/{best,last}.ckpt  # linear-head baseline, Muon wd 0.1 + SGD aux
 ```
 
 The `cosine_smoke_*` tree under `overnight/` is a 1200-step smoke test, not a result.

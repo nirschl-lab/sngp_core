@@ -356,6 +356,9 @@ def main() -> None:
         ("cos_sngp", "cos_muonsgd_bnsn01"),
         # GP-input LayerNorm + l = 20: against the same recipe without it, and the best SGD row.
         ("cos_muonsgd01", "cos_muonsgd_ln01"), ("cos_specreg", "cos_muonsgd_ln01"),
+        # The optimizer alone (linear head), and the GP head against the linear head per optimizer.
+        ("cos_baseline", "cos_baseline_muonsgd01"),
+        ("cos_baseline_muonsgd01", "cos_muonsgd01"), ("cos_baseline", "cos_sngp"), ("cos_baseline", "cos_specreg"),
     ]
     pairs = [(b, a) for a, b in base_pairs if a in by_arm and b in by_arm]
     delta_cols = ["acc", "nll", "smece", "auroc_msp_cifar10", "auroc_msp_svhn", "auroc_ds_svhn", "auroc_var_cifar10", "auroc_var_svhn"]
@@ -368,7 +371,8 @@ def main() -> None:
         for seed in shared:
             h = next(r for r in by_arm[hi] if r["seed"] == seed)
             l = next(r for r in by_arm[lo] if r["seed"] == seed)
-            d = {k: h[k] - l[k] for k in delta_cols}
+            # Linear-head rows have no Var AUROC; their deltas print as nan.
+            d = {k: h.get(k, float("nan")) - l.get(k, float("nan")) for k in delta_cols}
             for k, v in d.items():
                 deltas[k].append(v)
             print(f"| {seed} | " + " | ".join(f"{v:+.4f}" for v in d.values()) + " |")

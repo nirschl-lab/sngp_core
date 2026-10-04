@@ -865,6 +865,9 @@ Checkpoints: [checkpoints/CIFAR_CHECKPOINTS.md](checkpoints/CIFAR_CHECKPOINTS.md
 # length-scale sweep, no LayerNorm (Muon wd 0.1 + SGD aux, l = 2 / 3.5 / 14 / 20), evaluated 2026-10-04
 /data1/maheswararao/experiments/uncertainty-aware-ml/infer/cosine_2026-10-01_10-17-06_cos_muonsgd_l{2,3.5,14,20}_wd0.1_s12345__{cifar100,cifar10,svhn}/
 /data1/maheswararao/experiments/uncertainty-aware-ml/tmux_logs/cifar100_cosine_infer_2026-10-04_10-43-34/fit_cosine_2026-10-01_10-17-06_cos_muonsgd_l{2,3.5,14,20}_wd0.1_s12345.log
+# linear-head baselines (SGD / Muon wd 0.1 + SGD aux), evaluated 2026-10-04; T fit on val
+/data1/maheswararao/experiments/uncertainty-aware-ml/infer/cosine_2026-10-01_10-17-06_{cos_baseline,cos_baseline_muonsgd_wd0.1}_s12345__{cifar100,cifar10,svhn}/
+/data1/maheswararao/experiments/uncertainty-aware-ml/tmux_logs/cifar100_cosine_infer_2026-10-04_17-49-11/fit_cosine_2026-10-01_10-17-06_{cos_baseline,cos_baseline_muonsgd_wd0.1}_s12345.log
 ```
 
 `cos_muonsgd_bnreg_wd0.1_s12345` (BN SpecReg) trained unstably and is not evaluated. Results:
@@ -888,7 +891,10 @@ CIFAR_COSINE_STAMP=2026-10-01_10-17-06 GPUS="0 1 2 3" \
     scripts/tmux/cifar100_cosine.sh          # the length-scale sweep (no LayerNorm)
 LABELS="cos_muonsgd_l2_wd0.1_s12345 cos_muonsgd_l3.5_wd0.1_s12345 cos_muonsgd_l14_wd0.1_s12345 cos_muonsgd_l20_wd0.1_s12345" \
     scripts/tmux/cifar100_cosine_infer.sh cosine_2026-10-01_10-17-06
-# All 20 arms / 30 rows of figures/cifar100_cosine/cifar100_cosine_per_seed.csv:
+CIFAR_COSINE_STAMP=2026-10-01_10-17-06 GPUS="0 1" ARMS="cos_baseline_s12345 cos_baseline_muonsgd_wd0.1_s12345" \
+    scripts/tmux/cifar100_cosine.sh          # the two linear-head baselines
+LABELS="cos_baseline_s12345 cos_baseline_muonsgd_wd0.1_s12345" GPUS="0 1" scripts/tmux/cifar100_cosine_infer.sh cosine_2026-10-01_10-17-06
+# All 22 arms / 32 rows of figures/cifar100_cosine/cifar100_cosine_per_seed.csv:
 T=/data1/maheswararao/experiments/uncertainty-aware-ml/tmux_logs
 uv run python scripts/metrics/cifar100_evidence_ls_report.py --expect-committed \
     --tag evidence_ls_2026-09-28_16-10-10 --ols-tag online_ls_2026-09-29_12-07-14 \
@@ -896,13 +902,13 @@ uv run python scripts/metrics/cifar100_evidence_ls_report.py --expect-committed 
     --cosine-tag cosine_2026-10-01_10-17-06 \
     --arms baseline sngp specreg els ols muon_pw0 muon_pw01 muon_wsd0 muon_wsd01 cos_sngp cos_specreg \
            cos_muon01 cos_muonsgd01 cos_muonsgd0 cos_muonsgd_bnsn01 cos_muonsgd_ln01 \
-           cos_muonsgd01_l2 cos_muonsgd01_l3.5 cos_muonsgd01_l14 cos_muonsgd01_l20 \
+           cos_muonsgd01_l2 cos_muonsgd01_l3.5 cos_muonsgd01_l14 cos_muonsgd01_l20 cos_baseline cos_baseline_muonsgd01 \
     --fit-logs $T/cifar100_evidence_ls_2026-09-28_16-10-10_infer $T/cifar100_online_ls_2026-09-29_12-07-14_infer \
                $T/cifar100_muon_infer_2026-10-01_09-28-29 $T/cifar100_cosine_infer_2026-10-01_16-25-28 \
                $T/cifar100_cosine_infer_2026-10-02_10-21-31 $T/cifar100_cosine_infer_2026-10-02_18-06-58 \
-               $T/cifar100_cosine_infer_2026-10-04_10-43-34 \
+               $T/cifar100_cosine_infer_2026-10-04_10-43-34 $T/cifar100_cosine_infer_2026-10-04_17-49-11 \
     --csv figures/cifar100_cosine/cifar100_cosine_per_seed.csv
-# Same 20 arms with nothing fit post hoc (lambda = pi/8 on GP rows, T = 1 on the Baseline), the
+# Same 22 arms with nothing fit post hoc (lambda = pi/8 on GP rows, T = 1 on the Baseline), the
 # "Fixed mean-field factor" section of results/CIFAR100_MUON_RESULTS.md: the command above with
 # --expect-committed dropped (it gates on val-fit NLL) and
 #     --mean-field-factor pi/8 --csv figures/cifar100_cosine/cifar100_cosine_per_seed_pi8.csv
