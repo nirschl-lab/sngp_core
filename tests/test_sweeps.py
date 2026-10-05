@@ -251,6 +251,13 @@ class TestSweepLauncher:
             str(AGENT_SBATCH), "e/p/s", "1", "4",
         ]
 
+    def test_total_trials_is_the_grid_size_without_run_cap(self):
+        from scripts.hpo.sweep import build_sweep_config, total_trials
+
+        assert total_trials(build_sweep_config("sngp_probit", "wong", experiment="sngp_wong_sgd")) == 30
+        assert total_trials(build_sweep_config("sngp", "acevedo")) == 48
+        assert total_trials(build_sweep_config("sngp_probit", "wong", experiment="sngp_wong_sgd", trials=2)) == 2
+
     def test_build_sweep_config_trials_override_run_cap(self):
         from scripts.hpo.sweep import build_sweep_config
 

@@ -71,6 +71,16 @@ def load_sweep_definition(family: str) -> dict:
         return yaml.safe_load(fh)
 
 
+def total_trials(sweep_cfg: dict, default: int = 48) -> int:
+    """Trials the agents must cover: `run_cap` if set, else the grid size for `method: grid`
+    (W&B ends a grid sweep once every cell has run), else `default`."""
+    if sweep_cfg.get("run_cap"):
+        return int(sweep_cfg["run_cap"])
+    if sweep_cfg.get("method") == "grid":
+        return math.prod(len(p["values"]) if "values" in p else 1 for p in sweep_cfg["parameters"].values())
+    return default
+
+
 def git_sha() -> str:
     try:
         return subprocess.check_output(["git", "rev-parse", "--short", "HEAD"], cwd=REPO_ROOT, text=True).strip()
@@ -241,7 +251,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     if args.no_submit:
         print(f"run agents by hand:  uv run wandb agent --count {args.count} {sweep_path}")
         return 0
-    submit_agents(sweep_path, trials=int(sweep_cfg.get("run_cap", args.trials or 48)), parallel=args.parallel,
+    submit_agents(sweep_path, trials=total_trials(sweep_cfg), parallel=args.parallel,
                   count=args.count, time_limit=args.time, agents_per_gpu=args.agents_per_gpu)
     print(f"read results:  uv run scripts/hpo/summarize_sweep.py --sweep {sweep_path}")
     return 0
