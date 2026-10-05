@@ -43,6 +43,10 @@ set itself needs to change).
   three live-training-time plots, all directly reusable offline.
 - `src/visualization/uncertainity.py` — confidence-vs-accuracy and
   rejection-classification diagrams (not currently wired into training, offline-only).
+- `src/visualization/artifact_confidence_histograms.py` — offline, multi-model
+  max-softmax-probability histograms across the artifact sweep (models x clean +
+  count/severity levels, correct/incorrect stacked, clean outline); merges several
+  axis-path sidecars and writes per-level files for draft layout.
 - `src/visualization/density.py` — kernel-density helpers (reflected KDE,
   Nadaraya-Watson) used by the smoothed reliability diagrams; reusable for any other
   density-based plot.

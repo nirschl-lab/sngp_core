@@ -121,6 +121,32 @@ uv run src/visualization/artifact_severity_curves.py \
     --figures-dir figures/artifact_severity_curves
 ```
 
+Confidence histograms (max softmax probability, split correct/incorrect; grid of
+models x clean + count 1-5, clean distribution dashed in every cell; per-level columns
+and the legend also written separately for draft layout; `--yscale log` variant shows the
+low-confidence tail) by `src/visualization/artifact_confidence_histograms.py`. Models:
+Baseline, Deep Ensemble, MC Dropout, SNGP (5-model sidecar) + SNGP + Spectral Reg
+(specreg sidecar):
+
+acevedo_artifact_confidence_histogram_figures:
+```bash
+figures/confidence_histograms/acevedo_config_confidence_grid[_log].{png,pdf}
+figures/confidence_histograms/acevedo_config_confidence_grid[_log]_level{0..5}.{png,pdf}
+figures/confidence_histograms/acevedo_config_confidence_grid[_log]_legend.{png,pdf}
+figures/confidence_histograms/acevedo_config_confidence_grid[_log]_{hist,summary}.csv
+```
+
+Reproduce (add `--yscale log` for the `_log` set, `--axis procedural` for the other axis,
+`--layout overlay` for one panel per level with models overlaid):
+```bash
+uv run src/visualization/artifact_confidence_histograms.py \
+    --config configs/paper_helpers/acevedo_artifact_axis_paths.yaml \
+             configs/paper_helpers/acevedo_specreg_artifact_axis_paths.yaml \
+    --axis config \
+    --models "Baseline Classifier" "Deep Ensemble" "Monte Carlo Dropout" SNGP \
+             "SNGP + Spectral Reg"
+```
+
 ---
 
 baseline_wong:
