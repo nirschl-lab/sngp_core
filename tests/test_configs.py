@@ -258,8 +258,14 @@ class TestExperimentProtocolConsistency:
         "wong_utsouthwestern": ["baseline_wong_utsouthwestern", "sngp_wong_utsouthwestern"],
         # ADRC study: full Wong under SGD + the reference CIFAR GP head, mean_field_factor pinned
         # at pi/8 -- its own group, as it intentionally differs from the `wong` protocol (header
-        # of configs/experiment/sngp_wong_sgd.yaml).
-        "wong_adrc": ["sngp_wong_sgd", "sngp_bnsn_wong_sgd", "sngp_specreg_wong_sgd", "sngp_muon_wong_sgd"],
+        # of configs/experiment/sngp_wong_sgd.yaml). baseline_wong_sgd is its deterministic arm.
+        "wong_adrc": [
+            "sngp_wong_sgd",
+            "sngp_bnsn_wong_sgd",
+            "sngp_specreg_wong_sgd",
+            "sngp_muon_wong_sgd",
+            "baseline_wong_sgd",
+        ],
         # The CIFAR-100 / WRN-28-10 reproduction of the SNGP benchmark. Not part of the
         # biomedical protocol -- see docs/models/CIFAR100_BENCHMARK.md.
         "cifar100": [
@@ -331,6 +337,7 @@ class TestExperimentProtocolConsistency:
         "sngp_bnsn_wong_sgd": {"monitor": "val/nll"},
         "sngp_specreg_wong_sgd": {"monitor": "val/nll"},
         "sngp_muon_wong_sgd": {"monitor": "val/nll"},
+        "baseline_wong_sgd": {"monitor": "val/nll"},
     }
 
     # sngp_specreg_* experiments normally must have weight_decay == 0, so the spectral

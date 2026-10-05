@@ -1,0 +1,82 @@
+# @package _global_
+
+# to execute this experiment run:
+# python train.py experiment=baseline_wong_sgd
+#
+# ADRC study, deterministic baseline: the same backbone and SGD recipe as the four GP arms
+# (sngp_wong_sgd.yaml, whose header carries the shared recipe) with a plain linear head instead
+# of the random-feature GP. SGD + Nesterov, lr 0.04 at batch 128, weight_decay 6e-4, cosine to 0
+# over the full budget. A gap to the GP arms is the head's, not the optimizer's.
+#
+# Deviations from the `wong` protocol, mirrored in tests/test_configs.py::_SELECTION_OVERRIDES:
+# selection on raw `val/nll`, as in the GP arms (temperature 1.0 here, so raw val/nll is the
+# uncalibrated NLL). Early stopping stays on like its siblings; the final 5-seed runs
+# (scripts/tmux/adrc_wong_final.sh) turn it off.
+
+defaults:
+  - override /data: wong
+  - override /model: baseline_classifier
+  - override /callbacks: default
+  - override /trainer: default
+
+name: "wong_baseline_sgd_resnet18"
+WANDB_PROJECT: ${oc.env:PROJECT_NAME}
+tags: ["baseline", "wong", "resnet18", "sgd", "adrc", "training"]
+
+seed: 12345
+
+num_classes: 4
+
+trainer:
+  min_epochs: 30
+  max_epochs: 150
+  accelerator: "gpu"
+
+model:
+  # Own output dir: task_name is "train/${model.name}_<dataset>".
+  name: baseline_sgd_classifier
+  optimizer:
+    _target_: torch.optim.SGD
+    _partial_: true
+    lr: 0.04
+    momentum: 0.9
+    nesterov: true
+    weight_decay: 6e-4
+  net:
+    arch: resnet18
+    num_classes: ${num_classes}
+    pretrained: false
+    # 0.0, not the family's 0.2: the GP arms carry no head dropout, so neither does their
+    # deterministic counterpart.
+    dropout_p: 0.0
+  compile: false
+  scheduler:
+    _target_: torch.optim.lr_scheduler.CosineAnnealingLR
+    _partial_: true
+    T_max: ${trainer.max_epochs}
+    eta_min: 0.0
+  num_classes: ${num_classes}
+
+data:
+  datamodule:
+    batch_size: 128
+
+logger:
+  wandb:
+    project: "${WANDB_PROJECT}"
+    tags: "${tags_with:${tags},${data.datamodule.institution}}"
+    group: "adrc"
+    name: ${name}
+    log_model: True
+  aim:
+    experiment: ""
+
+callbacks:
+  model_checkpoint:
+    monitor: "val/nll"
+    mode: "min"
+  early_stopping:
+    monitor: "val/nll"
+    mode: "min"
+  test_artifacts:
+    hist_bins: 10

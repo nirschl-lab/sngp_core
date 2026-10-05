@@ -186,7 +186,9 @@ match its partner SNGP experiment's value (`tests/test_configs.py`).
   checkpoint behind (`save_top_k: 0`), so retraining is mandatory rather than an
   optimization. See [Reading results](#reading-results) for the exact command.
 - **Final models**: the winning config x 5 seeds, reported mean +/- std, each
-  post-hoc calibrated (next section).
+  post-hoc calibrated (next section). `scripts/tmux/adrc_wong_final.sh` is a worked
+  launcher: one cell per arm plus a deterministic baseline, 5 seeds each, all runs at
+  once across the GPUs, with early stopping off.
 
 ## Before trusting any result: measure the noise floor
 
