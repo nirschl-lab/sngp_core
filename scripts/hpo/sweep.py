@@ -154,7 +154,7 @@ def register(sweep_path: str, sweep_cfg: dict, registry: Path = SWEEP_REGISTRY) 
     line = (
         f"- `{sweep_cfg['name']}`: `{sweep_path}` (created {_dt.date.today().isoformat()}, "
         f"objective `{sweep_cfg['metric']['name']}` {sweep_cfg['metric']['goal']}, "
-        f"run_cap {sweep_cfg.get('run_cap', '?')}, git {git_sha()})\n"
+        f"{'run_cap ' + str(sweep_cfg['run_cap']) if sweep_cfg.get('run_cap') else 'grid ' + str(total_trials(sweep_cfg))}, git {git_sha()})\n"
     )
     with open(registry, "a") as fh:
         fh.write(line)
