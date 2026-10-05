@@ -997,3 +997,29 @@ scripts/inference/run_artifact_axes.sh \
     sngp_muon_classifier_acevedo_calibrated/${N}_muon_wd0/acevedo_artifact \
     infer.runtime.batch_size_override=1024
 ```
+
+---
+
+Wong ADRC study, final runs (2026-10-05): 5 arms x seeds {12345, 1, 2, 3, 4}, each `best.ckpt`
+(GP arms at their trained `mean_field_factor` π/8, no calibration) on the Wong test split plus
+the 6 other datasets' test splits as OOD. Results:
+[results/WONG_ADRC_RESULTS.md](results/WONG_ADRC_RESULTS.md); checkpoints under `adrc_*_wong` in
+[MASTER_CHECKPONT_PATHS.md](MASTER_CHECKPONT_PATHS.md).
+
+adrc_wong_final (`<arm>` in baseline, sngp, bnsn, specreg, muon; `<model>` = the arm's `model.name`,
+e.g. `sngp_bnsn_sgd_classifier`):
+```bash
+/data1/maheswararao/experiments/uncertainty-aware-ml/infer/<model>_wong/2026-10-05_10-05-27_<arm>_s{12345,1,2,3,4}/{wong,acevedo,jung,kather2016,kather2018,nirschl2018,tang}
+```
+
+Reproduce (inference ~16 min on 4 GPUs, one checkpoint stream per GPU; report tables + CSV):
+```bash
+T=/data1/maheswararao/experiments/uncertainty-aware-ml/train
+N=2026-10-05_10-05-27
+export LEVELS="" OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1   # 7 datasets, no artifact arms
+for C in $T/*_wong/runs/${N}_*_s*/checkpoints/best.ckpt; do
+  run=$(basename $(dirname $(dirname $C))); model=$(basename $(dirname $(dirname $(dirname $(dirname $C)))))
+  scripts/inference/run_eval_suite_parallel.sh $C $model/$run 0 -- data.datamodule.num_workers=12
+done
+uv run python scripts/metrics/wong_adrc_report.py --stamp $N --out-dir figures/wong_adrc
+```
