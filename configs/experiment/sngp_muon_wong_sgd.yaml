@@ -1,0 +1,87 @@
+# @package _global_
+
+# to execute this experiment run:
+# python train.py experiment=sngp_muon_wong_sgd
+#
+# ADRC study, Muon arm: sngp_wong_sgd.yaml (whose header carries the shared recipe) with no
+# spectral control at all -- conv SN off -- and Muon on the hidden convs. The aux group (stem,
+# BN, GP output layer) gets plain SGD + Nesterov at the SGD arms' lr / L2, the
+# MuonWithAuxSGD variant that fixed the AdamW-aux BN-gamma / GP-head drift on CIFAR-100
+# (sngp_muon_sgd_cifar100_cosine.yaml). The sweep grids Muon's weight_decay in place of c: it
+# is what bounds the hidden-conv norms under Muon (Acevedo: wd 0 best OOD, wd 0.1 best ID).
+# Muon wd 0 sat at chance for 1-6 epochs on Acevedo -- check the early epochs of those trials.
+
+defaults:
+  - override /data: wong
+  - override /model: sngp_classifier
+  - override /callbacks: default
+  - override /trainer: default
+
+name: "wong_sngp_muon_sgd_resnet18"
+WANDB_PROJECT: ${oc.env:PROJECT_NAME}
+tags: ["sngp", "muon", "muon-sgd", "no-spectral-norm", "wong", "resnet18", "sgd", "adrc", "training"]
+
+seed: 12345
+
+num_classes: 4
+
+trainer:
+  min_epochs: 30
+  max_epochs: 150
+  accelerator: "gpu"
+
+model:
+  name: sngp_muon_sgd_classifier
+  optimizer:
+    _target_: src.models.components.optimizers.MuonWithAuxSGD
+    _partial_: true
+    lr: 0.02
+    momentum: 0.95
+    weight_decay: 0.1 # swept
+    sgd_lr: 0.04
+    sgd_momentum: 0.9
+    sgd_nesterov: true
+    sgd_weight_decay: 6e-4 # = the SGD arms' L2, on the stem / BN / GP output layer
+  net:
+    arch: resnet18
+    num_classes: ${num_classes}
+    pretrained: false
+    use_spectral_norm: false
+    spectral_norm_bound: null
+    length_scale: 20.0
+    normalize_input: false
+    scale_random_features: false
+    ridge_penalty: 1.0
+    mean_field_factor: 0.39269908 # pi/8
+    kernel_amplitude: 1.0 # swept
+  compile: false
+  scheduler:
+    _target_: torch.optim.lr_scheduler.CosineAnnealingLR
+    _partial_: true
+    T_max: ${trainer.max_epochs}
+    eta_min: 0.0
+  num_classes: ${num_classes}
+
+data:
+  datamodule:
+    batch_size: 128
+
+logger:
+  wandb:
+    project: "${WANDB_PROJECT}"
+    tags: "${tags_with:${tags},${data.datamodule.institution}}"
+    group: "adrc"
+    name: ${name}
+    log_model: True
+  aim:
+    experiment: ""
+
+callbacks:
+  model_checkpoint:
+    monitor: "val/nll"
+    mode: "min"
+  early_stopping:
+    monitor: "val/nll"
+    mode: "min"
+  test_artifacts:
+    hist_bins: 10

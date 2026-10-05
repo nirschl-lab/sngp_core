@@ -1,0 +1,34 @@
+# W&B sweep definition (SEARCH SPACE) for the ADRC study -- conv spectral-norm bound c x
+# kernel_amplitude; shared by experiment=sngp_wong_sgd and experiment=sngp_bnsn_wong_sgd (whose
+# BN cap interpolates c). Run preset:
+# configs/hparams_search/sngp_probit.yaml (pinned mean_field_factor = pi/8,
+# objective val/nll_best).
+# Plain W&B YAML: load with yaml.safe_load, never OmegaConf. Launch through
+# scripts/hpo/sweep.py (it inserts experiment=..., and --name sets the sweep name / W&B group).
+#
+# Grid, not bayes: two discrete knobs, and every cell is wanted for the c-vs-sigma^2 picture.
+# No early_terminate -- hyperband would kill grid cells; the preset's EarlyStopping
+# (patience 8 on val/nll) already trims the waste.
+program: src/train.py
+method: grid
+metric:
+  name: val/nll_best # running min, so W&B's summary (= last logged) equals the best
+  goal: minimize
+parameters:
+  # Spectral-norm bound c (Liu et al. 2022 eq. 15), the repo's standard grid. Floats so the
+  # Hydra override is a float.
+  model.net.spectral_norm_bound:
+    values: [1.0, 2.0, 4.0, 6.0, 8.0]
+  # Kernel amplitude sigma^2 inside the random-feature map (phi scaled by sqrt(sigma^2)), so it
+  # shapes training. Spans the SNGP paper's Table 10 range (1, 7.5, 20).
+  model.net.kernel_amplitude:
+    values: [0.5, 1.0, 2.0, 5.0, 10.0, 20.0]
+command:
+  - ${env}
+  - uv
+  - run
+  - --no-sync # concurrent `uv run`s must not race to sync .venv; sweep.py syncs once up front
+  - python
+  - ${program}
+  - hparams_search=sngp_probit
+  - ${args_no_hyphens}

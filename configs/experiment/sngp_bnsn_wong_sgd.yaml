@@ -1,0 +1,84 @@
+# @package _global_
+
+# to execute this experiment run:
+# python train.py experiment=sngp_bnsn_wong_sgd
+#
+# ADRC study, SNGP + BN spectral norm arm: sngp_wong_sgd.yaml (whose header carries the shared
+# recipe) plus DUE's SpectralBatchNorm2d (van Amersfoort et al. 2021) on every BatchNorm. As in
+# DUE, conv SN and the BN cap share ONE coefficient: bn_spectral_norm_bound interpolates
+# spectral_norm_bound, so the sweep's single c drives both.
+#
+# Watch for the CIFAR-100 BN-SN failure mode (docs/results/CIFAR100_MUON_RESULTS.md): the cap
+# divides gamma but not beta, which collapsed the GP-input features at a fixed length scale.
+
+defaults:
+  - override /data: wong
+  - override /model: sngp_classifier
+  - override /callbacks: default
+  - override /trainer: default
+
+name: "wong_sngp_bnsn_sgd_resnet18"
+WANDB_PROJECT: ${oc.env:PROJECT_NAME}
+tags: ["sngp", "bn-spectral-norm", "wong", "resnet18", "sgd", "adrc", "training"]
+
+seed: 12345
+
+num_classes: 4
+
+trainer:
+  min_epochs: 30
+  max_epochs: 150
+  accelerator: "gpu"
+
+model:
+  name: sngp_bnsn_sgd_classifier
+  optimizer:
+    _target_: torch.optim.SGD
+    _partial_: true
+    lr: 0.04
+    momentum: 0.9
+    nesterov: true
+    weight_decay: 6e-4
+  net:
+    arch: resnet18
+    num_classes: ${num_classes}
+    pretrained: false
+    spectral_norm_bound: 6.0 # swept
+    bn_spectral_norm_bound: ${model.net.spectral_norm_bound}
+    length_scale: 20.0
+    normalize_input: false
+    scale_random_features: false
+    ridge_penalty: 1.0
+    mean_field_factor: 0.39269908 # pi/8
+    kernel_amplitude: 1.0 # swept
+  compile: false
+  scheduler:
+    _target_: torch.optim.lr_scheduler.CosineAnnealingLR
+    _partial_: true
+    T_max: ${trainer.max_epochs}
+    eta_min: 0.0
+  num_classes: ${num_classes}
+
+data:
+  datamodule:
+    batch_size: 128
+
+logger:
+  wandb:
+    project: "${WANDB_PROJECT}"
+    tags: "${tags_with:${tags},${data.datamodule.institution}}"
+    group: "adrc"
+    name: ${name}
+    log_model: True
+  aim:
+    experiment: ""
+
+callbacks:
+  model_checkpoint:
+    monitor: "val/nll"
+    mode: "min"
+  early_stopping:
+    monitor: "val/nll"
+    mode: "min"
+  test_artifacts:
+    hist_bins: 10

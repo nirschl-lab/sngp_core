@@ -256,6 +256,10 @@ class TestExperimentProtocolConsistency:
         ],
         "wong_upitt": ["baseline_wong_upitt", "sngp_wong_upitt"],
         "wong_utsouthwestern": ["baseline_wong_utsouthwestern", "sngp_wong_utsouthwestern"],
+        # ADRC study: full Wong under SGD + the reference CIFAR GP head, mean_field_factor pinned
+        # at pi/8 -- its own group, as it intentionally differs from the `wong` protocol (header
+        # of configs/experiment/sngp_wong_sgd.yaml).
+        "wong_adrc": ["sngp_wong_sgd", "sngp_bnsn_wong_sgd", "sngp_specreg_wong_sgd", "sngp_muon_wong_sgd"],
         # The CIFAR-100 / WRN-28-10 reproduction of the SNGP benchmark. Not part of the
         # biomedical protocol -- see docs/models/CIFAR100_BENCHMARK.md.
         "cifar100": [
@@ -321,6 +325,12 @@ class TestExperimentProtocolConsistency:
         "sngp_muon_sgd_bnreg_cifar100_cosine": {"monitor": "val/loss", "early_stopping": None},
         "baseline_cifar100_cosine": {"monitor": "val/loss", "early_stopping": None},
         "baseline_muon_sgd_cifar100_cosine": {"monitor": "val/loss", "early_stopping": None},
+        # ADRC study: the mean-field factor is pinned at pi/8, so raw val/nll is the NLL the
+        # study optimizes (val/nll_cal would refit the factor). Early stopping stays on.
+        "sngp_wong_sgd": {"monitor": "val/nll"},
+        "sngp_bnsn_wong_sgd": {"monitor": "val/nll"},
+        "sngp_specreg_wong_sgd": {"monitor": "val/nll"},
+        "sngp_muon_wong_sgd": {"monitor": "val/nll"},
     }
 
     # sngp_specreg_* experiments normally must have weight_decay == 0, so the spectral
@@ -329,9 +339,10 @@ class TestExperimentProtocolConsistency:
     # everything but the regularizer fixed -- including that arm's weight decay. (Its
     # companion, sngp_specreg_cifar100_literal, keeps 0 and is not exempt. The rf_e2e_l2
     # study, sngp_specreg_cifar100_rf, changes only the GP head of the matched arm, so it
-    # inherits the exemption, as does the cosine-schedule study's sngp_specreg_cifar100_cosine.)
+    # inherits the exemption, as does the cosine-schedule study's sngp_specreg_cifar100_cosine.
+    # The ADRC study's sngp_specreg_wong_sgd is exempt for the same matched-arm reason.)
     _SPECREG_WD_EXEMPT = frozenset(
-        {"sngp_specreg_cifar100", "sngp_specreg_cifar100_rf", "sngp_specreg_cifar100_cosine"}
+        {"sngp_specreg_cifar100", "sngp_specreg_cifar100_rf", "sngp_specreg_cifar100_cosine", "sngp_specreg_wong_sgd"}
     )
 
     # The Liu et al. (2022) Table 9 constants, as pinned in configs/model/sngp_classifier.yaml.

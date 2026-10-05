@@ -31,11 +31,21 @@ def _load_sweep(family: str) -> dict:
         return yaml.safe_load(fh)
 
 
+# Families whose search space exists for a non-Acevedo study: compose them with the experiment
+# they are actually launched with (scripts/hpo/sweep.py --experiment).
+_PRESET_EXPERIMENT = {
+    "sngp_probit": "sngp_wong_sgd",
+    "sngp_specreg_probit": "sngp_specreg_wong_sgd",
+    "sngp_muon_probit": "sngp_muon_wong_sgd",
+}
+
+
 def _compose_preset(family: str):
+    experiment = _PRESET_EXPERIMENT.get(family, f"{family}_acevedo")
     with hydra.initialize(version_base="1.3", config_path="../configs"):
         return hydra.compose(
             config_name="train.yaml",
-            overrides=[f"experiment={family}_acevedo", f"hparams_search={family}"],
+            overrides=[f"experiment={experiment}", f"hparams_search={family}"],
             return_hydra_config=True,
         )
 
@@ -217,6 +227,29 @@ class TestSweepLauncher:
         assert cfg["run_cap"] == 48
         assert cfg["metric"] == {"name": "val/nll_cal_best", "goal": "minimize"}
         assert "sngp x acevedo" in cfg["description"]
+
+    def test_build_sweep_config_experiment_and_name(self):
+        from scripts.hpo.sweep import build_sweep_config
+
+        cfg = build_sweep_config("sngp_probit", "wong", experiment="sngp_bnsn_wong_sgd", name="adrc_wong_sngp_bnsn")
+        assert cfg["name"] == "adrc_wong_sngp_bnsn"
+        assert cfg["command"][-3:] == [
+            "experiment=sngp_bnsn_wong_sgd",
+            "logger.wandb.group=adrc_wong_sngp_bnsn",
+            "${args_no_hyphens}",
+        ]
+        assert cfg["metric"] == {"name": "val/nll_best", "goal": "minimize"}
+
+    def test_sbatch_command_scales_resources_with_agents_per_gpu(self):
+        from scripts.hpo.sweep import AGENT_SBATCH, sbatch_command
+
+        one = sbatch_command("e/p/s", trials=30, parallel=4)
+        assert one == ["sbatch", "--array=0-29%4", "--time=03:00:00", str(AGENT_SBATCH), "e/p/s", "1", "1"]
+        four = sbatch_command("e/p/s", trials=30, parallel=4, time_limit="08:00:00", agents_per_gpu=4)
+        assert four == [
+            "sbatch", "--array=0-7%4", "--time=08:00:00", "--cpus-per-task=32", "--mem=128G",
+            str(AGENT_SBATCH), "e/p/s", "1", "4",
+        ]
 
     def test_build_sweep_config_trials_override_run_cap(self):
         from scripts.hpo.sweep import build_sweep_config

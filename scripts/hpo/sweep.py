@@ -15,6 +15,9 @@ Usage:
     uv run scripts/hpo/sweep.py sngp acevedo --dry-run             # print the final sweep YAML, no API call
     uv run scripts/hpo/sweep.py sngp acevedo --no-submit           # create only; run agents by hand:
         #   uv run wandb agent --count 1 <entity>/<project>/<sweep_id>
+    uv run scripts/hpo/sweep.py sngp_probit wong --experiment sngp_bnsn_wong_sgd \\
+        --name adrc_wong_sngp_bnsn --agents-per-gpu 4 --time 08:00:00  # one family, another experiment;
+        # named sweep + W&B group; 4 concurrent trials share each GPU
 
 Each trial is an ordinary single-run `src/train.py` invocation; the W&B controller owns
 the loop and reads the objective (`val/nll_cal_best`) from the logged metrics. See
@@ -44,14 +47,17 @@ SWEEP_DEFINITION_DIR = REPO_ROOT / "configs" / "hparams_search" / "wandb"
 SWEEP_REGISTRY = REPO_ROOT / "docs" / "MASTER_SWEEPS.md"
 AGENT_SBATCH = REPO_ROOT / "scripts" / "slurm" / "wandb_agent.sbatch"
 ARGS_MACRO = "${args_no_hyphens}"
+# One agent's share of an array task -- must match the #SBATCH defaults in AGENT_SBATCH.
+CPUS_PER_AGENT = 8
+MEM_GB_PER_AGENT = 32
 
 
-def compose_preset(family: str, dataset: str) -> DictConfig:
-    """Hydra-compose the run preset for this family x dataset (for `name`/`optimized_metric`)."""
+def compose_preset(family: str, experiment: str) -> DictConfig:
+    """Hydra-compose the run preset for this family x experiment (for `name`/`optimized_metric`)."""
     with initialize(version_base="1.3", config_path="../../configs"):
         return compose(
             config_name="train.yaml",
-            overrides=[f"experiment={family}_{dataset}", f"hparams_search={family}"],
+            overrides=[f"experiment={experiment}", f"hparams_search={family}"],
         )
 
 
@@ -77,9 +83,18 @@ def build_sweep_config(
     dataset: str,
     extra_overrides: Sequence[str] = (),
     trials: Optional[int] = None,
+    experiment: Optional[str] = None,
+    name: Optional[str] = None,
 ) -> dict:
-    """The final sweep dict handed to `wandb.sweep()`."""
-    preset = compose_preset(family, dataset)
+    """The final sweep dict handed to `wandb.sweep()`.
+
+    `experiment` defaults to `<family>_<dataset>`; pass it when one family's search space
+    drives several experiments (e.g. sngp_probit for sngp_wong_sgd and sngp_bnsn_wong_sgd).
+    `name` replaces the default sweep name `<experiment name>_hpo` and is also handed to
+    every trial as its W&B group, so a study's trials can be found by one name.
+    """
+    experiment = experiment or f"{family}_{dataset}"
+    preset = compose_preset(family, experiment)
     sweep = load_sweep_definition(family)
 
     metric = sweep["metric"]["name"]
@@ -93,14 +108,15 @@ def build_sweep_config(
     if ARGS_MACRO not in command:
         raise ValueError(f"sweep command must contain {ARGS_MACRO!r}: {command}")
     insert_at = command.index(ARGS_MACRO)
-    command[insert_at:insert_at] = [f"experiment={family}_{dataset}", *extra_overrides]
+    group_override = [f"logger.wandb.group={name}"] if name else []
+    command[insert_at:insert_at] = [f"experiment={experiment}", *group_override, *extra_overrides]
     sweep["command"] = command
 
-    sweep["name"] = f"{preset.name}_hpo"
+    sweep["name"] = name or f"{preset.name}_hpo"
     if trials is not None:
         sweep["run_cap"] = int(trials)
     sweep["description"] = (
-        f"{family} x {dataset} | objective {metric} ({sweep['metric']['goal']}) | "
+        f"{family} x {dataset} | experiment {experiment} | objective {metric} ({sweep['metric']['goal']}) | "
         f"git {git_sha()} | {_dt.date.today().isoformat()}"
     )
     return sweep
@@ -134,24 +150,44 @@ def register(sweep_path: str, sweep_cfg: dict, registry: Path = SWEEP_REGISTRY) 
         fh.write(line)
 
 
-def submit_agents(sweep_path: str, trials: int, parallel: int, count: int = 1, time_limit: str = "03:00:00") -> str:
-    """`sbatch --array` one agent per array task; each agent runs `count` trials then exits.
+def sbatch_command(
+    sweep_path: str,
+    trials: int,
+    parallel: int,
+    count: int = 1,
+    time_limit: str = "03:00:00",
+    agents_per_gpu: int = 1,
+) -> List[str]:
+    """The `sbatch --array` argv: each array task holds one GPU and runs `agents_per_gpu`
+    concurrent agents on it, each running `count` trials then exiting.
 
-    Default one trial per task: per-trial wall-clock limit and SLURM log, crash isolation,
-    and `%parallel` gives the same concurrency the old `array_parallelism: 8` did. Surplus
-    tasks past `run_cap` exit immediately. `uv sync --frozen` runs once here so the
-    concurrent `uv run --no-sync` agents never race to sync .venv.
+    Default one agent, one trial per task: per-trial wall-clock limit and SLURM log, crash
+    isolation, and `%parallel` gives the same concurrency the old `array_parallelism: 8` did.
+    With agents_per_gpu > 1 the task's CPUs / memory scale with it (CPUS_PER_AGENT /
+    MEM_GB_PER_AGENT, the sbatch file's one-agent defaults) -- worth it when a trial is
+    data-loader bound and leaves most of the GPU idle. Surplus tasks past `run_cap` exit
+    immediately.
     """
+    agents_per_gpu = max(1, agents_per_gpu)
+    n_tasks = max(1, math.ceil(trials / (max(1, count) * agents_per_gpu)))
+    cmd = ["sbatch", f"--array=0-{n_tasks - 1}%{parallel}", f"--time={time_limit}"]
+    if agents_per_gpu > 1:
+        cmd += [f"--cpus-per-task={CPUS_PER_AGENT * agents_per_gpu}", f"--mem={MEM_GB_PER_AGENT * agents_per_gpu}G"]
+    return cmd + [str(AGENT_SBATCH), sweep_path, str(count), str(agents_per_gpu)]
+
+
+def submit_agents(
+    sweep_path: str,
+    trials: int,
+    parallel: int,
+    count: int = 1,
+    time_limit: str = "03:00:00",
+    agents_per_gpu: int = 1,
+) -> str:
+    """Submit `sbatch_command(...)`. `uv sync --frozen` runs once here so the concurrent
+    `uv run --no-sync` agents never race to sync .venv."""
     subprocess.run(["uv", "sync", "--frozen"], cwd=REPO_ROOT, check=True)
-    n_tasks = max(1, math.ceil(trials / max(1, count)))
-    cmd = [
-        "sbatch",
-        f"--array=0-{n_tasks - 1}%{parallel}",
-        f"--time={time_limit}",
-        str(AGENT_SBATCH),
-        sweep_path,
-        str(count),
-    ]
+    cmd = sbatch_command(sweep_path, trials, parallel, count, time_limit, agents_per_gpu)
     out = subprocess.check_output(cmd, cwd=REPO_ROOT, text=True).strip()
     print(out)
     return out
@@ -165,6 +201,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     parser.add_argument("--parallel", type=int, default=8, help="max concurrent SLURM array tasks (default 8)")
     parser.add_argument("--count", type=int, default=1, help="trials per agent/array task (default 1)")
     parser.add_argument("--time", default="03:00:00", help="SLURM time limit per array task (default 03:00:00)")
+    parser.add_argument("--agents-per-gpu", type=int, default=1,
+                        help="concurrent agents (trials) sharing each array task's GPU (default 1)")
+    parser.add_argument("--experiment", default=None,
+                        help="experiment config to sweep (default <family>_<dataset>)")
+    parser.add_argument("--name", default=None,
+                        help="sweep name and W&B group for every trial (default <experiment name>_hpo)")
     parser.add_argument("--override", action="append", default=[], metavar="KEY=VALUE",
                         help="extra Hydra override for every trial (repeatable), e.g. trainer.max_epochs=2")
     parser.add_argument("--project", default=None, help="W&B project (default: $PROJECT_NAME from .env)")
@@ -174,10 +216,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     parser.add_argument("--no-submit", action="store_true", help="create the sweep but do not sbatch agents")
     args = parser.parse_args(argv)
 
-    if not (REPO_ROOT / "configs" / "experiment" / f"{args.family}_{args.dataset}.yaml").is_file():
-        parser.error(f"no configs/experiment/{args.family}_{args.dataset}.yaml")
+    experiment = args.experiment or f"{args.family}_{args.dataset}"
+    if not (REPO_ROOT / "configs" / "experiment" / f"{experiment}.yaml").is_file():
+        parser.error(f"no configs/experiment/{experiment}.yaml")
 
-    sweep_cfg = build_sweep_config(args.family, args.dataset, extra_overrides=args.override, trials=args.trials)
+    sweep_cfg = build_sweep_config(args.family, args.dataset, extra_overrides=args.override, trials=args.trials,
+                                   experiment=experiment, name=args.name)
     if args.dry_run:
         print(yaml.safe_dump(sweep_cfg, sort_keys=False))
         return 0
@@ -198,7 +242,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         print(f"run agents by hand:  uv run wandb agent --count {args.count} {sweep_path}")
         return 0
     submit_agents(sweep_path, trials=int(sweep_cfg.get("run_cap", args.trials or 48)), parallel=args.parallel,
-                  count=args.count, time_limit=args.time)
+                  count=args.count, time_limit=args.time, agents_per_gpu=args.agents_per_gpu)
     print(f"read results:  uv run scripts/hpo/summarize_sweep.py --sweep {sweep_path}")
     return 0
 

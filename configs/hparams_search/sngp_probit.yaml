@@ -1,0 +1,32 @@
+# @package _global_
+
+# SNGP run preset at a PINNED probit mean-field factor (pi/8), for the ADRC study's sweeps.
+# Everything else -- 50-epoch proxy, min_epochs 10, no checkpoints, sweeps/ run dir, W&B
+# naming -- is inherited from hparams_search/sngp.yaml; read its header first.
+#
+# What changes, and why: the SNGP paper fixes lambda = pi/8 and tunes the kernel amplitude
+# sigma^2 on validation NLL, so the mean-field factor is NOT refit here. With it pinned, raw
+# val/nll (cross-entropy of the mean-field logits, LitModuleBase.on_validation_epoch_end) IS
+# the NLL at pi/8, and val/nll_best is the objective. val/nll_cal (which refits the factor
+# every epoch) is still logged, as a diagnostic only.
+#
+# Search space: configs/hparams_search/wandb/sngp_probit.yaml (conv-SN bound c x
+# kernel_amplitude), shared by experiment=sngp_wong_sgd and experiment=sngp_bnsn_wong_sgd
+# (whose BN cap interpolates c). Siblings sngp_specreg_probit / sngp_muon_probit swap c for
+# spec_reg_coef / Muon weight decay.
+
+defaults:
+  - sngp
+  - _self_
+
+optimized_metric: "val/nll_best" # must equal metric.name in wandb/sngp_probit.yaml (tests/test_sweeps.py)
+
+model:
+  net:
+    mean_field_factor: 0.39269908 # pi/8 -- pinned here too, so the objective never depends on the experiment
+
+callbacks:
+  early_stopping:
+    monitor: "val/nll"
+  model_checkpoint:
+    monitor: "val/nll"

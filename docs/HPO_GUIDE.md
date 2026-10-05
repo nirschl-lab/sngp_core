@@ -222,7 +222,19 @@ uv run wandb agent --count 1 <entity>/<project>/<sweep_id>
 
 # Show the final sweep YAML without touching W&B:
 scripts/hpo/sweep.sh sngp acevedo --dry-run
+
+# One family's search space for another experiment (--experiment, default
+# <family>_<dataset>), a named sweep whose name is also every trial's W&B group (--name),
+# and several concurrent trials per GPU for data-loader-bound runs (--agents-per-gpu K:
+# each array task holds one GPU and runs K agents, with K x 8 CPUs and K x 32G):
+scripts/hpo/sweep.sh sngp_probit wong --experiment sngp_bnsn_wong_sgd \
+    --name adrc_wong_sngp_bnsn --agents-per-gpu 4 --time 08:00:00
 ```
+
+The `*_probit` families (`sngp_probit`, `sngp_specreg_probit`, `sngp_muon_probit`) are
+the ADRC study's: they pin `mean_field_factor` at pi/8 and minimize raw `val/nll_best`
+on a grid of the arm's spectral knob x `kernel_amplitude` -- see
+`configs/hparams_search/sngp_probit.yaml` and `configs/experiment/sngp_wong_sgd.yaml`.
 
 Recommended order: pilot `baseline tang`, check in the W&B UI that the trials sit
 *inside* the sweep (grouped `tang_baseline_resnet18_hpo`, named by W&B) and that

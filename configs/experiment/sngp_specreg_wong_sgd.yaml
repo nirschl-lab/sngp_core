@@ -1,0 +1,90 @@
+# @package _global_
+
+# to execute this experiment run:
+# python train.py experiment=sngp_specreg_wong_sgd
+#
+# ADRC study, SpecReg arm: sngp_wong_sgd.yaml (whose header carries the shared recipe) with
+# conv spectral normalization replaced by the rep-spectral penalty
+# CE + spec_reg_coef * sum_l sigma_max(W_l)^2. The sweep grids spec_reg_coef in place of c.
+# Weight decay stays at the SGD arms' 6e-4 so the arms differ only in the spectral control
+# (the sngp_specreg_cifar100_cosine.yaml convention).
+
+defaults:
+  - override /data: wong
+  - override /model: sngp_specreg_classifier
+  - override /callbacks: default
+  - override /trainer: default
+
+name: "wong_sngp_specreg_sgd_resnet18"
+WANDB_PROJECT: ${oc.env:PROJECT_NAME}
+tags: ["sngp_specreg", "sngp", "rep-spectral", "wong", "resnet18", "sgd", "adrc", "training"]
+
+seed: 12345
+
+num_classes: 4
+
+trainer:
+  min_epochs: 30
+  max_epochs: 150
+  accelerator: "gpu"
+
+model:
+  name: sngp_specreg_sgd_classifier
+  optimizer:
+    _target_: torch.optim.SGD
+    _partial_: true
+    lr: 0.04
+    momentum: 0.9
+    nesterov: true
+    weight_decay: 6e-4
+  net:
+    arch: resnet18
+    num_classes: ${num_classes}
+    pretrained: false
+    # use_spectral_norm / spectral_norm_bound come from the model config (false / null).
+    length_scale: 20.0
+    normalize_input: false
+    scale_random_features: false
+    ridge_penalty: 1.0
+    mean_field_factor: 0.39269908 # pi/8
+    kernel_amplitude: 1.0 # swept
+  # Regularized from epoch 1, as SN is active from step 0 in the SNGP arms (1 rather than 0:
+  # the checkpoint gate ranks epochs >= start_epoch, and the guard needs 0 < burn-in).
+  spec_reg_burnin_epochs: 1
+  spec_reg_coef: 0.01 # swept
+  spec_reg_every_n_steps: 24
+  spec_reg_conv_mode: operator
+  spec_reg_n_power_iterations: 1
+  compile: false
+  scheduler:
+    _target_: torch.optim.lr_scheduler.CosineAnnealingLR
+    _partial_: true
+    T_max: ${trainer.max_epochs}
+    eta_min: 0.0
+  num_classes: ${num_classes}
+
+data:
+  datamodule:
+    batch_size: 128
+
+logger:
+  wandb:
+    project: "${WANDB_PROJECT}"
+    tags: "${tags_with:${tags},${data.datamodule.institution}}"
+    group: "adrc"
+    name: ${name}
+    log_model: True
+  aim:
+    experiment: ""
+
+callbacks:
+  model_checkpoint:
+    _target_: src.callbacks.model_checkpoint_from_epoch.ModelCheckpointFromEpoch
+    monitor: "val/nll"
+    mode: "min"
+    start_epoch: ${model.spec_reg_burnin_epochs}
+  early_stopping:
+    monitor: "val/nll"
+    mode: "min"
+  test_artifacts:
+    hist_bins: 10

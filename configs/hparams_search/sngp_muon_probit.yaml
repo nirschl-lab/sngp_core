@@ -1,0 +1,10 @@
+# @package _global_
+
+# Identical to hparams_search/sngp_probit.yaml (pinned pi/8, objective val/nll_best). A
+# separate file only because the W&B sweep command must name its own preset
+# (hparams_search=<family>, tests/test_sweeps.py). Search space: wandb/sngp_muon_probit.yaml
+# (Muon weight_decay x kernel_amplitude).
+
+defaults:
+  - sngp_probit
+  - _self_

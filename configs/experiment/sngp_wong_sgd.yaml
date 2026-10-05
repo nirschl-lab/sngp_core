@@ -1,0 +1,97 @@
+# @package _global_
+
+# to execute this experiment run:
+# python train.py experiment=sngp_wong_sgd
+#
+# ADRC study (full Wong, all institutions): SNGP arm. One of four arms swept together:
+#   sngp_wong_sgd          -- conv spectral norm, bound c
+#   sngp_bnsn_wong_sgd     -- conv SN + DUE BN spectral norm, one tied c
+#   sngp_specreg_wong_sgd  -- spectral regularization (lambda) instead of SN
+#   sngp_muon_wong_sgd     -- no spectral control, Muon on the hidden convs
+# Swept by configs/hparams_search/{sngp,sngp_specreg,sngp_muon}_probit.yaml (W&B grid over the
+# arm's spectral knob x kernel_amplitude, objective val/nll_best at mean_field_factor = pi/8).
+#
+# Shared by all four arms, and what separates them from sngp_wong.yaml:
+#   * SGD + Nesterov at the reference CIFAR recipe (sngp_cifar100_cosine.yaml): lr 0.04 at batch
+#     128, momentum 0.9, weight_decay 6e-4 (= the reference's Keras l2 3e-4, doubled).
+#   * The reference CIFAR GP head (sngp_cifar100.yaml): length_scale 20, no LayerNorm on the GP
+#     input, scale_random_features false (needed under SGD -- it also scales the backbone's
+#     gradient), ridge 1.0. The paper's Table 9 "length scale 2" is edward2's gp_kernel_scale,
+#     i.e. 1.4142 here; the reference CIFAR run is 20 in this repo's convention.
+#   * mean_field_factor pinned at pi/8 (the probit constant) -- NOT fit post hoc -- and
+#     kernel_amplitude (sigma^2 inside the feature map, which changes training) is the swept
+#     second knob, as in the SNGP paper.
+#   * Selection on raw val/nll, which at a pinned factor IS the NLL at pi/8 (val/nll_cal would
+#     refit the factor).
+
+defaults:
+  - override /data: wong
+  - override /model: sngp_classifier
+  - override /callbacks: default
+  - override /trainer: default
+
+name: "wong_sngp_sgd_resnet18"
+WANDB_PROJECT: ${oc.env:PROJECT_NAME}
+tags: ["sngp", "wong", "resnet18", "sgd", "adrc", "training"]
+
+seed: 12345
+
+num_classes: 4
+
+trainer:
+  min_epochs: 30
+  max_epochs: 150
+  accelerator: "gpu"
+
+model:
+  # Own output dir: task_name is "train/${model.name}_<dataset>".
+  name: sngp_sgd_classifier
+  optimizer:
+    _target_: torch.optim.SGD
+    _partial_: true
+    lr: 0.04
+    momentum: 0.9
+    nesterov: true
+    weight_decay: 6e-4
+  net:
+    arch: resnet18
+    num_classes: ${num_classes}
+    pretrained: false
+    spectral_norm_bound: 6.0 # swept
+    length_scale: 20.0
+    normalize_input: false
+    scale_random_features: false
+    ridge_penalty: 1.0
+    mean_field_factor: 0.39269908 # pi/8
+    kernel_amplitude: 1.0 # swept
+  compile: false
+  scheduler:
+    _target_: torch.optim.lr_scheduler.CosineAnnealingLR
+    _partial_: true
+    T_max: ${trainer.max_epochs}
+    eta_min: 0.0
+  num_classes: ${num_classes}
+
+data:
+  datamodule:
+    batch_size: 128
+
+logger:
+  wandb:
+    project: "${WANDB_PROJECT}"
+    tags: "${tags_with:${tags},${data.datamodule.institution}}"
+    group: "adrc"
+    name: ${name}
+    log_model: True
+  aim:
+    experiment: ""
+
+callbacks:
+  model_checkpoint:
+    monitor: "val/nll"
+    mode: "min"
+  early_stopping:
+    monitor: "val/nll"
+    mode: "min"
+  test_artifacts:
+    hist_bins: 10
