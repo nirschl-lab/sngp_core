@@ -45,8 +45,10 @@ set itself needs to change).
   rejection-classification diagrams (not currently wired into training, offline-only).
 - `src/visualization/artifact_confidence_histograms.py` — offline, multi-model
   max-softmax-probability histograms across the artifact sweep (models x clean +
-  count/severity levels, correct/incorrect stacked, clean outline); merges several
-  axis-path sidecars and writes per-level files for draft layout.
+  count/severity levels; default "mirrored": correct above zero, incorrect below, each
+  normalized to its own group; clean distribution dashed). SNGP-family runs re-scored at
+  mean-field factor pi/8; merges several axis-path sidecars and writes per-level files
+  to `parts/` for draft layout.
 - `src/visualization/density.py` — kernel-density helpers (reflected KDE,
   Nadaraya-Watson) used by the smoothed reliability diagrams; reusable for any other
   density-based plot.

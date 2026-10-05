@@ -121,30 +121,35 @@ uv run src/visualization/artifact_severity_curves.py \
     --figures-dir figures/artifact_severity_curves
 ```
 
-Confidence histograms (max softmax probability, split correct/incorrect; grid of
-models x clean + count 1-5, clean distribution dashed in every cell; per-level columns
-and the legend also written separately for draft layout; `--yscale log` variant shows the
-low-confidence tail) by `src/visualization/artifact_confidence_histograms.py`. Models:
-Baseline, Deep Ensemble, MC Dropout, SNGP (5-model sidecar) + SNGP + Spectral Reg
-(specreg sidecar):
+Confidence histograms (max softmax probability, mirrored: correct predictions above the zero
+line, incorrect below, each in percent of its own group and each half on its own scale, so the
+errors' confidence distribution stays legible; the clean level's two distributions dashed in
+every cell; acc / NLL / error count annotated) by
+`src/visualization/artifact_confidence_histograms.py`. Every SNGP-family run is re-scored at
+mean-field factor pi/8 from its `raw_logits` + `uncertainty` (SNGP, SNGP + Spectral Reg,
+SNGP + Muon), and NLL is `per_sample_nll` on those probabilities; Baseline / Deep Ensemble /
+MC Dropout use `class_probs` as written. Models: the 5-model sidecar (SNGP Ensemble excluded) +
+SpecReg + Muon wd=0 (calibrated ckpt, re-scored at pi/8 like the rest). Full figures + CSVs in
+`acevedo/`; per-level columns and the legend, for draft layout, in `acevedo/parts/`:
 
 acevedo_artifact_confidence_histogram_figures:
 ```bash
-figures/confidence_histograms/acevedo_config_confidence_grid[_log].{png,pdf}
-figures/confidence_histograms/acevedo_config_confidence_grid[_log]_level{0..5}.{png,pdf}
-figures/confidence_histograms/acevedo_config_confidence_grid[_log]_legend.{png,pdf}
-figures/confidence_histograms/acevedo_config_confidence_grid[_log]_{hist,summary}.csv
+figures/confidence_histograms/acevedo/acevedo_{config,procedural}_confidence_grid.{png,pdf}
+figures/confidence_histograms/acevedo/acevedo_{config,procedural}_confidence_grid_{hist,summary}.csv
+figures/confidence_histograms/acevedo/parts/acevedo_{config,procedural}_confidence_grid_level{0..5}.{png,pdf}
+figures/confidence_histograms/acevedo/parts/acevedo_{config,procedural}_confidence_grid_legend.{png,pdf}
 ```
 
-Reproduce (add `--yscale log` for the `_log` set, `--axis procedural` for the other axis,
-`--layout overlay` for one panel per level with models overlaid):
+Reproduce (once per `--axis {config,procedural}`; `--bars {overlap,outline,stacked}` gives the
+shared-scale variants, which also take `--yscale log`):
 ```bash
 uv run src/visualization/artifact_confidence_histograms.py \
     --config configs/paper_helpers/acevedo_artifact_axis_paths.yaml \
              configs/paper_helpers/acevedo_specreg_artifact_axis_paths.yaml \
+             configs/paper_helpers/acevedo_muon_artifact_axis_paths.yaml \
     --axis config \
     --models "Baseline Classifier" "Deep Ensemble" "Monte Carlo Dropout" SNGP \
-             "SNGP + Spectral Reg"
+             "SNGP + Spectral Reg" "SNGP + Muon"
 ```
 
 ---
@@ -954,12 +959,14 @@ Gate: the SNGP / SpecReg rows reproduce NLL 0.7600 / 0.7472, and the offline sof
 
 **Acevedo GP head without SN, trained with Muon (2026-09-30).** Calibrated inference for the
 three arms of [results/ACEVEDO_MUON_RESULTS.md](results/ACEVEDO_MUON_RESULTS.md): the 7-dataset
-suite plus the procedural axis (`real_baseline` + `severity_{1..5}`), with no config (count)
-arms. The SNGP `c* = 6.0` and SpecReg comparison rows reuse the calibrated dirs above.
+suite plus the procedural axis (`real_baseline` + `severity_{1..5}`). The SNGP `c* = 6.0` and
+SpecReg comparison rows reuse the calibrated dirs above. Config (count) arms were added for
+Muon wd=0 only on 2026-10-05, for the confidence-histogram figure; sidecar
+`configs/paper_helpers/acevedo_muon_artifact_axis_paths.yaml` (model name `SNGP + Muon`).
 
 sngp_muon_wd0_acevedo_calibrated / sngp_muon_wd0.1_acevedo_calibrated / sngp_nosn_adamw_acevedo_calibrated:
 ```bash
-/data1/maheswararao/experiments/uncertainty-aware-ml/infer/sngp_muon_classifier_acevedo_calibrated/2026-09-30_12-47-49_muon_wd0/{acevedo,jung,kather2016,kather2018,nirschl2018,tang,wong,acevedo_artifact/{real_baseline,procedural/severity_{1..5}}}
+/data1/maheswararao/experiments/uncertainty-aware-ml/infer/sngp_muon_classifier_acevedo_calibrated/2026-09-30_12-47-49_muon_wd0/{acevedo,jung,kather2016,kather2018,nirschl2018,tang,wong,acevedo_artifact/{real_baseline,config/count_{1..5},procedural/severity_{1..5}}}
 /data1/maheswararao/experiments/uncertainty-aware-ml/infer/sngp_muon_classifier_acevedo_calibrated/2026-09-30_12-47-49_muon_wd0.1/{acevedo,jung,kather2016,kather2018,nirschl2018,tang,wong,acevedo_artifact/{real_baseline,procedural/severity_{1..5}}}
 /data1/maheswararao/experiments/uncertainty-aware-ml/infer/sngp_nosn_classifier_acevedo_calibrated/2026-09-30_12-47-49_adamw_nosn/{acevedo,jung,kather2016,kather2018,nirschl2018,tang,wong,acevedo_artifact/{real_baseline,procedural/severity_{1..5}}}
 ```
@@ -980,4 +987,13 @@ for arm in "muon_wd0 sngp_muon_classifier sngp_muon_acevedo" \
   uv run src/metrics/calculate_ood_metrics.py --run-dir $I/$P --indist acevedo \
       --outdist jung kather2016 kather2018 nirschl2018 tang wong --out-dir csv/ood_metrics --name sngp_$1_acevedo_calibrated
 done
+```
+
+Config (count) arms, Muon wd=0 only (2026-10-05; skips the existing `real_baseline` /
+`procedural` arms):
+```bash
+scripts/inference/run_artifact_axes.sh \
+    $T/sngp_muon_classifier_acevedo/runs/${N}_muon_wd0/checkpoints/best.calibrated.ckpt \
+    sngp_muon_classifier_acevedo_calibrated/${N}_muon_wd0/acevedo_artifact \
+    infer.runtime.batch_size_override=1024
 ```

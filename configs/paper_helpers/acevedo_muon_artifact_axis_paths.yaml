@@ -1,0 +1,93 @@
+# Predictions.csv / metrics.json locations for the Acevedo artifact-axis sweep of the
+# Muon wd=0 arm of docs/results/ACEVEDO_MUON_RESULTS.md: GP head on a resnet18 with no SN
+# and no spectral penalty, Muon on the hidden convs (experiment sngp_muon_acevedo,
+# model.optimizer.weight_decay=0.0, run 2026-09-30_12-47-49_muon_wd0). Uses the
+# val-NLL-calibrated checkpoint (best.calibrated.ckpt, mean_field_factor 7.3992) -- the
+# same one behind every published Muon row -- so its probabilities are NOT on the same
+# mean-field factor as the uncalibrated rows of acevedo_artifact_axis_paths.yaml /
+# acevedo_specreg_artifact_axis_paths.yaml. Procedural arms from
+# scripts/inference/run_eval_suite_parallel.sh (2026-09-30), config (count) arms from
+# scripts/inference/run_artifact_axes.sh (2026-10-05); both recorded in
+# docs/MASTER_INFER_RESULTS_PATH.md. Same shape as acevedo_artifact_axis_paths.yaml, same
+# consumers. Kept as a plain YAML sidecar so these absolute /data1/... paths stay out of
+# Python source per .claude/rules/conventions.md.
+
+config_axis:
+  label: "Config axis — count=1 pasted artifact overlays (artifact_balanced, procedural off)"
+  models:
+    SNGP + Muon:
+      real_baseline: /data1/maheswararao/experiments/uncertainty-aware-ml/infer/sngp_muon_classifier_acevedo_calibrated/2026-09-30_12-47-49_muon_wd0/acevedo_artifact/real_baseline/predictions.csv
+      artifact: /data1/maheswararao/experiments/uncertainty-aware-ml/infer/sngp_muon_classifier_acevedo_calibrated/2026-09-30_12-47-49_muon_wd0/acevedo_artifact/config/count_1/predictions.csv
+      metrics_json: /data1/maheswararao/experiments/uncertainty-aware-ml/infer/sngp_muon_classifier_acevedo_calibrated/2026-09-30_12-47-49_muon_wd0/acevedo_artifact/config/count_1/metrics.json
+
+config_axis_count_2:
+  label: "Config axis — count=2 pasted artifact overlays (artifact_balanced, procedural off)"
+  models:
+    SNGP + Muon:
+      real_baseline: /data1/maheswararao/experiments/uncertainty-aware-ml/infer/sngp_muon_classifier_acevedo_calibrated/2026-09-30_12-47-49_muon_wd0/acevedo_artifact/real_baseline/predictions.csv
+      artifact: /data1/maheswararao/experiments/uncertainty-aware-ml/infer/sngp_muon_classifier_acevedo_calibrated/2026-09-30_12-47-49_muon_wd0/acevedo_artifact/config/count_2/predictions.csv
+      metrics_json: /data1/maheswararao/experiments/uncertainty-aware-ml/infer/sngp_muon_classifier_acevedo_calibrated/2026-09-30_12-47-49_muon_wd0/acevedo_artifact/config/count_2/metrics.json
+
+config_axis_count_3:
+  label: "Config axis — count=3 pasted artifact overlays (artifact_balanced, procedural off)"
+  models:
+    SNGP + Muon:
+      real_baseline: /data1/maheswararao/experiments/uncertainty-aware-ml/infer/sngp_muon_classifier_acevedo_calibrated/2026-09-30_12-47-49_muon_wd0/acevedo_artifact/real_baseline/predictions.csv
+      artifact: /data1/maheswararao/experiments/uncertainty-aware-ml/infer/sngp_muon_classifier_acevedo_calibrated/2026-09-30_12-47-49_muon_wd0/acevedo_artifact/config/count_3/predictions.csv
+      metrics_json: /data1/maheswararao/experiments/uncertainty-aware-ml/infer/sngp_muon_classifier_acevedo_calibrated/2026-09-30_12-47-49_muon_wd0/acevedo_artifact/config/count_3/metrics.json
+
+config_axis_count_4:
+  label: "Config axis — count=4 pasted artifact overlays (artifact_balanced, procedural off)"
+  models:
+    SNGP + Muon:
+      real_baseline: /data1/maheswararao/experiments/uncertainty-aware-ml/infer/sngp_muon_classifier_acevedo_calibrated/2026-09-30_12-47-49_muon_wd0/acevedo_artifact/real_baseline/predictions.csv
+      artifact: /data1/maheswararao/experiments/uncertainty-aware-ml/infer/sngp_muon_classifier_acevedo_calibrated/2026-09-30_12-47-49_muon_wd0/acevedo_artifact/config/count_4/predictions.csv
+      metrics_json: /data1/maheswararao/experiments/uncertainty-aware-ml/infer/sngp_muon_classifier_acevedo_calibrated/2026-09-30_12-47-49_muon_wd0/acevedo_artifact/config/count_4/metrics.json
+
+config_axis_count_5:
+  label: "Config axis — count=5 pasted artifact overlays (artifact_balanced, procedural off)"
+  models:
+    SNGP + Muon:
+      real_baseline: /data1/maheswararao/experiments/uncertainty-aware-ml/infer/sngp_muon_classifier_acevedo_calibrated/2026-09-30_12-47-49_muon_wd0/acevedo_artifact/real_baseline/predictions.csv
+      artifact: /data1/maheswararao/experiments/uncertainty-aware-ml/infer/sngp_muon_classifier_acevedo_calibrated/2026-09-30_12-47-49_muon_wd0/acevedo_artifact/config/count_5/predictions.csv
+      metrics_json: /data1/maheswararao/experiments/uncertainty-aware-ml/infer/sngp_muon_classifier_acevedo_calibrated/2026-09-30_12-47-49_muon_wd0/acevedo_artifact/config/count_5/metrics.json
+
+procedural_axis:
+  label: "Procedural axis — severity=1 (procedural_ood, config off)"
+  models:
+    SNGP + Muon:
+      real_baseline: /data1/maheswararao/experiments/uncertainty-aware-ml/infer/sngp_muon_classifier_acevedo_calibrated/2026-09-30_12-47-49_muon_wd0/acevedo_artifact/real_baseline/predictions.csv
+      artifact: /data1/maheswararao/experiments/uncertainty-aware-ml/infer/sngp_muon_classifier_acevedo_calibrated/2026-09-30_12-47-49_muon_wd0/acevedo_artifact/procedural/severity_1/predictions.csv
+      metrics_json: /data1/maheswararao/experiments/uncertainty-aware-ml/infer/sngp_muon_classifier_acevedo_calibrated/2026-09-30_12-47-49_muon_wd0/acevedo_artifact/procedural/severity_1/metrics.json
+
+procedural_axis_severity_2:
+  label: "Procedural axis — severity=2 (procedural_ood, config off)"
+  models:
+    SNGP + Muon:
+      real_baseline: /data1/maheswararao/experiments/uncertainty-aware-ml/infer/sngp_muon_classifier_acevedo_calibrated/2026-09-30_12-47-49_muon_wd0/acevedo_artifact/real_baseline/predictions.csv
+      artifact: /data1/maheswararao/experiments/uncertainty-aware-ml/infer/sngp_muon_classifier_acevedo_calibrated/2026-09-30_12-47-49_muon_wd0/acevedo_artifact/procedural/severity_2/predictions.csv
+      metrics_json: /data1/maheswararao/experiments/uncertainty-aware-ml/infer/sngp_muon_classifier_acevedo_calibrated/2026-09-30_12-47-49_muon_wd0/acevedo_artifact/procedural/severity_2/metrics.json
+
+procedural_axis_severity_3:
+  label: "Procedural axis — severity=3 (procedural_ood, config off)"
+  models:
+    SNGP + Muon:
+      real_baseline: /data1/maheswararao/experiments/uncertainty-aware-ml/infer/sngp_muon_classifier_acevedo_calibrated/2026-09-30_12-47-49_muon_wd0/acevedo_artifact/real_baseline/predictions.csv
+      artifact: /data1/maheswararao/experiments/uncertainty-aware-ml/infer/sngp_muon_classifier_acevedo_calibrated/2026-09-30_12-47-49_muon_wd0/acevedo_artifact/procedural/severity_3/predictions.csv
+      metrics_json: /data1/maheswararao/experiments/uncertainty-aware-ml/infer/sngp_muon_classifier_acevedo_calibrated/2026-09-30_12-47-49_muon_wd0/acevedo_artifact/procedural/severity_3/metrics.json
+
+procedural_axis_severity_4:
+  label: "Procedural axis — severity=4 (procedural_ood, config off)"
+  models:
+    SNGP + Muon:
+      real_baseline: /data1/maheswararao/experiments/uncertainty-aware-ml/infer/sngp_muon_classifier_acevedo_calibrated/2026-09-30_12-47-49_muon_wd0/acevedo_artifact/real_baseline/predictions.csv
+      artifact: /data1/maheswararao/experiments/uncertainty-aware-ml/infer/sngp_muon_classifier_acevedo_calibrated/2026-09-30_12-47-49_muon_wd0/acevedo_artifact/procedural/severity_4/predictions.csv
+      metrics_json: /data1/maheswararao/experiments/uncertainty-aware-ml/infer/sngp_muon_classifier_acevedo_calibrated/2026-09-30_12-47-49_muon_wd0/acevedo_artifact/procedural/severity_4/metrics.json
+
+procedural_axis_severity_5:
+  label: "Procedural axis — severity=5 (procedural_ood, config off)"
+  models:
+    SNGP + Muon:
+      real_baseline: /data1/maheswararao/experiments/uncertainty-aware-ml/infer/sngp_muon_classifier_acevedo_calibrated/2026-09-30_12-47-49_muon_wd0/acevedo_artifact/real_baseline/predictions.csv
+      artifact: /data1/maheswararao/experiments/uncertainty-aware-ml/infer/sngp_muon_classifier_acevedo_calibrated/2026-09-30_12-47-49_muon_wd0/acevedo_artifact/procedural/severity_5/predictions.csv
+      metrics_json: /data1/maheswararao/experiments/uncertainty-aware-ml/infer/sngp_muon_classifier_acevedo_calibrated/2026-09-30_12-47-49_muon_wd0/acevedo_artifact/procedural/severity_5/metrics.json
