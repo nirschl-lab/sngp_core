@@ -469,3 +469,128 @@ numbers: `figures/wong_adrc/wong_adrc_ucdavis_muon2stage_wsd_s12345_runs.csv`.
 | GP head + Muon, wd = 0.01 | 0.919 | 0.936 | 0.928 |
 | GP head + Muon → SGD at epoch 120 | **0.861** | 0.858 | 0.859 |
 | GP head + Muon → SGD at epoch 120, WSD inv-prop decay | 0.872 | **0.835** | **0.853** |
+
+## UC Davis-trained, two-stage WSD with the aux LR at 0.04 — seed 12345 only
+
+The WSD two-stage arm above with the aux SGD LR (stem / BN / GP output layer) at 0.04, the Muon
+arm's and SGD arms' value, instead of 0.01; it decays 0.04 → 0.004 from epoch 121. vs the Muon arm
+only the switch and the schedule differ. Arm `muon2stage_wsd_aux04`
+(`experiment=sngp_muon_2stage_wsd_wong_sgd model.optimizer.sgd_lr=0.04`); trained 2026-10-06 with
+`INSTITUTION=ucdavis ARMS=muon2stage_wsd_aux04 SEEDS=12345 scripts/tmux/adrc_wong_final.sh`, W&B
+group `adrc_final_ucdavis_2026-10-06_16-25-59`, run `dv8p47r6`. Checkpoint:
+`adrc_muon2stage_wsd_aux04_wong_ucdavis`; inference: `adrc_wong_ucdavis_muon2stage_wsd_aux04`.
+Per-run numbers: `figures/wong_adrc/wong_adrc_ucdavis_muon2stage_wsd_aux04_s12345_runs.csv`.
+
+### In-distribution — UC Davis test (n = 5,135)
+
+| Model | Accuracy ↑ | F1 ↑ | ECE (×10⁻²) ↓ | aECE (×10⁻²) ↓ | smECE (×10⁻²) ↓ | NLL (×10⁻²) ↓ | Brier (×10⁻²) ↓ |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| Baseline (linear head) | **0.9949** | **0.9949** | 0.22 | **0.14** | **0.43** | 2.00 | 0.90 |
+| SNGP, c = 1 | 0.9895 | 0.9892 | 0.37 | 0.30 | 0.73 | 3.01 | 1.47 |
+| SNGP + BN-SN, c = 8 | 0.9922 | 0.9921 | 0.23 | 0.24 | 0.50 | 2.81 | 1.26 |
+| SNGP + SpecReg, λ = 0.003 | 0.9916 | 0.9914 | 0.49 | 0.42 | 0.69 | 2.91 | 1.32 |
+| GP head + Muon, wd = 0.01 | 0.9945 | 0.9944 | **0.21** | 0.15 | 0.47 | **1.78** | **0.82** |
+| GP head + Muon → SGD at epoch 120 | 0.9914 | 0.9912 | 0.89 | 0.86 | 1.04 | 3.43 | 1.44 |
+| GP head + Muon → SGD at epoch 120, WSD inv-prop decay | 0.9914 | 0.9913 | 0.90 | 0.83 | 1.00 | 3.63 | 1.50 |
+| GP head + Muon → SGD at epoch 120, WSD, aux lr 0.04 | 0.9924 | 0.9924 | 0.38 | 0.32 | 0.59 | 2.71 | 1.23 |
+
+### Institution shift — UPitt test (n = 5,576)
+
+| Model | Accuracy ↑ | F1 ↑ | ECE (×10⁻²) ↓ | aECE (×10⁻²) ↓ | smECE (×10⁻²) ↓ | NLL (×10⁻²) ↓ | Brier (×10⁻²) ↓ |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| Baseline (linear head) | 0.6336 | 0.6197 | 26.49 | 26.46 | 27.88 | 160.21 | 61.79 |
+| SNGP, c = 1 | 0.6731 | 0.6556 | 22.70 | 22.70 | 22.99 | 124.60 | 52.69 |
+| SNGP + BN-SN, c = 8 | **0.6917** | **0.6768** | 20.09 | 19.65 | 19.88 | 109.63 | 50.23 |
+| SNGP + SpecReg, λ = 0.003 | 0.6749 | 0.6644 | 21.71 | 21.61 | 21.94 | 119.13 | 52.66 |
+| GP head + Muon, wd = 0.01 | 0.6876 | 0.6594 | 23.14 | 22.74 | 23.06 | 133.11 | 52.36 |
+| GP head + Muon → SGD at epoch 120 | 0.6840 | 0.6619 | **17.86** | **17.64** | **17.70** | **103.96** | **49.37** |
+| GP head + Muon → SGD at epoch 120, WSD inv-prop decay | 0.6831 | 0.6619 | 19.39 | 18.79 | 18.86 | 106.06 | 50.01 |
+| GP head + Muon → SGD at epoch 120, WSD, aux lr 0.04 | 0.6539 | 0.6360 | 26.50 | 26.11 | 27.08 | 143.95 | 57.30 |
+
+### Institution shift — UTSouthwestern test (n = 3,299)
+
+| Model | Accuracy ↑ | F1 ↑ | ECE (×10⁻²) ↓ | aECE (×10⁻²) ↓ | smECE (×10⁻²) ↓ | NLL (×10⁻²) ↓ | Brier (×10⁻²) ↓ |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| Baseline (linear head) | 0.7105 | 0.6584 | 23.35 | 23.05 | 25.50 | 135.28 | 50.16 |
+| SNGP, c = 1 | 0.7396 | 0.6839 | 19.14 | 18.34 | 18.83 | 96.28 | 42.83 |
+| SNGP + BN-SN, c = 8 | 0.7317 | 0.6936 | 19.51 | 19.33 | 19.83 | 104.46 | 45.54 |
+| SNGP + SpecReg, λ = 0.003 | 0.7472 | 0.7129 | 17.50 | 17.33 | 17.88 | 94.49 | 41.08 |
+| GP head + Muon, wd = 0.01 | 0.7533 | 0.6982 | 17.36 | 17.36 | 17.40 | 108.77 | 42.12 |
+| GP head + Muon → SGD at epoch 120 | 0.7575 | 0.7158 | **14.96** | **14.42** | **14.61** | 83.01 | **38.85** |
+| GP head + Muon → SGD at epoch 120, WSD inv-prop decay | **0.7630** | **0.7290** | 15.17 | 14.62 | 14.68 | **82.70** | 39.48 |
+| GP head + Muon → SGD at epoch 120, WSD, aux lr 0.04 | 0.7490 | 0.7075 | 18.68 | 18.59 | 19.78 | 104.74 | 42.48 |
+
+### Entropy AUROC ↑ — UC Davis test vs each other institution's test split
+
+| Model | UPitt | UTSouthwestern | Mean |
+|---|---:|---:|---:|
+| Baseline (linear head) | 0.787 | 0.680 | 0.733 |
+| SNGP, c = 1 | 0.805 | 0.738 | 0.771 |
+| SNGP + BN-SN, c = 8 | **0.839** | **0.767** | **0.803** |
+| SNGP + SpecReg, λ = 0.003 | 0.810 | 0.719 | 0.765 |
+| GP head + Muon, wd = 0.01 | 0.797 | 0.737 | 0.767 |
+| GP head + Muon → SGD at epoch 120 | 0.813 | 0.724 | 0.768 |
+| GP head + Muon → SGD at epoch 120, WSD inv-prop decay | 0.813 | 0.747 | 0.780 |
+| GP head + Muon → SGD at epoch 120, WSD, aux lr 0.04 | 0.766 | 0.684 | 0.725 |
+
+### Entropy AUPR ↑ — UC Davis test vs each other institution's test split
+
+| Model | UPitt | UTSouthwestern | Mean |
+|---|---:|---:|---:|
+| Baseline (linear head) | 0.837 | 0.745 | 0.791 |
+| SNGP, c = 1 | 0.822 | 0.764 | 0.793 |
+| SNGP + BN-SN, c = 8 | **0.859** | 0.791 | **0.825** |
+| SNGP + SpecReg, λ = 0.003 | 0.829 | 0.752 | 0.790 |
+| GP head + Muon, wd = 0.01 | 0.835 | **0.792** | 0.814 |
+| GP head + Muon → SGD at epoch 120 | 0.845 | 0.762 | 0.803 |
+| GP head + Muon → SGD at epoch 120, WSD inv-prop decay | 0.837 | 0.769 | 0.803 |
+| GP head + Muon → SGD at epoch 120, WSD, aux lr 0.04 | 0.793 | 0.727 | 0.760 |
+
+### Entropy FPR95 ↓ — UC Davis test vs each other institution's test split
+
+| Model | UPitt | UTSouthwestern | Mean |
+|---|---:|---:|---:|
+| Baseline (linear head) | 0.913 | 0.939 | 0.926 |
+| SNGP, c = 1 | 0.772 | 0.867 | 0.820 |
+| SNGP + BN-SN, c = 8 | **0.717** | **0.802** | **0.760** |
+| SNGP + SpecReg, λ = 0.003 | 0.734 | 0.853 | 0.793 |
+| GP head + Muon, wd = 0.01 | 0.886 | 0.948 | 0.917 |
+| GP head + Muon → SGD at epoch 120 | 0.794 | 0.856 | 0.825 |
+| GP head + Muon → SGD at epoch 120, WSD inv-prop decay | 0.775 | 0.822 | 0.798 |
+| GP head + Muon → SGD at epoch 120, WSD, aux lr 0.04 | 0.828 | 0.918 | 0.873 |
+
+### GP-variance AUROC ↑ — UC Davis test vs each other institution's test split
+
+| Model | UPitt | UTSouthwestern | Mean |
+|---|---:|---:|---:|
+| SNGP, c = 1 | 0.519 | 0.484 | 0.502 |
+| SNGP + BN-SN, c = 8 | 0.447 | 0.382 | 0.414 |
+| SNGP + SpecReg, λ = 0.003 | 0.489 | 0.502 | 0.495 |
+| GP head + Muon, wd = 0.01 | 0.498 | 0.552 | 0.525 |
+| GP head + Muon → SGD at epoch 120 | 0.602 | 0.616 | 0.609 |
+| GP head + Muon → SGD at epoch 120, WSD inv-prop decay | **0.620** | **0.644** | **0.632** |
+| GP head + Muon → SGD at epoch 120, WSD, aux lr 0.04 | 0.443 | 0.486 | 0.464 |
+
+### GP-variance AUPR ↑ — UC Davis test vs each other institution's test split
+
+| Model | UPitt | UTSouthwestern | Mean |
+|---|---:|---:|---:|
+| SNGP, c = 1 | 0.535 | 0.491 | 0.513 |
+| SNGP + BN-SN, c = 8 | 0.482 | 0.423 | 0.452 |
+| SNGP + SpecReg, λ = 0.003 | 0.508 | 0.491 | 0.499 |
+| GP head + Muon, wd = 0.01 | 0.504 | 0.524 | 0.514 |
+| GP head + Muon → SGD at epoch 120 | 0.633 | 0.628 | 0.631 |
+| GP head + Muon → SGD at epoch 120, WSD inv-prop decay | **0.635** | **0.652** | **0.644** |
+| GP head + Muon → SGD at epoch 120, WSD, aux lr 0.04 | 0.464 | 0.488 | 0.476 |
+
+### GP-variance FPR95 ↓ — UC Davis test vs each other institution's test split
+
+| Model | UPitt | UTSouthwestern | Mean |
+|---|---:|---:|---:|
+| SNGP, c = 1 | 0.956 | 0.952 | 0.954 |
+| SNGP + BN-SN, c = 8 | 0.987 | 0.988 | 0.987 |
+| SNGP + SpecReg, λ = 0.003 | 0.956 | 0.905 | 0.931 |
+| GP head + Muon, wd = 0.01 | 0.919 | 0.936 | 0.928 |
+| GP head + Muon → SGD at epoch 120 | **0.861** | 0.858 | 0.859 |
+| GP head + Muon → SGD at epoch 120, WSD inv-prop decay | 0.872 | **0.835** | **0.853** |
+| GP head + Muon → SGD at epoch 120, WSD, aux lr 0.04 | 0.954 | 0.955 | 0.954 |
