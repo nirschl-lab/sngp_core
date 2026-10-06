@@ -11,6 +11,7 @@ import torch
 
 from src.models.components.schedulers import (
     warmup_constant_cosine_lr,
+    warmup_constant_inverse_decay_lr,
     warmup_piecewise_lr,
     warmup_stable_decay_lr,
 )
@@ -147,14 +148,16 @@ class TestWarmupStableDecayLR:
             warmup_stable_decay_lr(optimizer, **kwargs)
 
 
-def _two_stage_trace(total_epochs: int = 150, **kwargs) -> list[tuple[float, float]]:
+def _two_stage_trace(
+    total_epochs: int = 150, factory=warmup_constant_cosine_lr, **kwargs
+) -> list[tuple[float, float]]:
     """(Muon-group lr, aux-group lr) in force during each epoch, base LRs 0.02 / 0.01."""
     optimizer = torch.optim.SGD(
         [{"params": [torch.nn.Parameter(torch.zeros(1))], "lr": 0.02},
          {"params": [torch.nn.Parameter(torch.zeros(1))], "lr": 0.01}],
         lr=0.02,
     )
-    scheduler = warmup_constant_cosine_lr(optimizer, T_max=total_epochs, **kwargs)
+    scheduler = factory(optimizer, T_max=total_epochs, **kwargs)
     trace = []
     for _ in range(total_epochs):
         trace.append(tuple(g["lr"] for g in optimizer.param_groups))
@@ -208,3 +211,35 @@ class TestWarmupConstantCosineLR:
     def test_bad_arguments_are_rejected(self, kwargs, match):
         with pytest.raises(ValueError, match=match):
             _two_stage_trace(**kwargs)
+
+
+class TestWarmupConstantInverseDecayLR:
+    def test_wong_two_stage_wsd_schedule(self):
+        """5 warmup epochs from 0.1x, own base LRs through epoch 120, then each group decays to
+        0.1x its own peak with 1/lr linear in the epoch (Wen et al. 2025, Eq. 8)."""
+        trace = _two_stage_trace(factory=warmup_constant_inverse_decay_lr)
+        assert trace[0] == pytest.approx((0.002, 0.001))
+        assert trace[4] == pytest.approx((0.02 * 0.82, 0.01 * 0.82))
+        assert all(t == pytest.approx((0.02, 0.01)) for t in trace[5:121])
+        assert trace[149] == pytest.approx((0.002, 0.001))
+        for group, peak in ((0, 0.02), (1, 0.01)):
+            decay = [t[group] for t in trace[120:]]
+            assert all(b < a for a, b in zip(decay, decay[1:]))
+            inverse = [1 / lr for lr in decay]
+            step = (1 / (0.1 * peak) - 1 / peak) / 29
+            assert all(b - a == pytest.approx(step) for a, b in zip(inverse, inverse[1:]))
+
+    @pytest.mark.parametrize(
+        "kwargs, match",
+        [
+            (dict(eta_min=1e-5), "eta_min"),
+            (dict(warmup_epochs=-1), "warmup_epochs"),
+            (dict(warmup_epochs=10, decay_start_epoch=5), "decay_start_epoch"),
+            (dict(decay_start_epoch=149), "decay_start_epoch"),
+            (dict(final_factor=0.0), "final_factor"),
+            (dict(final_factor=1.5), "final_factor"),
+        ],
+    )
+    def test_bad_arguments_are_rejected(self, kwargs, match):
+        with pytest.raises(ValueError, match=match):
+            _two_stage_trace(factory=warmup_constant_inverse_decay_lr, **kwargs)

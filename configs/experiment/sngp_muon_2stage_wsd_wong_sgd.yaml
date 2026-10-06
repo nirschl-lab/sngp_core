@@ -1,0 +1,101 @@
+# @package _global_
+
+# to execute this experiment run:
+# python train.py experiment=sngp_muon_2stage_wsd_wong_sgd
+#
+# ADRC study, Muon -> SGD two-stage arm with a warmup-stable-decay (WSD) schedule:
+# sngp_muon_2stage_wong_sgd.yaml with its cosine tail replaced by the inverse-proportional decay
+# of Wen et al. 2025 (ICLR 2025, arXiv:2410.05192, Eq. 8: 1/lr linear from 1/peak to
+# 1/(0.1 * peak)). Every group decays from its own peak, so no LR jumps at the switch.
+# 0-based epochs:
+#   0-4     linear warmup (factor 0.1 -> 1): Muon 0.002 -> 0.02, SGD aux 0.001 -> 0.01
+#   5-119   constant: Muon 0.02 on the hidden convs, SGD + Nesterov 0.01 on stem / BN / GP head
+#   120-149 every param on SGD + Nesterov (L2 6e-4), inverse-proportional decay to 0.1x:
+#           hidden convs 0.02 -> 0.002, aux 0.01 -> 0.001
+# vs sngp_muon_2stage_wong_sgd this changes only the decay (shape, start LR of the hidden convs,
+# floor 0.1x instead of 1e-4); vs the Muon arm the aux lr (0.04 -> 0.01) still differs too.
+
+defaults:
+  - override /data: wong
+  - override /model: sngp_classifier
+  - override /callbacks: default
+  - override /trainer: default
+
+name: "wong_sngp_muon_2stage_wsd_resnet18"
+WANDB_PROJECT: ${oc.env:PROJECT_NAME}
+tags: ["sngp", "muon", "muon-sgd", "two-stage", "wsd", "inverse-decay", "no-spectral-norm", "wong", "resnet18", "sgd", "adrc", "training"]
+
+seed: 12345
+
+num_classes: 4
+
+trainer:
+  min_epochs: 30
+  max_epochs: 150
+  accelerator: "gpu"
+
+model:
+  name: sngp_muon_2stage_classifier
+  optimizer:
+    _target_: src.models.components.optimizers.MuonWithAuxSGD
+    _partial_: true
+    lr: 0.02
+    momentum: 0.95
+    weight_decay: 0.01 # the Muon arm's final cell
+    sgd_lr: 0.01
+    sgd_momentum: 0.9
+    sgd_nesterov: true
+    sgd_weight_decay: 6e-4 # = the SGD arms' L2, on the stem / BN / GP output layer
+  net:
+    arch: resnet18
+    num_classes: ${num_classes}
+    pretrained: false
+    use_spectral_norm: false
+    spectral_norm_bound: null
+    length_scale: 20.0
+    normalize_input: false
+    scale_random_features: false
+    ridge_penalty: 1.0
+    mean_field_factor: 0.39269908 # pi/8
+    kernel_amplitude: 1.0
+  compile: false
+  scheduler:
+    _target_: src.models.components.schedulers.warmup_constant_inverse_decay_lr
+    _partial_: true
+    T_max: ${trainer.max_epochs}
+    warmup_epochs: 5
+    warmup_start_factor: 0.1
+    decay_start_epoch: 120
+    final_factor: 0.1 # Wen et al.'s eta_min = 0.1 * peak
+    eta_min: 0.0
+  num_classes: ${num_classes}
+
+data:
+  datamodule:
+    batch_size: 128
+
+logger:
+  wandb:
+    project: "${WANDB_PROJECT}"
+    tags: "${tags_with:${tags},${data.datamodule.institution}}"
+    group: "adrc"
+    name: ${name}
+    log_model: True
+  aim:
+    experiment: ""
+
+callbacks:
+  model_checkpoint:
+    monitor: "val/nll"
+    mode: "min"
+  early_stopping:
+    monitor: "val/nll"
+    mode: "min"
+  test_artifacts:
+    hist_bins: 10
+  muon_to_sgd_switch:
+    _target_: src.callbacks.muon_to_sgd_switch.MuonToSGDSwitch
+    switch_epoch: ${model.scheduler.decay_start_epoch}
+    momentum: 0.9
+    nesterov: true
+    weight_decay: 6e-4 # coupled L2 on the hidden convs in stage 2, = the aux group's

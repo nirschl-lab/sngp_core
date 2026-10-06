@@ -8,7 +8,7 @@ warmup-then-piecewise-decay schedule instead, which cannot be written as a bare
 needs the optimizer that Hydra only supplies at the outermost call. Hence a factory.
 `warmup_stable_decay_lr` is the schedule for the Muon arms, whose update size is set by the
 LR alone (see its docstring). `warmup_constant_cosine_lr` is the schedule of the Muon -> SGD
-two-stage arm.
+two-stage arm, and `warmup_constant_inverse_decay_lr` its warmup-stable-decay variant.
 """
 import math
 from typing import Optional, Sequence
@@ -238,3 +238,67 @@ def warmup_constant_cosine_lr(
 
     lambdas = [make_factor(b, p) for b, p in zip(base_lrs, peaks)]
     return LambdaLR(optimizer, lr_lambda=lambdas)
+
+
+def warmup_constant_inverse_decay_lr(
+    optimizer: Optimizer,
+    *,
+    T_max: int,
+    warmup_epochs: int = 5,
+    warmup_start_factor: float = 0.1,
+    decay_start_epoch: int = 120,
+    final_factor: float = 0.1,
+    eta_min: float = 0.0,
+) -> LRScheduler:
+    """Linear warmup, a constant plateau, then an inverse-proportional decay (WSD).
+
+    The decay of Wen et al. 2025 ("Understanding Warmup-Stable-Decay Learning Rates: A River
+    Valley Loss Landscape Perspective", ICLR 2025, arXiv:2410.05192, Eq. 8): over the decay the
+    *reciprocal* of the LR interpolates linearly from `1/peak` to `1/(final_factor * peak)`. The
+    LR thus falls fast at first and flattens toward the floor; the paper uses
+    `final_factor=0.1`. The schedule of the Muon -> SGD two-stage WSD arm (`MuonToSGDSwitch` at
+    `decay_start_epoch`).
+
+    The LR factor at epoch `e`, with `t = (e - decay_start_epoch) / (T_max - 1 - decay_start_epoch)`:
+      * `e < warmup_epochs`: linear from `warmup_start_factor` toward 1;
+      * then 1 until `decay_start_epoch`;
+      * then `1 / ((1 - t) + t / final_factor)`: 1 at `decay_start_epoch`, exactly
+        `final_factor` in the last epoch (`T_max - 1`).
+    The floor is relative, so one `LambdaLR` factor on each param group's own base LR gives
+    every group the same shape from its own peak (no LR jump at the switch).
+
+    :param T_max: Total training epochs.
+    :param warmup_epochs: Epochs spent warming up; `0` disables warmup.
+    :param warmup_start_factor: Fraction of the base LR to start warmup from.
+    :param decay_start_epoch: 0-based epoch at which the decay (and the optimizer switch) starts.
+    :param final_factor: Fraction of the base LR reached in the last epoch.
+    :param eta_min: Must be 0.0. Present only to absorb the model config's inherited
+        CosineAnnealingLR key (see `warmup_piecewise_lr`); the floor is `final_factor`.
+    """
+    if eta_min != 0.0:
+        raise ValueError(
+            "warmup_constant_inverse_decay_lr takes its floor from final_factor, so eta_min "
+            f"must be 0.0 (got {eta_min}). It exists in the signature only because Hydra "
+            "merges the model config's CosineAnnealingLR node into this one."
+        )
+    if warmup_epochs < 0:
+        raise ValueError(f"warmup_epochs must be >= 0, got {warmup_epochs}")
+    if not warmup_epochs <= decay_start_epoch < T_max - 1:
+        raise ValueError(
+            f"need warmup_epochs ({warmup_epochs}) <= decay_start_epoch "
+            f"({decay_start_epoch}) < T_max - 1 ({T_max - 1}), so the decay spans at "
+            "least two epochs after the warmup."
+        )
+    if not 0.0 < final_factor <= 1.0:
+        raise ValueError(f"final_factor must be in (0, 1], got {final_factor}")
+    decay_epochs = T_max - 1 - decay_start_epoch
+
+    def factor(epoch: int) -> float:
+        if epoch < warmup_epochs:
+            return warmup_start_factor + (1.0 - warmup_start_factor) * epoch / warmup_epochs
+        if epoch < decay_start_epoch:
+            return 1.0
+        t = min(epoch - decay_start_epoch, decay_epochs) / decay_epochs
+        return 1.0 / ((1.0 - t) + t / final_factor)
+
+    return LambdaLR(optimizer, lr_lambda=factor)

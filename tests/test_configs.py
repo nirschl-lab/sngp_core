@@ -265,6 +265,7 @@ class TestExperimentProtocolConsistency:
             "sngp_specreg_wong_sgd",
             "sngp_muon_wong_sgd",
             "sngp_muon_2stage_wong_sgd",
+            "sngp_muon_2stage_wsd_wong_sgd",
             "baseline_wong_sgd",
         ],
         # The CIFAR-100 / WRN-28-10 reproduction of the SNGP benchmark. Not part of the
@@ -339,6 +340,7 @@ class TestExperimentProtocolConsistency:
         "sngp_specreg_wong_sgd": {"monitor": "val/nll"},
         "sngp_muon_wong_sgd": {"monitor": "val/nll"},
         "sngp_muon_2stage_wong_sgd": {"monitor": "val/nll"},
+        "sngp_muon_2stage_wsd_wong_sgd": {"monitor": "val/nll"},
         "baseline_wong_sgd": {"monitor": "val/nll"},
     }
 
