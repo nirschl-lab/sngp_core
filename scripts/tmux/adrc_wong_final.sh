@@ -17,6 +17,8 @@
 #              (hidden convs 0.02 -> 1e-4, stem / BN / GP head 0.01 -> 1e-4): no LR jump at the switch
 #   muon2stage_wsd   sngp_muon_2stage_wsd_wong_sgd  the same two stages, but the tail is Wen et al. 2025's
 #              WSD inverse-proportional decay from each group's own peak to 0.1x (arXiv:2410.05192)
+#   muon2stage_wsd_aux04  muon2stage_wsd with the aux SGD lr at 0.04 (the Muon arm's / SGD arms' value):
+#              vs the Muon arm only the switch + schedule differ (aux 0.04 -> 0.004 in the decay)
 #
 # Differences from the sweep trials:
 #   * early stopping OFF and min_epochs = max_epochs = 150 -- the sweeps' patience-8 stop killed
@@ -149,6 +151,8 @@ for s in "${SEEDS[@]}"; do
       "${GP[@]}" model.net.kernel_amplitude=1 model.scheduler.cosine_peak_lr=null
   arm muon2stage_wsd "${s}" sngp_muon_2stage_classifier experiment=sngp_muon_2stage_wsd_wong_sgd seed="${s}" \
       "${GP[@]}" model.net.kernel_amplitude=1
+  arm muon2stage_wsd_aux04 "${s}" sngp_muon_2stage_classifier experiment=sngp_muon_2stage_wsd_wong_sgd \
+      seed="${s}" "${GP[@]}" model.net.kernel_amplitude=1 model.optimizer.sgd_lr=0.04
 done
 wait
 
