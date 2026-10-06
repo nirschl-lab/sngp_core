@@ -126,3 +126,46 @@ def test_sgd_aux_group_matches_torch_sgd(nesterov):
         reference.step()
         for r, p in zip(ref_params, aux):
             torch.testing.assert_close(p.detach(), r.detach())
+
+
+def test_switch_muon_group_to_sgd_matches_torch_sgd_and_persists():
+    """After the two-stage switch the hidden convs step exactly as torch.optim.SGD from a fresh
+    buffer (Muon's EMA buffer dropped), and the switch survives a state_dict round-trip."""
+    torch.manual_seed(0)
+    model = torch.nn.Sequential(torch.nn.Conv2d(8, 8, 3), torch.nn.BatchNorm2d(8),
+                                torch.nn.Flatten(), torch.nn.Linear(8 * 6 * 6, 5))
+    optimizer = MuonWithAuxSGD(model.parameters(), lr=0.02, weight_decay=0.01, sgd_lr=0.01)
+
+    def backward() -> None:
+        optimizer.zero_grad()
+        model(torch.randn(4, 8, 8, 8)).square().mean().backward()
+
+    backward()
+    optimizer.step()  # one Muon step, so group 0 carries a Muon momentum buffer
+    hidden = optimizer.param_groups[0]["params"]
+    assert all("momentum_buffer" in optimizer.state[p] for p in hidden)
+
+    hp = dict(lr=0.01, momentum=0.9, nesterov=True, weight_decay=6e-4)
+    optimizer.param_groups[0]["lr"] = hp["lr"]
+    optimizer.switch_muon_group_to_sgd(momentum=hp["momentum"], nesterov=True,
+                                       weight_decay=hp["weight_decay"])
+    group = optimizer.param_groups[0]
+    assert not group["use_muon"] and group["momentum"] == 0.9 and group["weight_decay"] == 6e-4
+    assert all("momentum_buffer" not in optimizer.state[p] for p in hidden)
+
+    ref_params = [p.detach().clone().requires_grad_() for p in hidden]
+    reference = torch.optim.SGD(ref_params, **hp)
+    for _ in range(3):
+        backward()
+        for r, p in zip(ref_params, hidden):
+            r.grad = p.grad.clone()
+        optimizer.step()
+        reference.step()
+        for r, p in zip(ref_params, hidden):
+            torch.testing.assert_close(p.detach(), r.detach())
+
+    fresh = MuonWithAuxSGD(model.parameters(), lr=0.02, sgd_lr=0.01)
+    assert fresh.param_groups[0]["use_muon"]
+    fresh.load_state_dict(optimizer.state_dict())
+    assert not fresh.param_groups[0]["use_muon"]
+    assert fresh.param_groups[0]["weight_decay"] == 6e-4

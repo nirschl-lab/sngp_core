@@ -4,10 +4,16 @@ The CIFAR-100 benchmark's whole LR trajectory is defined by this one factory, an
 failure mode here is silent: a schedule that decays one epoch late, or that swallows a
 decay inside warmup, still trains to completion and just produces slightly wrong numbers.
 """
+import math
+
 import pytest
 import torch
 
-from src.models.components.schedulers import warmup_piecewise_lr, warmup_stable_decay_lr
+from src.models.components.schedulers import (
+    warmup_constant_cosine_lr,
+    warmup_piecewise_lr,
+    warmup_stable_decay_lr,
+)
 
 BASE_LR = 0.04
 
@@ -139,3 +145,51 @@ class TestWarmupStableDecayLR:
         optimizer = torch.optim.SGD([torch.nn.Parameter(torch.zeros(1))], lr=BASE_LR)
         with pytest.raises(ValueError, match=match):
             warmup_stable_decay_lr(optimizer, **kwargs)
+
+
+def _two_stage_trace(total_epochs: int = 150, **kwargs) -> list[tuple[float, float]]:
+    """(Muon-group lr, aux-group lr) in force during each epoch, base LRs 0.02 / 0.01."""
+    optimizer = torch.optim.SGD(
+        [{"params": [torch.nn.Parameter(torch.zeros(1))], "lr": 0.02},
+         {"params": [torch.nn.Parameter(torch.zeros(1))], "lr": 0.01}],
+        lr=0.02,
+    )
+    scheduler = warmup_constant_cosine_lr(optimizer, T_max=total_epochs, **kwargs)
+    trace = []
+    for _ in range(total_epochs):
+        trace.append(tuple(g["lr"] for g in optimizer.param_groups))
+        optimizer.step()
+        scheduler.step()
+    return trace
+
+
+class TestWarmupConstantCosineLR:
+    def test_wong_two_stage_schedule(self):
+        """5 warmup epochs from 0.1x, own base LRs until 120, then one shared absolute cosine
+        0.01 -> 1e-4 that lands on 1e-4 in the last epoch."""
+        trace = _two_stage_trace()
+        assert trace[0] == pytest.approx((0.002, 0.001))
+        assert trace[4] == pytest.approx((0.02 * 0.82, 0.01 * 0.82))
+        assert all(t == pytest.approx((0.02, 0.01)) for t in trace[5:120])
+        assert trace[120] == pytest.approx((0.01, 0.01))
+        assert trace[149] == pytest.approx((1e-4, 1e-4))
+        mid = 1e-4 + (0.01 - 1e-4) * (1 + math.cos(math.pi * 15 / 29)) / 2
+        assert trace[135] == pytest.approx((mid, mid))
+        cosine = [m for m, _ in trace[120:]]
+        assert all(b < a for a, b in zip(cosine, cosine[1:]))
+        assert all(m == pytest.approx(a) for m, a in trace[120:])
+
+    @pytest.mark.parametrize(
+        "kwargs, match",
+        [
+            (dict(eta_min=1e-5), "eta_min"),
+            (dict(warmup_epochs=-1), "warmup_epochs"),
+            (dict(warmup_epochs=10, cosine_start_epoch=5), "cosine_start_epoch"),
+            (dict(cosine_start_epoch=149), "cosine_start_epoch"),
+            (dict(cosine_final_lr=0.0), "cosine_final_lr"),
+            (dict(cosine_final_lr=0.1), "cosine_final_lr"),
+        ],
+    )
+    def test_bad_arguments_are_rejected(self, kwargs, match):
+        with pytest.raises(ValueError, match=match):
+            _two_stage_trace(**kwargs)

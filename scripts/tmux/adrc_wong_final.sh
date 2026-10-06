@@ -9,6 +9,11 @@
 #   muon       sngp_muon_wong_sgd     Muon wd = 0.01, sigma^2 = 1   (#1, 0.0257)
 #   baseline   baseline_wong_sgd      linear head, SGD + Nesterov
 #
+# Opt-in arm (not in the default ARMS), added after the 5-arm study:
+#   muon2stage sngp_muon_2stage_wong_sgd  Muon wd = 0.01, sigma^2 = 1, aux SGD lr 0.01; warmup 5 ep,
+#              then Muon constant, then at epoch 120 everything on SGD + Nesterov, cosine 0.01 -> 1e-4
+#              (arXiv:2606.21514; the experiment's header has the full schedule)
+#
 # Differences from the sweep trials:
 #   * early stopping OFF and min_epochs = max_epochs = 150 -- the sweeps' patience-8 stop killed
 #     about half of every grid in the high-LR part of the cosine schedule.
@@ -34,6 +39,10 @@
 #   scripts/tmux/adrc_wong_final.sh --smoke   # 5 runs, quick check
 #   scripts/tmux/adrc_wong_final.sh           # 25 runs
 #   INSTITUTION=ucdavis NUM_WORKERS=4 scripts/tmux/adrc_wong_final.sh   # 25 runs, UC Davis only
+#
+# ARMS="<arm> ..." (default "sngp muon bnsn specreg baseline") and SEEDS="<seed> ..." (default
+# "12345 1 2 3 4") pick a subset, e.g. the single two-stage run:
+#   INSTITUTION=ucdavis ARMS=muon2stage SEEDS=12345 scripts/tmux/adrc_wong_final.sh
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 
@@ -47,7 +56,8 @@ STUDY="adrc_final${INSTITUTION:+_${INSTITUTION}}"
 MODE="full"
 for arg in "$@"; do [[ "${arg}" == "--smoke" ]] && MODE="smoke"; done
 read -r -a GPU_LIST <<< "${GPUS:-0 1 2 3}"
-SEEDS=(12345 1 2 3 4)
+ARMS="${ARMS:-sngp muon bnsn specreg baseline}"
+read -r -a SEEDS <<< "${SEEDS:-12345 1 2 3 4}"
 
 # Passed down to the re-exec'd child so the parent and child agree on one stamp.
 STAMP="${ADRC_FINAL_STAMP:-$(date +%Y-%m-%d_%H-%M-%S)}"
@@ -65,6 +75,7 @@ if [[ "${1:-}" != "--run" ]]; then
   CHILD_ARGS="--run"; [[ "${MODE}" == "smoke" ]] && CHILD_ARGS="--run --smoke"
   tmux new-session -d -s "${SESSION}" -e "ADRC_FINAL_STAMP=${STAMP}" -e "GPUS=${GPU_LIST[*]}" \
       -e "SMOKE_STEPS=${SMOKE_STEPS:-450}" -e "INSTITUTION=${INSTITUTION}" -e "NUM_WORKERS=${NUM_WORKERS}" \
+      -e "ARMS=${ARMS}" -e "SEEDS=${SEEDS[*]}" \
       "bash '$0' ${CHILD_ARGS} 2>&1 | tee '${LOGS}/driver.log'"
   echo "Launched '${SESSION}' (${MODE})."
   echo "  Attach:   tmux attach -t ${SESSION}"
@@ -106,7 +117,7 @@ run() {
     || echo "[$(date +%H:%M:%S)] FAILED ${label} (see ${LOGS}/${label}.log)"
 }
 
-echo "=== ADRC ${DS} final (${MODE}): 5 arms x seeds ${SEEDS[*]} on GPUs ${GPU_LIST[*]} ==="
+echo "=== ADRC ${DS} final (${MODE}): arms ${ARMS} x seeds ${SEEDS[*]} on GPUs ${GPU_LIST[*]} ==="
 i=0
 launch() {  # launch <label> <model.name> <overrides...>  -- next GPU round-robin, staggered start
   local gpu="${GPU_LIST[$((i % ${#GPU_LIST[@]}))]}"
@@ -114,17 +125,23 @@ launch() {  # launch <label> <model.name> <overrides...>  -- next GPU round-robi
   run "$1" "${gpu}" "${@:2}" &
   sleep 5  # don't hit the HF dataset cache with 25 simultaneous loads
 }
+arm() {  # arm <arm> <seed> <model.name> <overrides...>  -- launch <arm>_s<seed> if <arm> is in ARMS
+  [[ " ${ARMS} " == *" $1 "* ]] || return 0
+  launch "$1_s$2" "${@:3}"
+}
 for s in "${SEEDS[@]}"; do
-  launch "sngp_s${s}"     sngp_sgd_classifier         experiment=sngp_wong_sgd seed="${s}" "${GP[@]}" \
+  arm sngp       "${s}" sngp_sgd_classifier         experiment=sngp_wong_sgd seed="${s}" "${GP[@]}" \
       model.net.spectral_norm_bound=1 model.net.kernel_amplitude=1
-  launch "muon_s${s}"     sngp_muon_sgd_classifier    experiment=sngp_muon_wong_sgd seed="${s}" "${GP[@]}" \
+  arm muon       "${s}" sngp_muon_sgd_classifier    experiment=sngp_muon_wong_sgd seed="${s}" "${GP[@]}" \
       model.optimizer.weight_decay=0.01 model.net.kernel_amplitude=1
-  launch "bnsn_s${s}"     sngp_bnsn_sgd_classifier    experiment=sngp_bnsn_wong_sgd seed="${s}" "${GP[@]}" \
+  arm bnsn       "${s}" sngp_bnsn_sgd_classifier    experiment=sngp_bnsn_wong_sgd seed="${s}" "${GP[@]}" \
       model.net.spectral_norm_bound=8 model.net.kernel_amplitude=1
-  launch "specreg_s${s}"  sngp_specreg_sgd_classifier experiment=sngp_specreg_wong_sgd seed="${s}" "${GP[@]}" \
+  arm specreg    "${s}" sngp_specreg_sgd_classifier experiment=sngp_specreg_wong_sgd seed="${s}" "${GP[@]}" \
       model.spec_reg_coef=0.003 model.net.kernel_amplitude=1
-  launch "baseline_s${s}" baseline_sgd_classifier     experiment=baseline_wong_sgd seed="${s}" "${BASE_TAGS}"
+  arm baseline   "${s}" baseline_sgd_classifier     experiment=baseline_wong_sgd seed="${s}" "${BASE_TAGS}"
+  arm muon2stage "${s}" sngp_muon_2stage_classifier experiment=sngp_muon_2stage_wong_sgd seed="${s}" \
+      "${GP[@]}" model.net.kernel_amplitude=1
 done
 wait
 
-echo "[$(date +%H:%M:%S)] ALL DONE. Checkpoints: ${ROOT}/train/*_sgd_classifier_${DS}/runs/${RUN_ID}_*/checkpoints/"
+echo "[$(date +%H:%M:%S)] ALL DONE. Checkpoints: ${ROOT}/train/*_classifier_${DS}/runs/${RUN_ID}_*/checkpoints/"

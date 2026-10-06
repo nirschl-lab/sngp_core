@@ -7,8 +7,10 @@ warmup-then-piecewise-decay schedule instead, which cannot be written as a bare
 `_partial_`: `SequentialLR` takes *already-constructed* schedulers, and each of those
 needs the optimizer that Hydra only supplies at the outermost call. Hence a factory.
 `warmup_stable_decay_lr` is the schedule for the Muon arms, whose update size is set by the
-LR alone (see its docstring).
+LR alone (see its docstring). `warmup_constant_cosine_lr` is the schedule of the Muon -> SGD
+two-stage arm.
 """
+import math
 from typing import Sequence
 
 from torch.optim import Optimizer
@@ -161,3 +163,72 @@ def warmup_stable_decay_lr(
         return max(T_max - epoch, 0) / decay_epochs
 
     return LambdaLR(optimizer, lr_lambda=factor)
+
+
+def warmup_constant_cosine_lr(
+    optimizer: Optimizer,
+    *,
+    T_max: int,
+    warmup_epochs: int = 5,
+    warmup_start_factor: float = 0.1,
+    cosine_start_epoch: int = 120,
+    cosine_peak_lr: float = 0.01,
+    cosine_final_lr: float = 1e-4,
+    eta_min: float = 0.0,
+) -> LRScheduler:
+    """Linear warmup, a constant plateau at each group's base LR, then a cosine on absolute LRs.
+
+    The LR schedule of the Muon -> SGD two-stage arm (`MuonToSGDSwitch` swaps the optimizer
+    at `cosine_start_epoch`). The two phases are specified differently on purpose:
+      * epochs `< cosine_start_epoch` scale each param group's *own* base LR (warmup from
+        `warmup_start_factor`, then 1), so Muon and the SGD aux group keep their ratio;
+      * from `cosine_start_epoch` every group runs the *same absolute* LR, a cosine from
+        `cosine_peak_lr` to `cosine_final_lr` over `T_max - 1 - cosine_start_epoch` epochs,
+        so the last epoch (`T_max - 1`) runs at exactly `cosine_final_lr`. After the switch
+        all groups are SGD, and Muon's base LR no longer means anything for them.
+    Hence one `LambdaLR` lambda per param group, each dividing by that group's base LR.
+
+    :param T_max: Total training epochs.
+    :param warmup_epochs: Epochs spent warming up; `0` disables warmup.
+    :param warmup_start_factor: Fraction of the base LR to start warmup from.
+    :param cosine_start_epoch: 0-based epoch at which the cosine (and the optimizer switch)
+        starts.
+    :param cosine_peak_lr: Absolute LR at `cosine_start_epoch`, for every group.
+    :param cosine_final_lr: Absolute LR in the last epoch, for every group.
+    :param eta_min: Must be 0.0. Present only to absorb the model config's inherited
+        CosineAnnealingLR key (see `warmup_piecewise_lr`); the floor is `cosine_final_lr`.
+    """
+    if eta_min != 0.0:
+        raise ValueError(
+            "warmup_constant_cosine_lr takes its floor from cosine_final_lr, so eta_min must "
+            f"be 0.0 (got {eta_min}). It exists in the signature only because Hydra merges "
+            "the model config's CosineAnnealingLR node into this one."
+        )
+    if warmup_epochs < 0:
+        raise ValueError(f"warmup_epochs must be >= 0, got {warmup_epochs}")
+    if not warmup_epochs <= cosine_start_epoch < T_max - 1:
+        raise ValueError(
+            f"need warmup_epochs ({warmup_epochs}) <= cosine_start_epoch "
+            f"({cosine_start_epoch}) < T_max - 1 ({T_max - 1}), so the cosine spans at "
+            "least two epochs after the warmup."
+        )
+    if not 0.0 < cosine_final_lr <= cosine_peak_lr:
+        raise ValueError(
+            f"need 0 < cosine_final_lr ({cosine_final_lr}) <= cosine_peak_lr ({cosine_peak_lr})"
+        )
+    cosine_epochs = T_max - 1 - cosine_start_epoch
+
+    def make_factor(base_lr: float):
+        def factor(epoch: int) -> float:
+            if epoch < warmup_epochs:
+                return warmup_start_factor + (1.0 - warmup_start_factor) * epoch / warmup_epochs
+            if epoch < cosine_start_epoch:
+                return 1.0
+            t = min(epoch - cosine_start_epoch, cosine_epochs) / cosine_epochs
+            cos = (1 + math.cos(math.pi * t)) / 2
+            return (cosine_final_lr + (cosine_peak_lr - cosine_final_lr) * cos) / base_lr
+
+        return factor
+
+    lambdas = [make_factor(g.get("initial_lr", g["lr"])) for g in optimizer.param_groups]
+    return LambdaLR(optimizer, lr_lambda=lambdas)

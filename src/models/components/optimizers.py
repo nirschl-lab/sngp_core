@@ -228,6 +228,26 @@ class MuonWithAuxSGD(_MuonHybrid):
                          weight_decay=sgd_weight_decay)
         super().__init__(params, aux_group, lr, momentum, weight_decay, nesterov, ns_steps)
 
+    def switch_muon_group_to_sgd(
+        self, momentum: float = 0.9, nesterov: bool = True, weight_decay: float = 6e-4
+    ) -> None:
+        """Hand the hidden convs (group 0) from Muon to this optimizer's SGD rule, in place.
+
+        The second stage of a Muon -> SGD two-stage schedule (Shen et al. 2026,
+        arXiv:2606.21514: Muon moves fast along the "river" early but oscillates near the
+        optimum, so a GD-like optimizer refines late). Group 0 keeps its params and current
+        LR -- the scheduler owns the LR -- and takes the SGD `momentum` / `nesterov` / coupled
+        L2 `weight_decay`. Its momentum buffers are dropped: Muon's is an EMA (`lerp`), ~1/(1-beta)
+        smaller than SGD's sum-form buffer under the same state key, so carrying it over would
+        mis-scale the first SGD steps. `use_muon` lives in `param_groups`, so `state_dict()`
+        persists the switch and a resume from a stage-2 checkpoint stays on SGD.
+        """
+        group = self.param_groups[0]
+        group.update(use_muon=False, momentum=momentum, nesterov=nesterov,
+                     weight_decay=weight_decay)
+        for p in group["params"]:
+            self.state[p].pop("momentum_buffer", None)
+
     def _aux_step(self, group: dict) -> None:
         mu = group["momentum"]
         for p in group["params"]:
