@@ -5,7 +5,10 @@ Reads the inference tree `scripts/inference/run_eval_suite_parallel.sh` writes p
 from `best.ckpt`). Every GP arm was trained and is scored at mean_field_factor pi/8 -- the value
 each checkpoint carries -- so `class_probs` is used as written; no post-hoc fit.
 
-Per run: Wong test metrics from metrics.json, and Wong-vs-OOD AUROC for entropy (all arms) and
+Per run: Wong test metrics from metrics.json, plus adaptive (equal-mass, 10-bin) ECE and smooth
+ECE recomputed from predictions.csv with src/metrics/calibration_variants.py (smooth ECE with the
+reflected kernel and a 20-step bandwidth search: the library's logit-kernel default does not converge
+at these >0.999 confidences, see `smooth_ece`), and Wong-vs-OOD AUROC for entropy (all arms) and
 GP predictive variance (GP arms) under the frozen 10-subsample protocol of
 src/metrics/calculate_ood_metrics.py. When `<run>/wong_artifact/` exists (both artifact axes on
 Wong test: real_baseline, config/count_{1..5}, procedural/severity_{1..5}), also accuracy / NLL /
@@ -32,11 +35,14 @@ from typing import Dict, List, Tuple
 import numpy as np
 import pandas as pd
 import rootutils
+import torch
 
 rootutils.setup_root(__file__, indicator=".project-root", pythonpath=True)
 
 from src.metrics.auc import AUROC, sample_rate, seeds  # noqa: E402
 from src.metrics.calculate_ood_metrics import load_ood_scores  # noqa: E402
+from src.metrics.calibration_variants import adaptive_ece, smooth_ece  # noqa: E402
+from src.metrics.io import load_predictions, probs_array  # noqa: E402
 
 # arm -> (model.name, table label). Order is the table order.
 ARMS: Dict[str, Tuple[str, str]] = {
@@ -49,7 +55,12 @@ ARMS: Dict[str, Tuple[str, str]] = {
 SEEDS = [12345, 1, 2, 3, 4]
 INDIST = "wong"
 OOD = ["acevedo", "jung", "kather2016", "kather2018", "nirschl2018", "tang"]
-ID_METRICS = ["acc", "f1", "ece", "nll", "brier"]
+ID_METRICS = ["acc", "f1", "ece", "nll", "brier"]  # read from metrics.json
+CSV_METRICS = ["aece", "smece"]  # recomputed from predictions.csv
+# (column, scale, digits, header) of every labelled-test-set table.
+ID_TABLE = [("acc", 1, 4, "Accuracy ↑"), ("f1", 1, 4, "F1 ↑"), ("ece", 100, 2, "ECE (×10⁻²) ↓"),
+            ("aece", 100, 2, "aECE (×10⁻²) ↓"), ("smece", 100, 2, "smECE (×10⁻²) ↓"),
+            ("nll", 100, 2, "NLL (×10⁻²) ↓"), ("brier", 100, 2, "Brier (×10⁻²) ↓")]
 # Artifact axes (scored when <run>/wong_artifact exists): level 0 is the shared real_baseline.
 ARTIFACT_AXES = [("config", "count"), ("procedural", "severity")]
 ARTIFACT_LEVELS = [0, 1, 2, 3, 4, 5]
@@ -68,6 +79,15 @@ def _subsampled_auroc(id_scores: pd.Series, ood_scores: pd.Series) -> float:
     ]))
 
 
+def _calibration(predictions_csv: Path) -> Dict[str, float]:
+    """aECE (10 equal-mass bins, as the 10-bin ECE) and smooth ECE (reflected kernel) of one CSV."""
+    frame = load_predictions(predictions_csv)
+    probs = torch.tensor(probs_array(frame), dtype=torch.float32)
+    targets = torch.tensor(frame.df["target"].astype(int).to_numpy(), dtype=torch.long)
+    return {"aece": adaptive_ece(probs, targets, num_classes=probs.shape[1]),
+            "smece": smooth_ece(probs, targets, kernel_type="reflected", refine_steps=20)}
+
+
 def _variance(predictions_csv: Path) -> pd.Series:
     return pd.to_numeric(pd.read_csv(predictions_csv, usecols=["uncertainty"])["uncertainty"]).dropna()
 
@@ -78,9 +98,11 @@ def _run_row(run_dir: Path, arm: str, seed: int, indist: str, ood: List[str],
     row: Dict[str, float] = {"arm": arm, "seed": seed}
     metrics = json.loads((run_dir / indist / "metrics.json").read_text())
     row.update({m: metrics[m] for m in ID_METRICS})
+    row.update(_calibration(run_dir / indist / "predictions.csv"))
     for leaf in shifted:
         metrics = json.loads((run_dir / leaf / "metrics.json").read_text())
-        row.update({f"{m}_{leaf}": metrics[m] for m in ID_METRICS})
+        metrics.update(_calibration(run_dir / leaf / "predictions.csv"))
+        row.update({f"{m}_{leaf}": metrics[m] for m in ID_METRICS + CSV_METRICS})
     _, id_ent = load_ood_scores(run_dir / indist / "predictions.csv")
     is_gp = arm != "baseline"
     id_var = _variance(run_dir / indist / "predictions.csv") if is_gp else None
@@ -156,11 +178,9 @@ def main() -> None:
         sfx = "" if leaf == indist else f"_{leaf}"
         print(f"\n{labels.get(leaf, leaf)} test")
         print(_table(
-            [[ARMS[a][1]] + [_fmt(g[f"{m}{sfx}"], scale, digits)
-                             for m, scale, digits in (("acc", 1, 4), ("f1", 1, 4), ("ece", 100, 2),
-                                                      ("nll", 100, 2), ("brier", 100, 2))]
+            [[ARMS[a][1]] + [_fmt(g[f"{m}{sfx}"], scale, digits) for m, scale, digits, _ in ID_TABLE]
              for a, g in groups.items()],
-            ["Model", "Accuracy ↑", "F1 ↑", "ECE (×10⁻²) ↓", "NLL (×10⁻²) ↓", "Brier (×10⁻²) ↓"],
+            ["Model"] + [h for *_, h in ID_TABLE],
         ))
     cols = ood + ["mean"]
     header = ["Model"] + [labels.get(c, c.capitalize()) if c != "mean" else "Mean" for c in cols]

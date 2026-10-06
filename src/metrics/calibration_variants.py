@@ -11,6 +11,8 @@ of this project's existing "ECE" numbers) and torch-uncertainty's own `Calibrati
 wrapper both use internally, which is what guarantees `ece_plus(...) + ece_minus(...)`
 sums exactly to the standard L1 ECE.
 """
+from typing import Literal
+
 import torch
 from torchmetrics.functional.classification.calibration_error import _binning_bucketize
 from torch_uncertainty.metrics.classification import AdaptiveCalibrationError, CalibrationError, SmoothCalibrationError
@@ -60,9 +62,21 @@ def adaptive_ece(probs: torch.Tensor, targets: torch.Tensor, num_classes: int, n
     return float(metric.compute())
 
 
-def smooth_ece(probs: torch.Tensor, targets: torch.Tensor) -> float:
+def smooth_ece(
+    probs: torch.Tensor,
+    targets: torch.Tensor,
+    kernel_type: Literal["logit", "reflected"] = "logit",
+    refine_steps: int = 10,
+) -> float:
     """Smooth/kernel-density ECE (Blasiok & Nakkiran 2023) -- library-native alternative to
-    this project's own `src/metrics/smooth_ece.py::smECE_fast_compat`."""
-    metric = SmoothCalibrationError()
+    this project's own `src/metrics/smooth_ece.py::smECE_fast_compat`.
+
+    The defaults are torch-uncertainty's (logit-space kernel, 10 bandwidth-search steps).
+    For near-saturated models (top-label confidences mostly > 0.999, ECE ~1e-3) that
+    combination does not reach the bandwidth fixed point and the value swings ~10x between
+    seeds; `kernel_type="reflected"` (relplot's original kernel) with `refine_steps=20`
+    converges there.
+    """
+    metric = SmoothCalibrationError(kernel_type=kernel_type, refine_steps=refine_steps)
     metric.update(probs, targets)
     return float(metric.compute())
