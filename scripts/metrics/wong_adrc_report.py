@@ -7,7 +7,10 @@ each checkpoint carries -- so `class_probs` is used as written; no post-hoc fit.
 
 Per run: Wong test metrics from metrics.json, and Wong-vs-OOD AUROC for entropy (all arms) and
 GP predictive variance (GP arms) under the frozen 10-subsample protocol of
-src/metrics/calculate_ood_metrics.py. Per arm: mean and sample std (ddof=1) across the 5 seeds.
+src/metrics/calculate_ood_metrics.py. When `<run>/wong_artifact/` exists (both artifact axes on
+Wong test: real_baseline, config/count_{1..5}, procedural/severity_{1..5}), also accuracy / NLL /
+ECE per level -- for seed 12345 only, so those tables carry no spread. Every other table: mean and
+sample std (ddof=1) across the 5 seeds.
 
     uv run python scripts/metrics/wong_adrc_report.py --stamp 2026-10-05_10-05-27 \\
         --out-dir figures/wong_adrc
@@ -39,6 +42,11 @@ SEEDS = [12345, 1, 2, 3, 4]
 INDIST = "wong"
 OOD = ["acevedo", "jung", "kather2016", "kather2018", "nirschl2018", "tang"]
 ID_METRICS = ["acc", "f1", "ece", "nll", "brier"]
+# Artifact axes (scored when <run>/wong_artifact exists): level 0 is the shared real_baseline.
+ARTIFACT_AXES = [("config", "count"), ("procedural", "severity")]
+ARTIFACT_LEVELS = [0, 1, 2, 3, 4, 5]
+ARTIFACT_METRICS = ["acc", "nll", "ece"]
+ARTIFACT_SEED = 12345  # the artifact axes were run for this seed only
 
 
 def _subsampled_auroc(id_scores: pd.Series, ood_scores: pd.Series) -> float:
@@ -69,7 +77,23 @@ def _run_row(run_dir: Path, arm: str, seed: int) -> Dict[str, float]:
         )
     for kind in ("ent", "var"):
         row[f"auroc_{kind}_mean"] = float(np.mean([row[f"auroc_{kind}_{n}"] for n in OOD]))
+    artifact = run_dir / "wong_artifact"
+    if seed == ARTIFACT_SEED and artifact.is_dir():
+        for (axis, _), level, leaf in _artifact_arms():
+            stream = "real" if level == 0 else "artifact"
+            metrics = json.loads((artifact / leaf / "metrics.json").read_text())
+            for m in ARTIFACT_METRICS:
+                row[f"{axis}_{level}_{m}"] = metrics[f"{stream}.{m}"]
     return row
+
+
+def _artifact_arms() -> List[Tuple[Tuple[str, str], int, str]]:
+    """((axis, level name), level, leaf under wong_artifact/), level 0 = real_baseline."""
+    return [
+        ((axis, name), level, "real_baseline" if level == 0 else f"{axis}/{name}_{level}")
+        for axis, name in ARTIFACT_AXES
+        for level in ARTIFACT_LEVELS
+    ]
 
 
 def _fmt(values: pd.Series, scale: float, digits: int) -> str:
@@ -116,6 +140,17 @@ def main() -> None:
              for a, g in groups.items() if not g[f"auroc_{kind}_mean"].isna().all()],
             header,
         ))
+    if "config_0_acc" in runs:
+        for axis, name in ARTIFACT_AXES:
+            for m, scale, digits, title in (("acc", 1, 4, "Accuracy"), ("nll", 100, 2, "NLL (×10⁻²)"),
+                                            ("ece", 100, 2, "ECE (×10⁻²)")):
+                print(f"\n{axis} axis -- {title} vs {name} (seed {ARTIFACT_SEED})")
+                print(_table(
+                    [[ARMS[a][1]] + [f"{g[g.seed == ARTIFACT_SEED][f'{axis}_{lv}_{m}'].item() * scale:.{digits}f}"
+                                     for lv in ARTIFACT_LEVELS]
+                     for a, g in groups.items()],
+                    ["Model"] + [str(lv) for lv in ARTIFACT_LEVELS],
+                ))
     print(f"\nPer-run CSV: {args.out_dir / 'wong_adrc_runs.csv'}")
 
 

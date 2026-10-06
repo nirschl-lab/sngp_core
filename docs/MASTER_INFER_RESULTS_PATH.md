@@ -1023,3 +1023,28 @@ for C in $T/*_wong/runs/${N}_*_s*/checkpoints/best.ckpt; do
 done
 uv run python scripts/metrics/wong_adrc_report.py --stamp $N --out-dir figures/wong_adrc
 ```
+
+Both artifact axes on Wong test, **seed 12345 only** (2026-10-05). `data=artifact_image_classifier`
+is Acevedo-shaped, so the Wong dataset, class count and class map are overridden and the leaf is
+`wong_artifact`. Results: "Artifact robustness" section of
+[results/WONG_ADRC_RESULTS.md](results/WONG_ADRC_RESULTS.md). The `count_1` (and some `count_2`)
+dirs that also exist for seeds 1-4 come from a stopped all-seeds run and are not reported.
+
+adrc_wong_final_artifact:
+```bash
+/data1/maheswararao/experiments/uncertainty-aware-ml/infer/<model>_wong/2026-10-05_10-05-27_<arm>_s12345/wong_artifact/{real_baseline,config/count_{1..5},procedural/severity_{1..5}}
+```
+
+Reproduce (count arms take ~12-30 min each and are CPU-bound; the run used 12 concurrent jobs at
+14 workers each, about 1 h 15 min in total):
+```bash
+# T and N as in the adrc_wong_final block above
+for C in $T/*_wong/runs/${N}_*_s12345/checkpoints/best.ckpt; do
+  run=$(basename $(dirname $(dirname $C))); model=$(basename $(dirname $(dirname $(dirname $(dirname $C)))))
+  DATASETS="" ARTIFACT_LEAF=wong_artifact scripts/inference/run_eval_suite_parallel.sh $C $model/$run 0 1 2 3 -- \
+      data.name=wong_artifact data.datamodule.dataset_name=nirschl-lab/wong_et_al_2022 data.datamodule.num_classes=4 \
+      '~data.datamodule.class_to_idx' '+data.datamodule.class_to_idx={caa:0,cored:1,diffuse:2,negative:3}' \
+      data.datamodule.num_workers=14
+done
+uv run python scripts/metrics/wong_adrc_report.py --stamp $N --out-dir figures/wong_adrc
+```

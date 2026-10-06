@@ -56,3 +56,72 @@ depend on the mean-field factor. Below 0.5 means the variance is inverted (lower
 | SNGP + BN-SN, c = 8 | **0.937 ± 0.031** | **0.822 ± 0.064** | 0.912 ± 0.016 | **0.870 ± 0.041** | **0.887 ± 0.102** | 0.356 ± 0.030 | **0.798 ± 0.030** |
 | SNGP + SpecReg, λ = 0.003 | 0.767 ± 0.075 | 0.751 ± 0.112 | 0.906 ± 0.020 | 0.823 ± 0.034 | 0.860 ± 0.054 | 0.420 ± 0.039 | 0.754 ± 0.036 |
 | GP head + Muon, wd = 0.01 | 0.719 ± 0.109 | 0.404 ± 0.153 | 0.710 ± 0.037 | 0.575 ± 0.032 | 0.493 ± 0.119 | 0.405 ± 0.110 | 0.551 ± 0.034 |
+
+## Artifact robustness — seed 12345 only
+
+Both artifact-simulation axes on the Wong test split (n = 14,010), each axis with the other
+switched off, for the seed-12345 checkpoint of every arm. These are single-seed values, so no ±.
+
+### Config artifact axis — Accuracy ↑ vs count
+
+Wong test, number of real artifact cutouts pasted per image (`artifact_balanced`, procedural off); 0 = real images.
+
+| Model | 0 | 1 | 2 | 3 | 4 | 5 |
+|---|---:|---:|---:|---:|---:|---:|
+| Baseline (linear head) | 0.9916 | **0.8343** | **0.7133** | **0.6039** | 0.5247 | **0.4655** |
+| SNGP, c = 1 | 0.9920 | 0.8264 | 0.6976 | 0.5894 | 0.5137 | 0.4419 |
+| SNGP + BN-SN, c = 8 | 0.9914 | 0.8268 | 0.7103 | 0.5977 | **0.5271** | 0.4582 |
+| SNGP + SpecReg, λ = 0.003 | 0.9917 | 0.8252 | 0.7023 | 0.5987 | 0.5217 | 0.4587 |
+| GP head + Muon, wd = 0.01 | **0.9946** | 0.8335 | 0.7090 | 0.5986 | 0.5205 | 0.4583 |
+
+### Config artifact axis — NLL (×10⁻²) ↓ vs count
+
+| Model | 0 | 1 | 2 | 3 | 4 | 5 |
+|---|---:|---:|---:|---:|---:|---:|
+| Baseline (linear head) | 3.02 | 87.41 | 152.88 | 219.61 | 266.81 | 301.74 |
+| SNGP, c = 1 | 2.94 | 83.96 | 148.49 | 210.91 | 254.78 | 296.73 |
+| SNGP + BN-SN, c = 8 | 2.90 | **80.03** | **139.31** | **200.92** | **242.16** | 284.72 |
+| SNGP + SpecReg, λ = 0.003 | 2.84 | 87.79 | 152.50 | 212.73 | 255.74 | 294.31 |
+| GP head + Muon, wd = 0.01 | **1.83** | 82.29 | 146.24 | 203.66 | 243.06 | **276.02** |
+
+### Config artifact axis — ECE (×10⁻²) ↓ vs count
+
+| Model | 0 | 1 | 2 | 3 | 4 | 5 |
+|---|---:|---:|---:|---:|---:|---:|
+| Baseline (linear head) | 0.15 | **12.42** | 22.02 | 31.27 | 38.52 | 43.03 |
+| SNGP, c = 1 | 0.20 | 12.85 | 22.98 | 32.16 | 38.32 | 45.01 |
+| SNGP + BN-SN, c = 8 | 0.20 | 12.73 | **21.60** | 31.39 | **37.23** | 43.76 |
+| SNGP + SpecReg, λ = 0.003 | **0.13** | 12.68 | 22.63 | **31.01** | 37.82 | 43.11 |
+| GP head + Muon, wd = 0.01 | 0.22 | 12.52 | 22.50 | 31.74 | 37.78 | **42.67** |
+
+### Procedural artifact axis — Accuracy ↑ vs severity
+
+Wong test, graded acquisition degradations (`procedural_ood`, `histo_c` ladder, cutouts off); 0 = real images.
+
+| Model | 0 | 1 | 2 | 3 | 4 | 5 |
+|---|---:|---:|---:|---:|---:|---:|
+| Baseline (linear head) | 0.9916 | 0.9880 | 0.9845 | 0.9734 | 0.9345 | 0.8745 |
+| SNGP, c = 1 | 0.9920 | 0.9870 | 0.9829 | 0.9647 | 0.9118 | 0.8450 |
+| SNGP + BN-SN, c = 8 | 0.9914 | 0.9887 | 0.9848 | 0.9692 | 0.9176 | 0.8545 |
+| SNGP + SpecReg, λ = 0.003 | 0.9917 | 0.9874 | 0.9808 | 0.9634 | 0.9178 | 0.8487 |
+| GP head + Muon, wd = 0.01 | **0.9946** | **0.9928** | **0.9916** | **0.9792** | **0.9494** | **0.8789** |
+
+### Procedural artifact axis — NLL (×10⁻²) ↓ vs severity
+
+| Model | 0 | 1 | 2 | 3 | 4 | 5 |
+|---|---:|---:|---:|---:|---:|---:|
+| Baseline (linear head) | 3.02 | 4.26 | 5.20 | 9.52 | 24.37 | 52.94 |
+| SNGP, c = 1 | 2.94 | 4.33 | 6.13 | 12.08 | 34.56 | 71.83 |
+| SNGP + BN-SN, c = 8 | 2.90 | 3.90 | 5.17 | 9.99 | 28.93 | 64.03 |
+| SNGP + SpecReg, λ = 0.003 | 2.84 | 3.97 | 6.47 | 12.27 | 31.92 | 66.17 |
+| GP head + Muon, wd = 0.01 | **1.83** | **2.63** | **3.20** | **6.99** | **20.43** | **50.33** |
+
+### Procedural artifact axis — ECE (×10⁻²) ↓ vs severity
+
+| Model | 0 | 1 | 2 | 3 | 4 | 5 |
+|---|---:|---:|---:|---:|---:|---:|
+| Baseline (linear head) | 0.15 | 0.22 | 0.40 | **0.92** | 3.51 | 8.30 |
+| SNGP, c = 1 | 0.20 | 0.36 | 0.60 | 1.50 | 5.59 | 11.29 |
+| SNGP + BN-SN, c = 8 | 0.20 | **0.13** | 0.44 | 0.94 | 4.50 | 9.81 |
+| SNGP + SpecReg, λ = 0.003 | **0.13** | 0.28 | 0.65 | 1.28 | 4.51 | 10.26 |
+| GP head + Muon, wd = 0.01 | 0.22 | 0.29 | **0.34** | 1.06 | **3.14** | **8.24** |
