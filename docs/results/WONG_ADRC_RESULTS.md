@@ -191,6 +191,30 @@ Same frozen 10-subsample protocol as above; the ± is across training seeds.
 | SNGP + SpecReg, λ = 0.003 | 0.827 ± 0.019 | 0.755 ± 0.023 | 0.791 ± 0.019 |
 | GP head + Muon, wd = 0.01 | 0.824 ± 0.019 | 0.747 ± 0.037 | 0.785 ± 0.025 |
 
+### Entropy AUPR ↑ — UC Davis test vs each other institution's test split
+
+The shifted institution is the positive class (as in `src/metrics/artifact_quantification.py`):
+AUPR is its average precision (0.5 = chance on the balanced 1,000 + 1,000 subsamples), FPR95 the
+share of UC Davis images flagged at the threshold that catches 95% of the shifted ones.
+
+| Model | UPitt | UTSouthwestern | Mean |
+|---|---:|---:|---:|
+| Baseline (linear head) | 0.821 ± 0.013 | 0.736 ± 0.026 | 0.778 ± 0.018 |
+| SNGP, c = 1 | 0.850 ± 0.019 | 0.774 ± 0.021 | 0.812 ± 0.019 |
+| SNGP + BN-SN, c = 8 | 0.853 ± 0.007 | 0.790 ± 0.009 | 0.822 ± 0.007 |
+| SNGP + SpecReg, λ = 0.003 | 0.848 ± 0.016 | 0.780 ± 0.018 | 0.814 ± 0.016 |
+| GP head + Muon, wd = 0.01 | **0.854 ± 0.013** | **0.791 ± 0.021** | **0.823 ± 0.013** |
+
+### Entropy FPR95 ↓ — UC Davis test vs each other institution's test split
+
+| Model | UPitt | UTSouthwestern | Mean |
+|---|---:|---:|---:|
+| Baseline (linear head) | 0.896 ± 0.020 | 0.921 ± 0.017 | 0.908 ± 0.016 |
+| SNGP, c = 1 | **0.718 ± 0.061** | 0.839 ± 0.054 | 0.779 ± 0.056 |
+| SNGP + BN-SN, c = 8 | 0.743 ± 0.037 | **0.787 ± 0.019** | **0.765 ± 0.024** |
+| SNGP + SpecReg, λ = 0.003 | 0.724 ± 0.037 | 0.813 ± 0.035 | 0.768 ± 0.029 |
+| GP head + Muon, wd = 0.01 | 0.794 ± 0.076 | 0.880 ± 0.091 | 0.837 ± 0.079 |
+
 ### GP-variance AUROC ↑ — UC Davis test vs each other institution's test split
 
 | Model | UPitt | UTSouthwestern | Mean |
@@ -199,3 +223,21 @@ Same frozen 10-subsample protocol as above; the ± is across training seeds.
 | SNGP + BN-SN, c = 8 | 0.497 ± 0.044 | 0.465 ± 0.058 | 0.481 ± 0.050 |
 | SNGP + SpecReg, λ = 0.003 | 0.512 ± 0.033 | 0.525 ± 0.026 | 0.518 ± 0.029 |
 | GP head + Muon, wd = 0.01 | 0.508 ± 0.033 | **0.564 ± 0.027** | **0.536 ± 0.030** |
+
+### GP-variance AUPR ↑ — UC Davis test vs each other institution's test split
+
+| Model | UPitt | UTSouthwestern | Mean |
+|---|---:|---:|---:|
+| SNGP, c = 1 | **0.522 ± 0.026** | 0.483 ± 0.027 | 0.502 ± 0.027 |
+| SNGP + BN-SN, c = 8 | 0.519 ± 0.038 | 0.477 ± 0.040 | 0.498 ± 0.038 |
+| SNGP + SpecReg, λ = 0.003 | 0.518 ± 0.019 | 0.514 ± 0.020 | 0.516 ± 0.018 |
+| GP head + Muon, wd = 0.01 | 0.512 ± 0.025 | **0.545 ± 0.025** | **0.529 ± 0.025** |
+
+### GP-variance FPR95 ↓ — UC Davis test vs each other institution's test split
+
+| Model | UPitt | UTSouthwestern | Mean |
+|---|---:|---:|---:|
+| SNGP, c = 1 | 0.946 ± 0.013 | 0.946 ± 0.015 | 0.946 ± 0.014 |
+| SNGP + BN-SN, c = 8 | 0.965 ± 0.016 | 0.966 ± 0.015 | 0.965 ± 0.015 |
+| SNGP + SpecReg, λ = 0.003 | 0.941 ± 0.031 | **0.925 ± 0.030** | **0.933 ± 0.028** |
+| GP head + Muon, wd = 0.01 | **0.933 ± 0.027** | 0.948 ± 0.031 | 0.940 ± 0.028 |

@@ -19,7 +19,9 @@ With --train-institution <id> the runs are the single-institution reruns
 (`<infer>/<model.name>_wong_<id>/<run>/wong_<inst>/` for each Wong institution, written with
 `data=wong data.datamodule.institution=<inst>`): the test split of the training institution is
 in-distribution, the other two institutions are scored both as labelled shifted test sets
-(accuracy / F1 / ECE / NLL / Brier) and as the OOD side of the AUROC.
+(accuracy / F1 / ECE / NLL / Brier) and as the OOD side of the AUROC, AUPR and FPR95 (shifted
+institution = positive class, as in src/metrics/artifact_quantification.py; FPR95 = share of the
+in-distribution test split flagged at the threshold that catches 95% of the shifted one).
 
     uv run python scripts/metrics/wong_adrc_report.py --stamp 2026-10-05_10-05-27 \\
         --out-dir figures/wong_adrc
@@ -30,15 +32,17 @@ import argparse
 import json
 import os
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Callable, Dict, List, Tuple
 
 import numpy as np
 import pandas as pd
 import rootutils
 import torch
+from sklearn.metrics import average_precision_score
 
 rootutils.setup_root(__file__, indicator=".project-root", pythonpath=True)
 
+from src.metrics.artifact_quantification import _fpr_at_tpr95  # noqa: E402
 from src.metrics.auc import AUROC, sample_rate, seeds  # noqa: E402
 from src.metrics.calculate_ood_metrics import load_ood_scores  # noqa: E402
 from src.metrics.calibration_variants import adaptive_ece, smooth_ece  # noqa: E402
@@ -70,11 +74,25 @@ ARTIFACT_SEED = 12345  # the artifact axes were run for this seed only
 INSTITUTIONS = {"ucdavis": "UC Davis", "upitt": "UPitt", "utsouthwestern": "UTSouthwestern"}
 
 
-def _subsampled_auroc(id_scores: pd.Series, ood_scores: pd.Series) -> float:
-    """Mean AUROC over the frozen subsample seeds, same as calculate_ood_metrics."""
+def _labelled(id_scores: pd.Series, ood_scores: pd.Series) -> Tuple[np.ndarray, np.ndarray]:
+    """(y_true, score) with OOD = 1; scores are uncertainties (higher = more OOD)."""
+    y = np.concatenate([np.zeros(len(id_scores)), np.ones(len(ood_scores))])
+    return y, np.concatenate([id_scores.to_numpy(), ood_scores.to_numpy()])
+
+
+# Wong-vs-OOD detection metrics: name -> fn(id uncertainties, ood uncertainties).
+DETECTION: Dict[str, Callable[[pd.Series, pd.Series], float]] = {
+    "auroc": lambda i, o: AUROC(i, o, score_is_uncertainty=True),
+    "aupr": lambda i, o: float(average_precision_score(*_labelled(i, o))),
+    "fpr95": lambda i, o: _fpr_at_tpr95(*_labelled(i, o)),
+}
+
+
+def _subsampled(metric: str, id_scores: pd.Series, ood_scores: pd.Series) -> float:
+    """Mean of a DETECTION metric over the frozen subsample seeds, same as calculate_ood_metrics."""
     n = min(sample_rate, len(id_scores), len(ood_scores))
     return float(np.mean([
-        AUROC(id_scores.sample(n, random_state=s), ood_scores.sample(n, random_state=s), score_is_uncertainty=True)
+        DETECTION[metric](id_scores.sample(n, random_state=s), ood_scores.sample(n, random_state=s))
         for s in seeds
     ]))
 
@@ -93,8 +111,9 @@ def _variance(predictions_csv: Path) -> pd.Series:
 
 
 def _run_row(run_dir: Path, arm: str, seed: int, indist: str, ood: List[str],
-             shifted: List[str]) -> Dict[str, float]:
-    """One run's metrics; `shifted` are labelled leaves also scored like `indist` (`<metric>_<leaf>`)."""
+             shifted: List[str], detection: List[str]) -> Dict[str, float]:
+    """One run's metrics; `shifted` are labelled leaves also scored like `indist` (`<metric>_<leaf>`),
+    `detection` the DETECTION metrics scored per OOD leaf (`<metric>_{ent,var}_<leaf>`)."""
     row: Dict[str, float] = {"arm": arm, "seed": seed}
     metrics = json.loads((run_dir / indist / "metrics.json").read_text())
     row.update({m: metrics[m] for m in ID_METRICS})
@@ -108,12 +127,13 @@ def _run_row(run_dir: Path, arm: str, seed: int, indist: str, ood: List[str],
     id_var = _variance(run_dir / indist / "predictions.csv") if is_gp else None
     for name in ood:
         _, ood_ent = load_ood_scores(run_dir / name / "predictions.csv")
-        row[f"auroc_ent_{name}"] = _subsampled_auroc(id_ent, ood_ent)
-        row[f"auroc_var_{name}"] = (
-            _subsampled_auroc(id_var, _variance(run_dir / name / "predictions.csv")) if is_gp else np.nan
-        )
-    for kind in ("ent", "var"):
-        row[f"auroc_{kind}_mean"] = float(np.mean([row[f"auroc_{kind}_{n}"] for n in ood]))
+        ood_var = _variance(run_dir / name / "predictions.csv") if is_gp else None
+        for metric in detection:
+            row[f"{metric}_ent_{name}"] = _subsampled(metric, id_ent, ood_ent)
+            row[f"{metric}_var_{name}"] = _subsampled(metric, id_var, ood_var) if is_gp else np.nan
+    for metric in detection:
+        for kind in ("ent", "var"):
+            row[f"{metric}_{kind}_mean"] = float(np.mean([row[f"{metric}_{kind}_{n}"] for n in ood]))
     artifact = run_dir / "wong_artifact"
     if seed == ARTIFACT_SEED and artifact.is_dir():
         for (axis, _), level, leaf in _artifact_arms():
@@ -157,18 +177,20 @@ def main() -> None:
     inst = args.train_institution
     if inst is None:
         dataset, indist, ood, shifted, labels = "wong", INDIST, OOD, [], {}
+        detection = ["auroc"]
         csv_name = "wong_adrc_runs.csv"
     else:
         dataset, indist = f"wong_{inst}", f"wong_{inst}"
         ood = shifted = [f"wong_{i}" for i in INSTITUTIONS if i != inst]
         labels = {f"wong_{i}": label for i, label in INSTITUTIONS.items()}
+        detection = list(DETECTION)
         csv_name = f"wong_adrc_{inst}_runs.csv"
 
     rows = []
     for arm, (model_name, _) in ARMS.items():
         for seed in SEEDS:
             run_dir = args.infer_root / f"{model_name}_{dataset}" / f"{args.stamp}_{arm}_s{seed}"
-            rows.append(_run_row(run_dir, arm, seed, indist, ood, shifted))
+            rows.append(_run_row(run_dir, arm, seed, indist, ood, shifted, detection))
     runs = pd.DataFrame(rows)
     args.out_dir.mkdir(parents=True, exist_ok=True)
     runs.to_csv(args.out_dir / csv_name, index=False)
@@ -184,13 +206,15 @@ def main() -> None:
         ))
     cols = ood + ["mean"]
     header = ["Model"] + [labels.get(c, c.capitalize()) if c != "mean" else "Mean" for c in cols]
-    for kind, title in (("ent", "Entropy AUROC"), ("var", "GP-variance AUROC")):
-        print(f"\n{title}")
-        print(_table(
-            [[ARMS[a][1]] + [_fmt(g[f"auroc_{kind}_{c}"], 1, 3) for c in cols]
-             for a, g in groups.items() if not g[f"auroc_{kind}_mean"].isna().all()],
-            header,
-        ))
+    titles = {"auroc": "AUROC ↑", "aupr": "AUPR ↑", "fpr95": "FPR95 ↓"}
+    for kind, score in (("ent", "Entropy"), ("var", "GP-variance")):
+        for metric in detection:
+            print(f"\n{score} {titles[metric]}")
+            print(_table(
+                [[ARMS[a][1]] + [_fmt(g[f"{metric}_{kind}_{c}"], 1, 3) for c in cols]
+                 for a, g in groups.items() if not g[f"{metric}_{kind}_mean"].isna().all()],
+                header,
+            ))
     if "config_0_acc" in runs:
         for axis, name in ARTIFACT_AXES:
             for m, scale, digits, title in (("acc", 1, 4, "Accuracy"), ("nll", 100, 2, "NLL (×10⁻²)"),
