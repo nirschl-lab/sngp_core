@@ -285,3 +285,8 @@ adrc_muon_wong_ucdavis (`experiment=sngp_muon_wong_sgd`, Muon wd=0.01, σ²=1; s
 /data1/maheswararao/experiments/uncertainty-aware-ml/train/sngp_muon_sgd_classifier_wong_ucdavis/runs/2026-10-05_21-33-51_muon_s3/checkpoints/best.ckpt
 /data1/maheswararao/experiments/uncertainty-aware-ml/train/sngp_muon_sgd_classifier_wong_ucdavis/runs/2026-10-05_21-33-51_muon_s4/checkpoints/best.ckpt
 ```
+
+adrc_muon2stage_wong_ucdavis (`experiment=sngp_muon_2stage_wong_sgd`, Muon wd=0.01 → SGD + Nesterov at epoch 120, σ²=1; seed 12345 only):
+```bash
+/data1/maheswararao/experiments/uncertainty-aware-ml/train/sngp_muon_2stage_classifier_wong_ucdavis/runs/2026-10-06_11-52-14_muon2stage_s12345/checkpoints/best.ckpt
+```

@@ -1078,3 +1078,29 @@ for C in $T/*_wong_ucdavis/runs/${N}_*_s*/checkpoints/best.ckpt; do
 done
 uv run python scripts/metrics/wong_adrc_report.py --stamp $N --train-institution ucdavis --out-dir figures/wong_adrc
 ```
+
+---
+
+Wong ADRC study, UC Davis-only Muon → SGD two-stage arm (2026-10-06), seed 12345 only: `best.ckpt`
+(π/8, no calibration) on the Wong test split filtered to each institution, as
+adrc_wong_ucdavis_final. Results: "UC Davis-trained, Muon → SGD two-stage" in
+[results/WONG_ADRC_RESULTS.md](results/WONG_ADRC_RESULTS.md).
+
+adrc_wong_ucdavis_muon2stage:
+```bash
+/data1/maheswararao/experiments/uncertainty-aware-ml/infer/sngp_muon_2stage_classifier_wong_ucdavis/2026-10-06_11-52-14_muon2stage_s12345/{wong_ucdavis,wong_upitt,wong_utsouthwestern}
+```
+
+Reproduce (3 jobs, one per GPU, about 3 min):
+```bash
+C=/data1/maheswararao/experiments/uncertainty-aware-ml/train/sngp_muon_2stage_classifier_wong_ucdavis/runs/2026-10-06_11-52-14_muon2stage_s12345/checkpoints/best.ckpt
+export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1
+for I in ucdavis upitt utsouthwestern; do
+  uv run src/inference/infer.py ckpt_path=$C fold=test data=wong data.datamodule.institution=$I \
+      data.datamodule.num_workers=12 \
+      infer.save.run_name=sngp_muon_2stage_classifier_wong_ucdavis/2026-10-06_11-52-14_muon2stage_s12345/wong_$I
+done
+uv run python scripts/metrics/wong_adrc_report.py --stamp 2026-10-05_21-33-51 2026-10-06_11-52-14 \
+    --seeds 12345 --train-institution ucdavis --out-dir figures/wong_adrc \
+    --csv-name wong_adrc_ucdavis_muon2stage_s12345_runs.csv
+```

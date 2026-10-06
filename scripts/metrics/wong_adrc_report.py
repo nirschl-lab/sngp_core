@@ -27,6 +27,10 @@ in-distribution test split flagged at the threshold that catches 95% of the shif
         --out-dir figures/wong_adrc
     uv run python scripts/metrics/wong_adrc_report.py --stamp 2026-10-05_21-33-51 \\
         --train-institution ucdavis --out-dir figures/wong_adrc
+
+Several --stamp values pool launches: each arm is read from the first stamp that has its runs, and
+an arm no stamp has is left out (so the opt-in muon2stage arm only appears when its launch is
+passed). --seeds narrows the seed list; a single seed is printed without a spread.
 """
 import argparse
 import json
@@ -55,6 +59,7 @@ ARMS: Dict[str, Tuple[str, str]] = {
     "bnsn": ("sngp_bnsn_sgd_classifier", "SNGP + BN-SN, c = 8"),
     "specreg": ("sngp_specreg_sgd_classifier", "SNGP + SpecReg, λ = 0.003"),
     "muon": ("sngp_muon_sgd_classifier", "GP head + Muon, wd = 0.01"),
+    "muon2stage": ("sngp_muon_2stage_classifier", "GP head + Muon → SGD at epoch 120"),
 }
 SEEDS = [12345, 1, 2, 3, 4]
 INDIST = "wong"
@@ -155,6 +160,8 @@ def _artifact_arms() -> List[Tuple[Tuple[str, str], int, str]]:
 
 def _fmt(values: pd.Series, scale: float, digits: int) -> str:
     v = values.to_numpy() * scale
+    if len(v) == 1:
+        return f"{v[0]:.{digits}f}"
     return f"{v.mean():.{digits}f} ± {v.std(ddof=1):.{digits}f}"
 
 
@@ -166,7 +173,10 @@ def _table(summary_rows: List[List[str]], header: List[str]) -> str:
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--stamp", required=True, help="Launcher stamp, e.g. 2026-10-05_10-05-27.")
+    ap.add_argument("--stamp", required=True, nargs="+",
+                    help="Launcher stamp(s), e.g. 2026-10-05_10-05-27 (see module docstring).")
+    ap.add_argument("--seeds", type=int, nargs="+", default=SEEDS)
+    ap.add_argument("--csv-name", default=None, help="Per-run CSV name (default: by dataset).")
     ap.add_argument("--infer-root", type=Path,
                     default=Path(os.environ.get("EXPERIMENTS_HOME", "")) / os.environ.get("PROJECT_NAME", "") / "infer")
     ap.add_argument("--out-dir", required=True, type=Path)
@@ -185,17 +195,24 @@ def main() -> None:
         labels = {f"wong_{i}": label for i, label in INSTITUTIONS.items()}
         detection = list(DETECTION)
         csv_name = f"wong_adrc_{inst}_runs.csv"
+    csv_name = args.csv_name or csv_name
 
     rows = []
     for arm, (model_name, _) in ARMS.items():
-        for seed in SEEDS:
-            run_dir = args.infer_root / f"{model_name}_{dataset}" / f"{args.stamp}_{arm}_s{seed}"
+        root = args.infer_root / f"{model_name}_{dataset}"
+        stamps = [st for st in args.stamp if (root / f"{st}_{arm}_s{args.seeds[0]}").is_dir()]
+        if not stamps:
+            continue
+        for seed in args.seeds:
+            run_dir = root / f"{stamps[0]}_{arm}_s{seed}"
+            if not run_dir.is_dir():
+                raise FileNotFoundError(f"{arm}: stamp {stamps[0]} has no seed {seed} ({run_dir})")
             rows.append(_run_row(run_dir, arm, seed, indist, ood, shifted, detection))
     runs = pd.DataFrame(rows)
     args.out_dir.mkdir(parents=True, exist_ok=True)
     runs.to_csv(args.out_dir / csv_name, index=False)
 
-    groups = {arm: runs[runs.arm == arm] for arm in ARMS}
+    groups = {arm: runs[runs.arm == arm] for arm in ARMS if (runs.arm == arm).any()}
     for leaf in [indist] + shifted:
         sfx = "" if leaf == indist else f"_{leaf}"
         print(f"\n{labels.get(leaf, leaf)} test")
