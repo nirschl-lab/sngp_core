@@ -290,3 +290,8 @@ adrc_muon2stage_wong_ucdavis (`experiment=sngp_muon_2stage_wong_sgd`, Muon wd=0.
 ```bash
 /data1/maheswararao/experiments/uncertainty-aware-ml/train/sngp_muon_2stage_classifier_wong_ucdavis/runs/2026-10-06_11-52-14_muon2stage_s12345/checkpoints/best.ckpt
 ```
+
+adrc_muon2stage_wsd_wong_ucdavis (`experiment=sngp_muon_2stage_wsd_wong_sgd`, as adrc_muon2stage_wong_ucdavis but a WSD inverse-proportional decay to 0.1× from epoch 120; seed 12345 only):
+```bash
+/data1/maheswararao/experiments/uncertainty-aware-ml/train/sngp_muon_2stage_classifier_wong_ucdavis/runs/2026-10-06_15-30-19_muon2stage_wsd_s12345/checkpoints/best.ckpt
+```
