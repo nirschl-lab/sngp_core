@@ -1048,3 +1048,33 @@ for C in $T/*_wong/runs/${N}_*_s12345/checkpoints/best.ckpt; do
 done
 uv run python scripts/metrics/wong_adrc_report.py --stamp $N --out-dir figures/wong_adrc
 ```
+
+---
+
+Wong ADRC study, UC Davis-only reruns (2026-10-06): 5 arms x seeds {12345, 1, 2, 3, 4}, each
+`best.ckpt` (GP arms at π/8, no calibration) on the Wong test split filtered to each institution
+(`data=wong data.datamodule.institution=<inst>`): UC Davis is in-distribution, UPitt and
+UTSouthwestern are institution shift. Results: "UC Davis-trained runs" in
+[results/WONG_ADRC_RESULTS.md](results/WONG_ADRC_RESULTS.md); checkpoints under
+`adrc_*_wong_ucdavis` in [MASTER_CHECKPONT_PATHS.md](MASTER_CHECKPONT_PATHS.md).
+
+adrc_wong_ucdavis_final (`<arm>`, `<model>` as in adrc_wong_final):
+```bash
+/data1/maheswararao/experiments/uncertainty-aware-ml/infer/<model>_wong_ucdavis/2026-10-05_21-33-51_<arm>_s{12345,1,2,3,4}/{wong_ucdavis,wong_upitt,wong_utsouthwestern}
+```
+
+Reproduce (75 jobs, 8 lanes = 2 per GPU, about 25 min; each job spends ~2 min in the HF
+institution filter, which decodes every split):
+```bash
+T=/data1/maheswararao/experiments/uncertainty-aware-ml/train
+N=2026-10-05_21-33-51
+export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1
+for C in $T/*_wong_ucdavis/runs/${N}_*_s*/checkpoints/best.ckpt; do
+  run=$(basename $(dirname $(dirname $C))); model=$(basename $(dirname $(dirname $(dirname $(dirname $C)))))
+  for I in ucdavis upitt utsouthwestern; do
+    uv run src/inference/infer.py ckpt_path=$C fold=test data=wong data.datamodule.institution=$I \
+        data.datamodule.num_workers=12 infer.save.run_name=$model/$run/wong_$I
+  done
+done
+uv run python scripts/metrics/wong_adrc_report.py --stamp $N --train-institution ucdavis --out-dir figures/wong_adrc
+```

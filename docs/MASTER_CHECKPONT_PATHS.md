@@ -231,3 +231,57 @@ adrc_muon_wong (`experiment=sngp_muon_wong_sgd`, Muon wd=0.01, σ²=1; seeds 123
 /data1/maheswararao/experiments/uncertainty-aware-ml/train/sngp_muon_sgd_classifier_wong/runs/2026-10-05_10-05-27_muon_s3/checkpoints/best.ckpt
 /data1/maheswararao/experiments/uncertainty-aware-ml/train/sngp_muon_sgd_classifier_wong/runs/2026-10-05_10-05-27_muon_s4/checkpoints/best.ckpt
 ```
+
+---
+
+**Wong ADRC study, UC Davis-only reruns (2026-10-05).** The same 5 arms, cells, seeds and recipe as
+the full-Wong final runs above, trained on `data.datamodule.institution=ucdavis` only (cells not
+re-tuned on UC Davis). Launcher `INSTITUTION=ucdavis NUM_WORKERS=4 scripts/tmux/adrc_wong_final.sh`,
+W&B group `adrc_final_ucdavis_2026-10-05_21-33-51`, tag `wong_ucdavis_adrc_5seed`. Results:
+"UC Davis-trained runs" in [results/WONG_ADRC_RESULTS.md](results/WONG_ADRC_RESULTS.md). The
+`2026-10-05_21-29-27_smoke_*` run dirs under the same parents are smoke tests, not results.
+
+adrc_baseline_wong_ucdavis (`experiment=baseline_wong_sgd`; seeds 12345, 1, 2, 3, 4):
+```bash
+/data1/maheswararao/experiments/uncertainty-aware-ml/train/baseline_sgd_classifier_wong_ucdavis/runs/2026-10-05_21-33-51_baseline_s12345/checkpoints/best.ckpt
+/data1/maheswararao/experiments/uncertainty-aware-ml/train/baseline_sgd_classifier_wong_ucdavis/runs/2026-10-05_21-33-51_baseline_s1/checkpoints/best.ckpt
+/data1/maheswararao/experiments/uncertainty-aware-ml/train/baseline_sgd_classifier_wong_ucdavis/runs/2026-10-05_21-33-51_baseline_s2/checkpoints/best.ckpt
+/data1/maheswararao/experiments/uncertainty-aware-ml/train/baseline_sgd_classifier_wong_ucdavis/runs/2026-10-05_21-33-51_baseline_s3/checkpoints/best.ckpt
+/data1/maheswararao/experiments/uncertainty-aware-ml/train/baseline_sgd_classifier_wong_ucdavis/runs/2026-10-05_21-33-51_baseline_s4/checkpoints/best.ckpt
+```
+
+adrc_sngp_wong_ucdavis (`experiment=sngp_wong_sgd`, c=1, σ²=1; seeds 12345, 1, 2, 3, 4):
+```bash
+/data1/maheswararao/experiments/uncertainty-aware-ml/train/sngp_sgd_classifier_wong_ucdavis/runs/2026-10-05_21-33-51_sngp_s12345/checkpoints/best.ckpt
+/data1/maheswararao/experiments/uncertainty-aware-ml/train/sngp_sgd_classifier_wong_ucdavis/runs/2026-10-05_21-33-51_sngp_s1/checkpoints/best.ckpt
+/data1/maheswararao/experiments/uncertainty-aware-ml/train/sngp_sgd_classifier_wong_ucdavis/runs/2026-10-05_21-33-51_sngp_s2/checkpoints/best.ckpt
+/data1/maheswararao/experiments/uncertainty-aware-ml/train/sngp_sgd_classifier_wong_ucdavis/runs/2026-10-05_21-33-51_sngp_s3/checkpoints/best.ckpt
+/data1/maheswararao/experiments/uncertainty-aware-ml/train/sngp_sgd_classifier_wong_ucdavis/runs/2026-10-05_21-33-51_sngp_s4/checkpoints/best.ckpt
+```
+
+adrc_bnsn_wong_ucdavis (`experiment=sngp_bnsn_wong_sgd`, c=8 (BN cap tied), σ²=1; seeds 12345, 1, 2, 3, 4):
+```bash
+/data1/maheswararao/experiments/uncertainty-aware-ml/train/sngp_bnsn_sgd_classifier_wong_ucdavis/runs/2026-10-05_21-33-51_bnsn_s12345/checkpoints/best.ckpt
+/data1/maheswararao/experiments/uncertainty-aware-ml/train/sngp_bnsn_sgd_classifier_wong_ucdavis/runs/2026-10-05_21-33-51_bnsn_s1/checkpoints/best.ckpt
+/data1/maheswararao/experiments/uncertainty-aware-ml/train/sngp_bnsn_sgd_classifier_wong_ucdavis/runs/2026-10-05_21-33-51_bnsn_s2/checkpoints/best.ckpt
+/data1/maheswararao/experiments/uncertainty-aware-ml/train/sngp_bnsn_sgd_classifier_wong_ucdavis/runs/2026-10-05_21-33-51_bnsn_s3/checkpoints/best.ckpt
+/data1/maheswararao/experiments/uncertainty-aware-ml/train/sngp_bnsn_sgd_classifier_wong_ucdavis/runs/2026-10-05_21-33-51_bnsn_s4/checkpoints/best.ckpt
+```
+
+adrc_specreg_wong_ucdavis (`experiment=sngp_specreg_wong_sgd`, λ=0.003, σ²=1; seeds 12345, 1, 2, 3, 4):
+```bash
+/data1/maheswararao/experiments/uncertainty-aware-ml/train/sngp_specreg_sgd_classifier_wong_ucdavis/runs/2026-10-05_21-33-51_specreg_s12345/checkpoints/best.ckpt
+/data1/maheswararao/experiments/uncertainty-aware-ml/train/sngp_specreg_sgd_classifier_wong_ucdavis/runs/2026-10-05_21-33-51_specreg_s1/checkpoints/best.ckpt
+/data1/maheswararao/experiments/uncertainty-aware-ml/train/sngp_specreg_sgd_classifier_wong_ucdavis/runs/2026-10-05_21-33-51_specreg_s2/checkpoints/best.ckpt
+/data1/maheswararao/experiments/uncertainty-aware-ml/train/sngp_specreg_sgd_classifier_wong_ucdavis/runs/2026-10-05_21-33-51_specreg_s3/checkpoints/best.ckpt
+/data1/maheswararao/experiments/uncertainty-aware-ml/train/sngp_specreg_sgd_classifier_wong_ucdavis/runs/2026-10-05_21-33-51_specreg_s4/checkpoints/best.ckpt
+```
+
+adrc_muon_wong_ucdavis (`experiment=sngp_muon_wong_sgd`, Muon wd=0.01, σ²=1; seeds 12345, 1, 2, 3, 4):
+```bash
+/data1/maheswararao/experiments/uncertainty-aware-ml/train/sngp_muon_sgd_classifier_wong_ucdavis/runs/2026-10-05_21-33-51_muon_s12345/checkpoints/best.ckpt
+/data1/maheswararao/experiments/uncertainty-aware-ml/train/sngp_muon_sgd_classifier_wong_ucdavis/runs/2026-10-05_21-33-51_muon_s1/checkpoints/best.ckpt
+/data1/maheswararao/experiments/uncertainty-aware-ml/train/sngp_muon_sgd_classifier_wong_ucdavis/runs/2026-10-05_21-33-51_muon_s2/checkpoints/best.ckpt
+/data1/maheswararao/experiments/uncertainty-aware-ml/train/sngp_muon_sgd_classifier_wong_ucdavis/runs/2026-10-05_21-33-51_muon_s3/checkpoints/best.ckpt
+/data1/maheswararao/experiments/uncertainty-aware-ml/train/sngp_muon_sgd_classifier_wong_ucdavis/runs/2026-10-05_21-33-51_muon_s4/checkpoints/best.ckpt
+```

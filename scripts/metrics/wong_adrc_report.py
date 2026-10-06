@@ -12,8 +12,16 @@ Wong test: real_baseline, config/count_{1..5}, procedural/severity_{1..5}), also
 ECE per level -- for seed 12345 only, so those tables carry no spread. Every other table: mean and
 sample std (ddof=1) across the 5 seeds.
 
+With --train-institution <id> the runs are the single-institution reruns
+(`<infer>/<model.name>_wong_<id>/<run>/wong_<inst>/` for each Wong institution, written with
+`data=wong data.datamodule.institution=<inst>`): the test split of the training institution is
+in-distribution, the other two institutions are scored both as labelled shifted test sets
+(accuracy / F1 / ECE / NLL / Brier) and as the OOD side of the AUROC.
+
     uv run python scripts/metrics/wong_adrc_report.py --stamp 2026-10-05_10-05-27 \\
         --out-dir figures/wong_adrc
+    uv run python scripts/metrics/wong_adrc_report.py --stamp 2026-10-05_21-33-51 \\
+        --train-institution ucdavis --out-dir figures/wong_adrc
 """
 import argparse
 import json
@@ -47,6 +55,8 @@ ARTIFACT_AXES = [("config", "count"), ("procedural", "severity")]
 ARTIFACT_LEVELS = [0, 1, 2, 3, 4, 5]
 ARTIFACT_METRICS = ["acc", "nll", "ece"]
 ARTIFACT_SEED = 12345  # the artifact axes were run for this seed only
+# Wong's HF `institution` ids, and their table labels.
+INSTITUTIONS = {"ucdavis": "UC Davis", "upitt": "UPitt", "utsouthwestern": "UTSouthwestern"}
 
 
 def _subsampled_auroc(id_scores: pd.Series, ood_scores: pd.Series) -> float:
@@ -62,21 +72,26 @@ def _variance(predictions_csv: Path) -> pd.Series:
     return pd.to_numeric(pd.read_csv(predictions_csv, usecols=["uncertainty"])["uncertainty"]).dropna()
 
 
-def _run_row(run_dir: Path, arm: str, seed: int) -> Dict[str, float]:
+def _run_row(run_dir: Path, arm: str, seed: int, indist: str, ood: List[str],
+             shifted: List[str]) -> Dict[str, float]:
+    """One run's metrics; `shifted` are labelled leaves also scored like `indist` (`<metric>_<leaf>`)."""
     row: Dict[str, float] = {"arm": arm, "seed": seed}
-    metrics = json.loads((run_dir / INDIST / "metrics.json").read_text())
+    metrics = json.loads((run_dir / indist / "metrics.json").read_text())
     row.update({m: metrics[m] for m in ID_METRICS})
-    _, id_ent = load_ood_scores(run_dir / INDIST / "predictions.csv")
+    for leaf in shifted:
+        metrics = json.loads((run_dir / leaf / "metrics.json").read_text())
+        row.update({f"{m}_{leaf}": metrics[m] for m in ID_METRICS})
+    _, id_ent = load_ood_scores(run_dir / indist / "predictions.csv")
     is_gp = arm != "baseline"
-    id_var = _variance(run_dir / INDIST / "predictions.csv") if is_gp else None
-    for name in OOD:
+    id_var = _variance(run_dir / indist / "predictions.csv") if is_gp else None
+    for name in ood:
         _, ood_ent = load_ood_scores(run_dir / name / "predictions.csv")
         row[f"auroc_ent_{name}"] = _subsampled_auroc(id_ent, ood_ent)
         row[f"auroc_var_{name}"] = (
             _subsampled_auroc(id_var, _variance(run_dir / name / "predictions.csv")) if is_gp else np.nan
         )
     for kind in ("ent", "var"):
-        row[f"auroc_{kind}_mean"] = float(np.mean([row[f"auroc_{kind}_{n}"] for n in OOD]))
+        row[f"auroc_{kind}_mean"] = float(np.mean([row[f"auroc_{kind}_{n}"] for n in ood]))
     artifact = run_dir / "wong_artifact"
     if seed == ARTIFACT_SEED and artifact.is_dir():
         for (axis, _), level, leaf in _artifact_arms():
@@ -113,26 +128,42 @@ def main() -> None:
     ap.add_argument("--infer-root", type=Path,
                     default=Path(os.environ.get("EXPERIMENTS_HOME", "")) / os.environ.get("PROJECT_NAME", "") / "infer")
     ap.add_argument("--out-dir", required=True, type=Path)
+    ap.add_argument("--train-institution", choices=list(INSTITUTIONS), default=None,
+                    help="Score the runs trained on this Wong institution only (see module docstring).")
     args = ap.parse_args()
+
+    inst = args.train_institution
+    if inst is None:
+        dataset, indist, ood, shifted, labels = "wong", INDIST, OOD, [], {}
+        csv_name = "wong_adrc_runs.csv"
+    else:
+        dataset, indist = f"wong_{inst}", f"wong_{inst}"
+        ood = shifted = [f"wong_{i}" for i in INSTITUTIONS if i != inst]
+        labels = {f"wong_{i}": label for i, label in INSTITUTIONS.items()}
+        csv_name = f"wong_adrc_{inst}_runs.csv"
 
     rows = []
     for arm, (model_name, _) in ARMS.items():
         for seed in SEEDS:
-            run_dir = args.infer_root / f"{model_name}_wong" / f"{args.stamp}_{arm}_s{seed}"
-            rows.append(_run_row(run_dir, arm, seed))
+            run_dir = args.infer_root / f"{model_name}_{dataset}" / f"{args.stamp}_{arm}_s{seed}"
+            rows.append(_run_row(run_dir, arm, seed, indist, ood, shifted))
     runs = pd.DataFrame(rows)
     args.out_dir.mkdir(parents=True, exist_ok=True)
-    runs.to_csv(args.out_dir / "wong_adrc_runs.csv", index=False)
+    runs.to_csv(args.out_dir / csv_name, index=False)
 
     groups = {arm: runs[runs.arm == arm] for arm in ARMS}
-    id_rows = [
-        [ARMS[a][1], _fmt(g.acc, 1, 4), _fmt(g.f1, 1, 4), _fmt(g.ece, 100, 2), _fmt(g.nll, 100, 2),
-         _fmt(g.brier, 100, 2)]
-        for a, g in groups.items()
-    ]
-    print(_table(id_rows, ["Model", "Accuracy ↑", "F1 ↑", "ECE (×10⁻²) ↓", "NLL (×10⁻²) ↓", "Brier (×10⁻²) ↓"]))
-    cols = OOD + ["mean"]
-    header = ["Model"] + [c.capitalize() if c != "mean" else "Mean" for c in cols]
+    for leaf in [indist] + shifted:
+        sfx = "" if leaf == indist else f"_{leaf}"
+        print(f"\n{labels.get(leaf, leaf)} test")
+        print(_table(
+            [[ARMS[a][1]] + [_fmt(g[f"{m}{sfx}"], scale, digits)
+                             for m, scale, digits in (("acc", 1, 4), ("f1", 1, 4), ("ece", 100, 2),
+                                                      ("nll", 100, 2), ("brier", 100, 2))]
+             for a, g in groups.items()],
+            ["Model", "Accuracy ↑", "F1 ↑", "ECE (×10⁻²) ↓", "NLL (×10⁻²) ↓", "Brier (×10⁻²) ↓"],
+        ))
+    cols = ood + ["mean"]
+    header = ["Model"] + [labels.get(c, c.capitalize()) if c != "mean" else "Mean" for c in cols]
     for kind, title in (("ent", "Entropy AUROC"), ("var", "GP-variance AUROC")):
         print(f"\n{title}")
         print(_table(
@@ -151,7 +182,7 @@ def main() -> None:
                      for a, g in groups.items()],
                     ["Model"] + [str(lv) for lv in ARTIFACT_LEVELS],
                 ))
-    print(f"\nPer-run CSV: {args.out_dir / 'wong_adrc_runs.csv'}")
+    print(f"\nPer-run CSV: {args.out_dir / csv_name}")
 
 
 if __name__ == "__main__":
