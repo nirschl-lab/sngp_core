@@ -179,6 +179,20 @@ class TestWarmupConstantCosineLR:
         assert all(b < a for a, b in zip(cosine, cosine[1:]))
         assert all(m == pytest.approx(a) for m, a in trace[120:])
 
+    def test_per_group_peak_continues_each_groups_lr(self):
+        """cosine_peak_lr=None: each group's cosine starts at its own plateau LR (no jump at the
+        switch) and all groups still land on cosine_final_lr in the last epoch."""
+        trace = _two_stage_trace(cosine_peak_lr=None)
+        assert all(t == pytest.approx((0.02, 0.01)) for t in trace[5:121])
+        assert trace[149] == pytest.approx((1e-4, 1e-4))
+        cos = (1 + math.cos(math.pi * 15 / 29)) / 2
+        assert trace[135] == pytest.approx(
+            (1e-4 + (0.02 - 1e-4) * cos, 1e-4 + (0.01 - 1e-4) * cos)
+        )
+        for group in (0, 1):
+            cosine = [t[group] for t in trace[120:]]
+            assert all(b < a for a, b in zip(cosine, cosine[1:]))
+
     @pytest.mark.parametrize(
         "kwargs, match",
         [
@@ -188,6 +202,7 @@ class TestWarmupConstantCosineLR:
             (dict(cosine_start_epoch=149), "cosine_start_epoch"),
             (dict(cosine_final_lr=0.0), "cosine_final_lr"),
             (dict(cosine_final_lr=0.1), "cosine_final_lr"),
+            (dict(cosine_peak_lr=None, cosine_final_lr=0.015), "cosine_final_lr"),
         ],
     )
     def test_bad_arguments_are_rejected(self, kwargs, match):

@@ -13,6 +13,8 @@
 #   muon2stage sngp_muon_2stage_wong_sgd  Muon wd = 0.01, sigma^2 = 1, aux SGD lr 0.01; warmup 5 ep,
 #              then Muon constant, then at epoch 120 everything on SGD + Nesterov, cosine 0.01 -> 1e-4
 #              (arXiv:2606.21514; the experiment's header has the full schedule)
+#   muon2stage_cont  the same, but at epoch 120 each group's cosine starts from its own stage-1 LR
+#              (hidden convs 0.02 -> 1e-4, stem / BN / GP head 0.01 -> 1e-4): no LR jump at the switch
 #
 # Differences from the sweep trials:
 #   * early stopping OFF and min_epochs = max_epochs = 150 -- the sweeps' patience-8 stop killed
@@ -141,6 +143,8 @@ for s in "${SEEDS[@]}"; do
   arm baseline   "${s}" baseline_sgd_classifier     experiment=baseline_wong_sgd seed="${s}" "${BASE_TAGS}"
   arm muon2stage "${s}" sngp_muon_2stage_classifier experiment=sngp_muon_2stage_wong_sgd seed="${s}" \
       "${GP[@]}" model.net.kernel_amplitude=1
+  arm muon2stage_cont "${s}" sngp_muon_2stage_classifier experiment=sngp_muon_2stage_wong_sgd seed="${s}" \
+      "${GP[@]}" model.net.kernel_amplitude=1 model.scheduler.cosine_peak_lr=null
 done
 wait
 

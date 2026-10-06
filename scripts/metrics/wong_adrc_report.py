@@ -29,7 +29,7 @@ in-distribution test split flagged at the threshold that catches 95% of the shif
         --train-institution ucdavis --out-dir figures/wong_adrc
 
 Several --stamp values pool launches: each arm is read from the first stamp that has its runs, and
-an arm no stamp has is left out (so the opt-in muon2stage arm only appears when its launch is
+an arm no stamp has is left out (so the opt-in muon2stage / muon2stage_cont arms only appear when its launch is
 passed). --seeds narrows the seed list; a single seed is printed without a spread.
 """
 import argparse
@@ -60,6 +60,7 @@ ARMS: Dict[str, Tuple[str, str]] = {
     "specreg": ("sngp_specreg_sgd_classifier", "SNGP + SpecReg, λ = 0.003"),
     "muon": ("sngp_muon_sgd_classifier", "GP head + Muon, wd = 0.01"),
     "muon2stage": ("sngp_muon_2stage_classifier", "GP head + Muon → SGD at epoch 120"),
+    "muon2stage_cont": ("sngp_muon_2stage_classifier", "GP head + Muon → SGD at epoch 120, per-group cosine"),
 }
 SEEDS = [12345, 1, 2, 3, 4]
 INDIST = "wong"

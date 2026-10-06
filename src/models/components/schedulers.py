@@ -11,7 +11,7 @@ LR alone (see its docstring). `warmup_constant_cosine_lr` is the schedule of the
 two-stage arm.
 """
 import math
-from typing import Sequence
+from typing import Optional, Sequence
 
 from torch.optim import Optimizer
 from torch.optim.lr_scheduler import LambdaLR, LinearLR, LRScheduler, MultiStepLR, SequentialLR
@@ -172,7 +172,7 @@ def warmup_constant_cosine_lr(
     warmup_epochs: int = 5,
     warmup_start_factor: float = 0.1,
     cosine_start_epoch: int = 120,
-    cosine_peak_lr: float = 0.01,
+    cosine_peak_lr: Optional[float] = 0.01,
     cosine_final_lr: float = 1e-4,
     eta_min: float = 0.0,
 ) -> LRScheduler:
@@ -186,6 +186,8 @@ def warmup_constant_cosine_lr(
         `cosine_peak_lr` to `cosine_final_lr` over `T_max - 1 - cosine_start_epoch` epochs,
         so the last epoch (`T_max - 1`) runs at exactly `cosine_final_lr`. After the switch
         all groups are SGD, and Muon's base LR no longer means anything for them.
+        `cosine_peak_lr=None` instead starts each group's cosine at that group's own base LR
+        (no LR jump at the switch for any group; all still land on `cosine_final_lr`).
     Hence one `LambdaLR` lambda per param group, each dividing by that group's base LR.
 
     :param T_max: Total training epochs.
@@ -193,7 +195,8 @@ def warmup_constant_cosine_lr(
     :param warmup_start_factor: Fraction of the base LR to start warmup from.
     :param cosine_start_epoch: 0-based epoch at which the cosine (and the optimizer switch)
         starts.
-    :param cosine_peak_lr: Absolute LR at `cosine_start_epoch`, for every group.
+    :param cosine_peak_lr: Absolute LR at `cosine_start_epoch`, for every group; `None` = each
+        group's own base LR.
     :param cosine_final_lr: Absolute LR in the last epoch, for every group.
     :param eta_min: Must be 0.0. Present only to absorb the model config's inherited
         CosineAnnealingLR key (see `warmup_piecewise_lr`); the floor is `cosine_final_lr`.
@@ -212,13 +215,16 @@ def warmup_constant_cosine_lr(
             f"({cosine_start_epoch}) < T_max - 1 ({T_max - 1}), so the cosine spans at "
             "least two epochs after the warmup."
         )
-    if not 0.0 < cosine_final_lr <= cosine_peak_lr:
+    base_lrs = [g.get("initial_lr", g["lr"]) for g in optimizer.param_groups]
+    peaks = base_lrs if cosine_peak_lr is None else [cosine_peak_lr] * len(base_lrs)
+    if not 0.0 < cosine_final_lr <= min(peaks):
         raise ValueError(
-            f"need 0 < cosine_final_lr ({cosine_final_lr}) <= cosine_peak_lr ({cosine_peak_lr})"
+            f"need 0 < cosine_final_lr ({cosine_final_lr}) <= cosine_peak_lr "
+            f"({cosine_peak_lr if cosine_peak_lr is not None else f'per-group {base_lrs}'})"
         )
     cosine_epochs = T_max - 1 - cosine_start_epoch
 
-    def make_factor(base_lr: float):
+    def make_factor(base_lr: float, peak_lr: float):
         def factor(epoch: int) -> float:
             if epoch < warmup_epochs:
                 return warmup_start_factor + (1.0 - warmup_start_factor) * epoch / warmup_epochs
@@ -226,9 +232,9 @@ def warmup_constant_cosine_lr(
                 return 1.0
             t = min(epoch - cosine_start_epoch, cosine_epochs) / cosine_epochs
             cos = (1 + math.cos(math.pi * t)) / 2
-            return (cosine_final_lr + (cosine_peak_lr - cosine_final_lr) * cos) / base_lr
+            return (cosine_final_lr + (peak_lr - cosine_final_lr) * cos) / base_lr
 
         return factor
 
-    lambdas = [make_factor(g.get("initial_lr", g["lr"])) for g in optimizer.param_groups]
+    lambdas = [make_factor(b, p) for b, p in zip(base_lrs, peaks)]
     return LambdaLR(optimizer, lr_lambda=lambdas)
