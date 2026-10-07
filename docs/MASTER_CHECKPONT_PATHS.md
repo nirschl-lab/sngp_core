@@ -333,3 +333,13 @@ adrc_muon2stage_sw135_wong (as adrc_muon2stage_wong with `model.scheduler.cosine
 ```bash
 /data1/maheswararao/experiments/uncertainty-aware-ml/train/sngp_muon_2stage_classifier_wong/runs/2026-10-07_11-13-57_muon2stage_sw135_s12345/checkpoints/best.ckpt
 ```
+
+adrc_muon_aux01_wong (as adrc_muon_wong with `model.optimizer.sgd_lr=0.01`: the aux SGD lr on the stem / BN / GP output layer at the two-stage arms' value, no switch; full Wong, seed 12345 only; arm `muon_aux01`; best.ckpt = epoch 126):
+```bash
+/data1/maheswararao/experiments/uncertainty-aware-ml/train/sngp_muon_sgd_classifier_wong/runs/2026-10-07_13-05-23_muon_aux01_s12345/checkpoints/best.ckpt
+```
+
+adrc_muon_aux01_wong_ucdavis (as adrc_muon_aux01_wong, trained on UC Davis only; seed 12345 only; best.ckpt = epoch 82, so last.ckpt is reported too):
+```bash
+/data1/maheswararao/experiments/uncertainty-aware-ml/train/sngp_muon_sgd_classifier_wong_ucdavis/runs/2026-10-07_13-05-26_muon_aux01_s12345/checkpoints/best.ckpt
+```

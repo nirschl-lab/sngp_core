@@ -20,6 +20,11 @@ epoch 135, seed 12345 only (2026-10-07, `ARMS=muon2stage_sw135`, W&B group
 `adrc_final_2026-10-07_11-13-57`); checkpoint `adrc_muon2stage_sw135_wong`, inference
 `adrc_wong_final_muon2stage_sw135`, per-run numbers
 `figures/wong_adrc/wong_adrc_muon2stage_sw135_s12345_runs.csv`.
+The `(aux 0.01)` Muon row is the plain Muon arm with only the aux SGD lr (stem / BN / GP output
+layer) at the two-stage arms' 0.01 and no switch, seed 12345 only (2026-10-07, `ARMS=muon_aux01`,
+W&B group `adrc_final_2026-10-07_13-05-23`); checkpoint `adrc_muon_aux01_wong`, inference
+`adrc_wong_final_muon_aux01`, per-run numbers `figures/wong_adrc/wong_adrc_muon_aux01_s12345{,_last}_runs.csv`
+(best.ckpt, last.ckpt). Its artifact axes were not run.
 
 | Arm | Experiment | Cell | best.ckpt epoch (s12345, s1–s4) | W&B (s12345, s1–s4) |
 |---|---|---|---|---|
@@ -30,6 +35,7 @@ epoch 135, seed 12345 only (2026-10-07, `ARMS=muon2stage_sw135`, W&B group
 | GP head + Muon | `sngp_muon_wong_sgd` | Muon wd = 0.01, no SN | 146, 141, 143, 146, 148 | `hdmg964v` `qxkd3rwn` `5kixgy2n` `ma6f545j` `9x9a7xp7` |
 | GP head + Muon → SGD at epoch 120, cosine (aux 0.01) | `sngp_muon_2stage_wong_sgd` | Muon wd = 0.01 → SGD at epoch 120, no SN | 149, 142, 145, 146, 148 | `fcrtjgun` `7mnbytky` `25j3jpfs` `e22h8269` `njhdpvv7` |
 | GP head + Muon → SGD at epoch 135, cosine (aux 0.01) | `sngp_muon_2stage_wong_sgd` | as above, switch at epoch 135 | 149 (s12345 only) | `5hw5q9me` |
+| GP head + Muon (aux 0.01) | `sngp_muon_wong_sgd` | Muon wd = 0.01, aux SGD lr 0.01, no SN | 126 (s12345 only) | `m3edt5m7` |
 
 Every cell is mean ± sample std over the 5 training seeds. ECE is 10 equal-width bins (from
 inference); aECE is 10 equal-mass bins and smECE is the smooth ECE of Błasiok & Nakkiran with the
@@ -47,6 +53,8 @@ At ~99% accuracy smECE sits at its bandwidth floor, so ID differences in it are 
 | GP head + Muon, wd = 0.01 (aux 0.04) | **0.9949 ± 0.0002** | **0.9949 ± 0.0002** | 0.22 ± 0.03 | 0.21 ± 0.03 | **0.34 ± 0.01** | **1.88 ± 0.08** | **0.83 ± 0.03** |
 | GP head + Muon → SGD at epoch 120, cosine (aux 0.01) | 0.9909 ± 0.0008 | 0.9909 ± 0.0008 | 0.30 ± 0.10 | 0.21 ± 0.07 | 0.52 ± 0.08 | 3.00 ± 0.11 | 1.43 ± 0.06 |
 | GP head + Muon → SGD at epoch 135, cosine (aux 0.01), seed 12345 only | 0.9910 | 0.9910 | 0.23 | 0.23 | 0.40 | 3.33 | 1.55 |
+| GP head + Muon, wd = 0.01 (aux 0.01), seed 12345 only | 0.9949 | 0.9949 | 0.17 | 0.10 | 0.31 | 1.93 | 0.86 |
+| GP head + Muon, wd = 0.01 (aux 0.01), seed 12345 only, last.ckpt | 0.9946 | 0.9946 | 0.16 | 0.15 | 0.32 | 1.79 | 0.79 |
 
 ### Entropy AUROC ↑ — Wong test vs each OOD test set
 
@@ -62,6 +70,8 @@ Each seed's AUROC is the mean over the 10 frozen 1,000-row subsamples of
 | GP head + Muon, wd = 0.01 (aux 0.04) | **0.975 ± 0.021** | **0.876 ± 0.083** | **0.956 ± 0.013** | **0.849 ± 0.031** | **0.960 ± 0.024** | **0.453 ± 0.060** | **0.845 ± 0.024** |
 | GP head + Muon → SGD at epoch 120, cosine (aux 0.01) | 0.891 ± 0.111 | 0.762 ± 0.096 | 0.855 ± 0.049 | 0.692 ± 0.060 | 0.868 ± 0.083 | 0.396 ± 0.026 | 0.744 ± 0.047 |
 | GP head + Muon → SGD at epoch 135, cosine (aux 0.01), seed 12345 only | 0.818 | 0.772 | 0.906 | 0.758 | 0.914 | 0.414 | 0.764 |
+| GP head + Muon, wd = 0.01 (aux 0.01), seed 12345 only | 0.979 | 0.870 | 0.966 | 0.894 | 0.977 | 0.445 | 0.855 |
+| GP head + Muon, wd = 0.01 (aux 0.01), seed 12345 only, last.ckpt | 0.992 | 0.934 | 0.976 | 0.904 | 0.980 | 0.426 | 0.869 |
 
 ### GP-variance AUROC ↑ — Wong test vs each OOD test set
 
@@ -76,6 +86,8 @@ depend on the mean-field factor. Below 0.5 means the variance is inverted (lower
 | GP head + Muon, wd = 0.01 (aux 0.04) | 0.719 ± 0.109 | 0.404 ± 0.153 | 0.710 ± 0.037 | 0.575 ± 0.032 | 0.493 ± 0.119 | 0.405 ± 0.110 | 0.551 ± 0.034 |
 | GP head + Muon → SGD at epoch 120, cosine (aux 0.01) | 0.894 ± 0.098 | **0.828 ± 0.120** | 0.854 ± 0.024 | 0.772 ± 0.041 | **0.904 ± 0.030** | **0.448 ± 0.070** | 0.783 ± 0.045 |
 | GP head + Muon → SGD at epoch 135, cosine (aux 0.01), seed 12345 only | 0.855 | 0.558 | 0.823 | 0.742 | 0.892 | 0.410 | 0.713 |
+| GP head + Muon, wd = 0.01 (aux 0.01), seed 12345 only | 0.900 | 0.750 | 0.827 | 0.817 | 0.937 | 0.388 | 0.770 |
+| GP head + Muon, wd = 0.01 (aux 0.01), seed 12345 only, last.ckpt | 0.941 | 0.765 | 0.770 | 0.825 | 0.922 | 0.309 | 0.755 |
 
 ## Artifact robustness — seed 12345 only
 
@@ -304,12 +316,14 @@ switches from epoch 136 (15-epoch SGD tail).
 | … WSD (aux 0.01) | Wen et al. 2025 (arXiv:2410.05192) Eq. 8, each group's peak → 0.1× | `vuqxbvw3` |
 | … WSD (aux 0.02) | as above | `pp4lo9i7` |
 | … WSD (aux 0.04) | as above | `dv8p47r6` |
+| Muon (aux 0.01), no switch | none: Muon + aux SGD 0.01 on the plain Muon arm's cosine; best.ckpt epoch 82 | `78kdh5jb` |
 
 Launch: `INSTITUTION=ucdavis ARMS=<arm> SEEDS=12345 scripts/tmux/adrc_wong_final.sh` with arm
-`muon2stage`, `muon2stage_sw135`, `muon2stage_wsd`, `muon2stage_wsd_aux02`, `muon2stage_wsd_aux04`. Checkpoints / inference:
+`muon2stage`, `muon2stage_sw135`, `muon2stage_wsd`, `muon2stage_wsd_aux02`, `muon2stage_wsd_aux04`, `muon_aux01`. Checkpoints / inference:
 `adrc_muon2stage*_wong_ucdavis` / `adrc_wong_ucdavis_muon2stage*`. Per-run numbers:
 `figures/wong_adrc/wong_adrc_ucdavis_muon2stage_wsd_aux02_s12345_runs.csv` and
-`figures/wong_adrc/wong_adrc_ucdavis_muon2stage_sw135_s12345_runs.csv`.
+`figures/wong_adrc/wong_adrc_ucdavis_muon2stage_sw135_s12345_runs.csv` and
+`figures/wong_adrc/wong_adrc_ucdavis_muon_aux01_s12345{,_last}_runs.csv` (best.ckpt, last.ckpt).
 
 ### In-distribution — UC Davis test (n = 5,135)
 
@@ -325,6 +339,8 @@ Launch: `INSTITUTION=ucdavis ARMS=<arm> SEEDS=12345 scripts/tmux/adrc_wong_final
 | GP head + Muon → SGD at epoch 120, WSD (aux 0.01) | 0.9914 | 0.9913 | 0.90 | 0.83 | 1.00 | 3.63 | 1.50 |
 | GP head + Muon → SGD at epoch 120, WSD (aux 0.02) | 0.9936 | 0.9934 | 0.55 | 0.47 | 0.63 | 2.72 | 1.07 |
 | GP head + Muon → SGD at epoch 120, WSD (aux 0.04) | 0.9924 | 0.9924 | 0.38 | 0.32 | 0.59 | 2.71 | 1.23 |
+| GP head + Muon, wd = 0.01 (aux 0.01) | 0.9914 | 0.9911 | 1.92 | 1.90 | 1.91 | 4.36 | 1.57 |
+| GP head + Muon, wd = 0.01 (aux 0.01), last.ckpt | 0.9944 | 0.9942 | 5.34 | 5.34 | 5.31 | 7.10 | 1.58 |
 
 ### Institution shift — UPitt test (n = 5,576)
 
@@ -335,11 +351,13 @@ Launch: `INSTITUTION=ucdavis ARMS=<arm> SEEDS=12345 scripts/tmux/adrc_wong_final
 | SNGP + BN-SN, c = 8 | 0.6917 | **0.6768** | 20.09 | 19.65 | 19.88 | 109.63 | 50.23 |
 | SNGP + SpecReg, λ = 0.003 | 0.6749 | 0.6644 | 21.71 | 21.61 | 21.94 | 119.13 | 52.66 |
 | GP head + Muon, wd = 0.01 (aux 0.04) | 0.6876 | 0.6594 | 23.14 | 22.74 | 23.06 | 133.11 | 52.36 |
-| GP head + Muon → SGD at epoch 120, cosine (aux 0.01) | 0.6840 | 0.6619 | **17.86** | **17.64** | **17.70** | **103.96** | **49.37** |
+| GP head + Muon → SGD at epoch 120, cosine (aux 0.01) | 0.6840 | 0.6619 | 17.86 | 17.64 | 17.70 | 103.96 | 49.37 |
 | GP head + Muon → SGD at epoch 135, cosine (aux 0.01) | 0.6698 | 0.6446 | 20.75 | 20.60 | 20.76 | 123.06 | 52.73 |
 | GP head + Muon → SGD at epoch 120, WSD (aux 0.01) | 0.6831 | 0.6619 | 19.39 | 18.79 | 18.86 | 106.06 | 50.01 |
 | GP head + Muon → SGD at epoch 120, WSD (aux 0.02) | **0.6942** | 0.6697 | 20.02 | 20.01 | 20.38 | 112.32 | 49.77 |
 | GP head + Muon → SGD at epoch 120, WSD (aux 0.04) | 0.6539 | 0.6360 | 26.50 | 26.11 | 27.08 | 143.95 | 57.30 |
+| GP head + Muon, wd = 0.01 (aux 0.01) | 0.6903 | 0.6584 | 15.00 | 14.73 | 14.75 | 94.54 | **46.26** |
+| GP head + Muon, wd = 0.01 (aux 0.01), last.ckpt | 0.6775 | 0.6535 | **12.73** | **12.38** | **11.14** | **91.68** | 47.94 |
 
 ### Institution shift — UTSouthwestern test (n = 3,299)
 
@@ -350,11 +368,13 @@ Launch: `INSTITUTION=ucdavis ARMS=<arm> SEEDS=12345 scripts/tmux/adrc_wong_final
 | SNGP + BN-SN, c = 8 | 0.7317 | 0.6936 | 19.51 | 19.33 | 19.83 | 104.46 | 45.54 |
 | SNGP + SpecReg, λ = 0.003 | 0.7472 | 0.7129 | 17.50 | 17.33 | 17.88 | 94.49 | 41.08 |
 | GP head + Muon, wd = 0.01 (aux 0.04) | 0.7533 | 0.6982 | 17.36 | 17.36 | 17.40 | 108.77 | 42.12 |
-| GP head + Muon → SGD at epoch 120, cosine (aux 0.01) | 0.7575 | 0.7158 | **14.96** | **14.42** | **14.61** | 83.01 | 38.85 |
+| GP head + Muon → SGD at epoch 120, cosine (aux 0.01) | 0.7575 | 0.7158 | 14.96 | 14.42 | 14.61 | 83.01 | 38.85 |
 | GP head + Muon → SGD at epoch 135, cosine (aux 0.01) | 0.7317 | 0.6845 | 17.28 | 16.86 | 17.38 | 97.98 | 43.47 |
-| GP head + Muon → SGD at epoch 120, WSD (aux 0.01) | **0.7630** | **0.7290** | 15.17 | 14.62 | 14.68 | **82.70** | 39.48 |
+| GP head + Muon → SGD at epoch 120, WSD (aux 0.01) | **0.7630** | **0.7290** | 15.17 | 14.62 | 14.68 | 82.70 | 39.48 |
 | GP head + Muon → SGD at epoch 120, WSD (aux 0.02) | 0.7593 | 0.7112 | 15.87 | 15.70 | 16.10 | 83.94 | **37.87** |
 | GP head + Muon → SGD at epoch 120, WSD (aux 0.04) | 0.7490 | 0.7075 | 18.68 | 18.59 | 19.78 | 104.74 | 42.48 |
+| GP head + Muon, wd = 0.01 (aux 0.01) | 0.7587 | 0.7120 | 12.68 | 12.70 | 11.53 | 77.49 | 38.94 |
+| GP head + Muon, wd = 0.01 (aux 0.01), last.ckpt | 0.7469 | 0.6875 | **11.60** | **11.31** | **10.81** | **75.25** | 39.83 |
 
 ### Entropy AUROC ↑ — UC Davis test vs each other institution's test split
 
@@ -370,6 +390,8 @@ Launch: `INSTITUTION=ucdavis ARMS=<arm> SEEDS=12345 scripts/tmux/adrc_wong_final
 | GP head + Muon → SGD at epoch 120, WSD (aux 0.01) | 0.813 | 0.747 | 0.780 |
 | GP head + Muon → SGD at epoch 120, WSD (aux 0.02) | 0.796 | 0.732 | 0.764 |
 | GP head + Muon → SGD at epoch 120, WSD (aux 0.04) | 0.766 | 0.684 | 0.725 |
+| GP head + Muon, wd = 0.01 (aux 0.01) | 0.819 | 0.756 | 0.787 |
+| GP head + Muon, wd = 0.01 (aux 0.01), last.ckpt | 0.810 | 0.704 | 0.757 |
 
 ### Entropy AUPR ↑ — UC Davis test vs each other institution's test split
 
@@ -385,6 +407,8 @@ Launch: `INSTITUTION=ucdavis ARMS=<arm> SEEDS=12345 scripts/tmux/adrc_wong_final
 | GP head + Muon → SGD at epoch 120, WSD (aux 0.01) | 0.837 | 0.769 | 0.803 |
 | GP head + Muon → SGD at epoch 120, WSD (aux 0.02) | 0.824 | 0.765 | 0.794 |
 | GP head + Muon → SGD at epoch 120, WSD (aux 0.04) | 0.793 | 0.727 | 0.760 |
+| GP head + Muon, wd = 0.01 (aux 0.01) | 0.840 | 0.786 | 0.813 |
+| GP head + Muon, wd = 0.01 (aux 0.01), last.ckpt | 0.841 | 0.743 | 0.792 |
 
 ### Entropy FPR95 ↓ — UC Davis test vs each other institution's test split
 
@@ -400,6 +424,8 @@ Launch: `INSTITUTION=ucdavis ARMS=<arm> SEEDS=12345 scripts/tmux/adrc_wong_final
 | GP head + Muon → SGD at epoch 120, WSD (aux 0.01) | 0.775 | 0.822 | 0.798 |
 | GP head + Muon → SGD at epoch 120, WSD (aux 0.02) | 0.808 | 0.857 | 0.832 |
 | GP head + Muon → SGD at epoch 120, WSD (aux 0.04) | 0.828 | 0.918 | 0.873 |
+| GP head + Muon, wd = 0.01 (aux 0.01) | 0.801 | 0.883 | 0.842 |
+| GP head + Muon, wd = 0.01 (aux 0.01), last.ckpt | 0.860 | 0.914 | 0.887 |
 
 ### GP-variance AUROC ↑ — UC Davis test vs each other institution's test split
 
@@ -414,6 +440,8 @@ Launch: `INSTITUTION=ucdavis ARMS=<arm> SEEDS=12345 scripts/tmux/adrc_wong_final
 | GP head + Muon → SGD at epoch 120, WSD (aux 0.01) | **0.620** | **0.644** | **0.632** |
 | GP head + Muon → SGD at epoch 120, WSD (aux 0.02) | 0.527 | 0.562 | 0.545 |
 | GP head + Muon → SGD at epoch 120, WSD (aux 0.04) | 0.443 | 0.486 | 0.464 |
+| GP head + Muon, wd = 0.01 (aux 0.01) | 0.578 | 0.625 | 0.602 |
+| GP head + Muon, wd = 0.01 (aux 0.01), last.ckpt | 0.509 | 0.520 | 0.514 |
 
 ### GP-variance AUPR ↑ — UC Davis test vs each other institution's test split
 
@@ -428,6 +456,8 @@ Launch: `INSTITUTION=ucdavis ARMS=<arm> SEEDS=12345 scripts/tmux/adrc_wong_final
 | GP head + Muon → SGD at epoch 120, WSD (aux 0.01) | **0.635** | **0.652** | **0.644** |
 | GP head + Muon → SGD at epoch 120, WSD (aux 0.02) | 0.549 | 0.548 | 0.549 |
 | GP head + Muon → SGD at epoch 120, WSD (aux 0.04) | 0.464 | 0.488 | 0.476 |
+| GP head + Muon, wd = 0.01 (aux 0.01) | 0.624 | 0.629 | 0.626 |
+| GP head + Muon, wd = 0.01 (aux 0.01), last.ckpt | 0.538 | 0.514 | 0.526 |
 
 ### GP-variance FPR95 ↓ — UC Davis test vs each other institution's test split
 
@@ -442,3 +472,5 @@ Launch: `INSTITUTION=ucdavis ARMS=<arm> SEEDS=12345 scripts/tmux/adrc_wong_final
 | GP head + Muon → SGD at epoch 120, WSD (aux 0.01) | 0.872 | **0.835** | **0.853** |
 | GP head + Muon → SGD at epoch 120, WSD (aux 0.02) | 0.919 | 0.931 | 0.925 |
 | GP head + Muon → SGD at epoch 120, WSD (aux 0.04) | 0.954 | 0.955 | 0.954 |
+| GP head + Muon, wd = 0.01 (aux 0.01) | 0.942 | 0.884 | 0.913 |
+| GP head + Muon, wd = 0.01 (aux 0.01), last.ckpt | 0.962 | 0.957 | 0.959 |
