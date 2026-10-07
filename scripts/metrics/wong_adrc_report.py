@@ -62,6 +62,7 @@ ARMS: Dict[str, Tuple[str, str]] = {
     "muon2stage": ("sngp_muon_2stage_classifier", "GP head + Muon → SGD at epoch 120"),
     "muon2stage_cont": ("sngp_muon_2stage_classifier", "GP head + Muon → SGD at epoch 120, per-group cosine"),
     "muon2stage_wsd": ("sngp_muon_2stage_classifier", "GP head + Muon → SGD at epoch 120, WSD inv-prop decay"),
+    "muon2stage_wsd_aux02": ("sngp_muon_2stage_classifier", "GP head + Muon → SGD at epoch 120, WSD, aux lr 0.02"),
     "muon2stage_wsd_aux04": ("sngp_muon_2stage_classifier", "GP head + Muon → SGD at epoch 120, WSD, aux lr 0.04"),
 }
 SEEDS = [12345, 1, 2, 3, 4]
