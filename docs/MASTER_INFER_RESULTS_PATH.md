@@ -1243,3 +1243,33 @@ uv run python scripts/metrics/wong_adrc_report.py --stamp 2026-10-05_21-33-51 20
     2026-10-07_11-13-59 --seeds 12345 --train-institution ucdavis --out-dir figures/wong_adrc \
     --csv-name wong_adrc_ucdavis_muon2stage_sw135_s12345_runs.csv
 ```
+
+---
+
+Wong ADRC study, full-Wong two-stage arm with the switch + cosine tail at epoch 135 (2026-10-07),
+seed 12345 only: `best.ckpt` (epoch 149, π/8, no calibration) on the Wong test split + 6 OOD sets
+and both artifact axes, as adrc_wong_final / adrc_wong_final_artifact. Results: the `… epoch 135`
+rows of the full-Wong tables in [results/WONG_ADRC_RESULTS.md](results/WONG_ADRC_RESULTS.md);
+checkpoint `adrc_muon2stage_sw135_wong` in [MASTER_CHECKPONT_PATHS.md](MASTER_CHECKPONT_PATHS.md).
+
+adrc_wong_final_muon2stage_sw135:
+```bash
+/data1/maheswararao/experiments/uncertainty-aware-ml/infer/sngp_muon_2stage_classifier_wong/2026-10-07_11-13-57_muon2stage_sw135_s12345/{wong,acevedo,jung,kather2016,kather2018,nirschl2018,tang}
+/data1/maheswararao/experiments/uncertainty-aware-ml/infer/sngp_muon_2stage_classifier_wong/2026-10-07_11-13-57_muon2stage_sw135_s12345/wong_artifact/{real_baseline,config/count_{1..5},procedural/severity_{1..5}}
+```
+
+Reproduce (one checkpoint; datasets on 2 GPU lanes alongside the artifact arms on 4, about 1 h):
+```bash
+C=/data1/maheswararao/experiments/uncertainty-aware-ml/train/sngp_muon_2stage_classifier_wong/runs/2026-10-07_11-13-57_muon2stage_sw135_s12345/checkpoints/best.ckpt
+P=sngp_muon_2stage_classifier_wong/2026-10-07_11-13-57_muon2stage_sw135_s12345
+export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1
+LEVELS="" scripts/inference/run_eval_suite_parallel.sh $C $P 0 1 -- data.datamodule.num_workers=12 &
+DATASETS="" ARTIFACT_LEAF=wong_artifact scripts/inference/run_eval_suite_parallel.sh $C $P 0 1 2 3 -- \
+    data.name=wong_artifact data.datamodule.dataset_name=nirschl-lab/wong_et_al_2022 data.datamodule.num_classes=4 \
+    '~data.datamodule.class_to_idx' '+data.datamodule.class_to_idx={caa:0,cored:1,diffuse:2,negative:3}' \
+    data.datamodule.num_workers=14 &
+wait
+uv run python scripts/metrics/wong_adrc_report.py --stamp 2026-10-05_10-05-27 2026-10-06_21-21-42 \
+    2026-10-07_11-13-57 --seeds 12345 --out-dir figures/wong_adrc \
+    --csv-name wong_adrc_muon2stage_sw135_s12345_runs.csv
+```

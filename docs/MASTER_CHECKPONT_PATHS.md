@@ -328,3 +328,8 @@ adrc_muon2stage_sw135_wong_ucdavis (as adrc_muon2stage_wong_ucdavis with `model.
 ```bash
 /data1/maheswararao/experiments/uncertainty-aware-ml/train/sngp_muon_2stage_classifier_wong_ucdavis/runs/2026-10-07_11-13-59_muon2stage_sw135_s12345/checkpoints/best.ckpt
 ```
+
+adrc_muon2stage_sw135_wong (as adrc_muon2stage_wong with `model.scheduler.cosine_start_epoch=135`: Muon → SGD switch + cosine 0.01 → 1e-4 at epoch 135; full Wong, seed 12345 only; arm `muon2stage_sw135`):
+```bash
+/data1/maheswararao/experiments/uncertainty-aware-ml/train/sngp_muon_2stage_classifier_wong/runs/2026-10-07_11-13-57_muon2stage_sw135_s12345/checkpoints/best.ckpt
+```
