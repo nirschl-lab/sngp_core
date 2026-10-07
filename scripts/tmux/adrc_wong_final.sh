@@ -21,6 +21,8 @@
 #   muon2stage_wsd_aux02  muon2stage_wsd with the aux SGD lr at 0.02 (= the Muon lr; 0.02 -> 0.002 in the decay)
 #   muon2stage_wsd_aux04  muon2stage_wsd with the aux SGD lr at 0.04 (the Muon arm's / SGD arms' value):
 #              vs the Muon arm only the switch + schedule differ (aux 0.04 -> 0.004 in the decay)
+#   muon_aux01  the muon arm with the aux SGD lr at 0.01 (the two-stage arms' value), no switch:
+#              vs the muon2stage arm only the switch + schedule differ
 #
 # Differences from the sweep trials:
 #   * early stopping OFF and min_epochs = max_epochs = 150 -- the sweeps' patience-8 stop killed
@@ -159,6 +161,8 @@ for s in "${SEEDS[@]}"; do
       seed="${s}" "${GP[@]}" model.net.kernel_amplitude=1 model.optimizer.sgd_lr=0.02
   arm muon2stage_wsd_aux04 "${s}" sngp_muon_2stage_classifier experiment=sngp_muon_2stage_wsd_wong_sgd \
       seed="${s}" "${GP[@]}" model.net.kernel_amplitude=1 model.optimizer.sgd_lr=0.04
+  arm muon_aux01 "${s}" sngp_muon_sgd_classifier    experiment=sngp_muon_wong_sgd seed="${s}" "${GP[@]}" \
+      model.optimizer.weight_decay=0.01 model.net.kernel_amplitude=1 model.optimizer.sgd_lr=0.01
 done
 wait
 

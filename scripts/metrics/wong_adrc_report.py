@@ -59,6 +59,7 @@ ARMS: Dict[str, Tuple[str, str]] = {
     "bnsn": ("sngp_bnsn_sgd_classifier", "SNGP + BN-SN, c = 8"),
     "specreg": ("sngp_specreg_sgd_classifier", "SNGP + SpecReg, λ = 0.003"),
     "muon": ("sngp_muon_sgd_classifier", "GP head + Muon, wd = 0.01 (aux 0.04)"),
+    "muon_aux01": ("sngp_muon_sgd_classifier", "GP head + Muon, wd = 0.01 (aux 0.01)"),
     "muon2stage": ("sngp_muon_2stage_classifier", "GP head + Muon → SGD at epoch 120, cosine (aux 0.01)"),
     "muon2stage_sw135": ("sngp_muon_2stage_classifier", "GP head + Muon → SGD at epoch 135, cosine (aux 0.01)"),
     "muon2stage_cont": ("sngp_muon_2stage_classifier", "GP head + Muon → SGD at epoch 120, per-group cosine (aux 0.01)"),
