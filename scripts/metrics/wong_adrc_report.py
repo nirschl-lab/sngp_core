@@ -31,6 +31,11 @@ in-distribution test split flagged at the threshold that catches 95% of the shif
 Several --stamp values pool launches: each arm is read from the first stamp that has its runs, and
 an arm no stamp has is left out (so the opt-in muon2stage* arms only appear when its launch is
 passed). --seeds narrows the seed list; a single seed is printed without a spread.
+
+The `ensemble` arm is 5 Deep Ensembles of 5 baseline members each, assembled with
+scripts/ensemble/assemble_ensemble_checkpoint.py into `<stamp>_ensemble_s<seed>`: its "seed" labels
+an ensemble, not a training seed, and its variance column is the member-logit variance (the
+`uncertainty` column with `uncertainty_kind=member_logit_variance`), scored like the GP variance.
 """
 import argparse
 import json
@@ -55,6 +60,7 @@ from src.metrics.io import load_predictions, probs_array  # noqa: E402
 # arm -> (model.name, table label). Order is the table order.
 ARMS: Dict[str, Tuple[str, str]] = {
     "baseline": ("baseline_sgd_classifier", "Baseline (linear head)"),
+    "ensemble": ("deep_ensemble_baseline_sgd_classifier", "Deep Ensemble (5 × baseline)"),
     "sngp": ("sngp_sgd_classifier", "SNGP, c = 1"),
     "bnsn": ("sngp_bnsn_sgd_classifier", "SNGP + BN-SN, c = 8"),
     "specreg": ("sngp_specreg_sgd_classifier", "SNGP + SpecReg, λ = 0.003"),
