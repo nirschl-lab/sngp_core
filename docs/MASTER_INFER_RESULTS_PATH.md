@@ -1109,8 +1109,8 @@ uv run python scripts/metrics/wong_adrc_report.py --stamp 2026-10-05_21-33-51 20
 
 Wong ADRC study, UC Davis-only Muon → SGD two-stage arm with a WSD inverse-proportional decay
 (2026-10-06), seed 12345 only: `best.ckpt` (π/8, no calibration) on the Wong test split filtered
-to each institution, as adrc_wong_ucdavis_muon2stage. Results: "UC Davis-trained, Muon → SGD
-two-stage with WSD decay" in [results/WONG_ADRC_RESULTS.md](results/WONG_ADRC_RESULTS.md).
+to each institution, as adrc_wong_ucdavis_muon2stage. Results: "UC Davis-trained, Muon → SGD two-stage" in
+[results/WONG_ADRC_RESULTS.md](results/WONG_ADRC_RESULTS.md).
 
 adrc_wong_ucdavis_muon2stage_wsd:
 ```bash
@@ -1137,8 +1137,8 @@ uv run python scripts/metrics/wong_adrc_report.py --stamp 2026-10-05_21-33-51 20
 ---
 
 Wong ADRC study, UC Davis-only two-stage WSD arm with the aux SGD lr at 0.04 (2026-10-06), seed
-12345 only: as adrc_wong_ucdavis_muon2stage_wsd. Results: "UC Davis-trained, two-stage WSD with the
-aux LR at 0.04" in [results/WONG_ADRC_RESULTS.md](results/WONG_ADRC_RESULTS.md).
+12345 only: as adrc_wong_ucdavis_muon2stage_wsd. Results: "UC Davis-trained, Muon → SGD two-stage" in
+[results/WONG_ADRC_RESULTS.md](results/WONG_ADRC_RESULTS.md).
 
 adrc_wong_ucdavis_muon2stage_wsd_aux04:
 ```bash
