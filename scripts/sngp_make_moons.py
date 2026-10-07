@@ -1,445 +1,277 @@
 #!/usr/bin/env python3
-# sngp_make_moons.py in tests/models/sngp
+"""sngp_make_moons.py in scripts.
 
-import itertools
-from pathlib import Path
+Two-moons SNGP demo, a PyTorch port of the TensorFlow tutorial "Uncertainty-aware Deep
+Learning with SNGP" (https://www.tensorflow.org/tutorials/understanding/sngp). It trains
+the tutorial's deterministic `DeepResNet` and its SNGP variant on the same data and plots
+each model's class-probability and predictive-uncertainty surfaces, with an OOD cloud
+overlaid. The SNGP head is this project's `RandomFeatureGaussianProcess`, configured to
+match the tutorial's `nlp_layers.RandomFeatureGaussianProcess` defaults.
+
+    uv run scripts/sngp_make_moons.py                  # writes figures/sngp_moons/*.png
+    uv run scripts/sngp_make_moons.py --seeds 0 1 42 --show
+"""
+
+import argparse
 import math
-import os
-from dataclasses import dataclass
-from typing import Optional, Tuple
+import sys
+from pathlib import Path
+from typing import Optional
 
-import lightning as L
 import matplotlib.colors as colors
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import torch.nn.functional as F
+from loguru import logger
 from sklearn.datasets import make_moons
 from torch import nn
-from torch.utils.data import DataLoader, Dataset
 
-from src.models.sngp.sngp_classification_layer import SNGP
+REPO_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO_ROOT))
 
-# torch.set_float32_matmul_precision('medium')
+from src.models.components.spectral_norm import bounded_spectral_norm  # noqa: E402
+from src.models.outputs import ModelOutput  # noqa: E402
+from src.models.sngp.sngp_classifier import RandomFeatureGaussianProcess  # noqa: E402
+from src.visualization.style import set_default_style  # noqa: E402
 
+DEFAULT_X_RANGE = (-3.5, 3.5)
+DEFAULT_Y_RANGE = (-2.5, 2.5)
+DEFAULT_CMAP = colors.ListedColormap(["#377eb8", "#ff7f00"])
+DEFAULT_NORM = colors.Normalize(vmin=0, vmax=1)
+DEFAULT_N_GRID = 100
 
-# Two moons dataclass
-@dataclass
-class MoonsConfig:
-    seed: int = 0
-    train_size_per_class: int = 1000
-    ood_size: int = 500
-    noise: float = 0.1
-    batch_size: int = 256
-    max_epochs: int = 150
-
-    # backbone dims
-    in_dim: int = 2
-    up_projection_dim: int = 128
-
-    # SNGP head
-    num_classes: int = 2
-    normalize_input: bool = True
-    covariance_momentum: float = 0.999
-    covariance_ridge: float = 1e-6
-    kernel_scale: Optional[float] = None
-    kernel_type: str = "gaussian"
-    output_bias_trainable: bool = False
-    random_features: int = 1024
-    scale_random_features: bool = (
-        True  # default false in main code, but True seems to perform better
-    )
-    trainable_kernel_scale: bool = True
-
-    # lightning
-    num_workers: int = 0
-    lr: float = 1e-3
-    weight_decay: float = 1e-5
-
-    # plotting
-    x_range: Tuple[float, float] = (-3.5, 3.5)
-    y_range: Tuple[float, float] = (-2.5, 2.5)
-    n_grid: int = 250
-    use_gp_uncertainty: bool = False  # True => use GP variance instead of p(1-p)
+# Tutorial hyperparameters.
+RESNET_CONFIG = dict(num_classes=2, num_layers=6, num_hidden=128, dropout_rate=0.1)
+SPEC_NORM_BOUND = 0.9
+LEARNING_RATE = 1e-4
+BATCH_SIZE = 128
+EPOCHS = 100
+# `nlp_layers.RandomFeatureGaussianProcess` defaults: num_inducing=1024, gp_kernel_scale=1
+# (l = 1), gp_cov_ridge_penalty=1, normalize_input=False, scale_random_features=True,
+# Gaussian random features, a fixed zero output bias, l2_regularization=1e-6.
+GP_CONFIG = dict(
+    rff_dim=1024,
+    length_scale=1.0,
+    ridge_penalty=1.0,
+    cov_momentum=-1.0,
+    normalize_input=False,
+    scale_random_features=True,
+    random_feature_type="rff",
+    output_bias=False,
+    likelihood="gaussian",
+    mean_field=True,
+    mean_field_factor=math.pi / 8,  # the tutorial's `lambda_param`
+)
+GP_L2_REGULARIZATION = 1e-6
 
 
-# define dataset
-class NumpyDataset(Dataset):
-    def __init__(self, X: np.ndarray, y: np.ndarray):
-        self.X = X.astype(np.float32)
-        self.y = y.astype(np.int64)
-
-    def __len__(self):
-        return len(self.y)
-
-    def __getitem__(self, i):
-        return self.X[i], self.y[i]
+# ------------- Data ------------- #
+def make_training_data(sample_size: int = 500) -> tuple[np.ndarray, np.ndarray]:
+    """Two moons, each pushed slightly apart."""
+    train_examples, train_labels = make_moons(n_samples=2 * sample_size, noise=0.1)
+    train_examples[train_labels == 0] += [-0.1, 0.2]
+    train_examples[train_labels == 1] += [0.1, -0.2]
+    return train_examples.astype(np.float32), train_labels
 
 
-class MoonsDataModule(L.LightningDataModule):
-    def __init__(self, cfg: MoonsConfig):
+def make_testing_data(
+    x_range=DEFAULT_X_RANGE, y_range=DEFAULT_Y_RANGE, n_grid: int = DEFAULT_N_GRID
+) -> np.ndarray:
+    """Mesh grid over the data space."""
+    x = np.linspace(x_range[0], x_range[1], n_grid)
+    y = np.linspace(y_range[0], y_range[1], n_grid)
+    xv, yv = np.meshgrid(x, y)
+    return np.stack([xv.flatten(), yv.flatten()], axis=-1).astype(np.float32)
+
+
+def make_ood_data(sample_size: int = 500, means=(2.5, -1.75), vars=(0.01, 0.01)) -> np.ndarray:
+    return np.random.multivariate_normal(means, cov=np.diag(vars), size=sample_size).astype(np.float32)
+
+
+# ------------- Models ------------- #
+def _keras_dense(in_dim: int, out_dim: int) -> nn.Linear:
+    """`nn.Linear` with Keras `Dense` initialization (glorot-uniform kernel, zero bias)."""
+    layer = nn.Linear(in_dim, out_dim)
+    nn.init.xavier_uniform_(layer.weight)
+    nn.init.zeros_(layer.bias)
+    return layer
+
+
+class DeepResNet(nn.Module):
+    """Frozen input projection, residual ReLU dense layers with dropout, dense output."""
+
+    def __init__(
+        self, num_classes: int, num_layers: int = 3, num_hidden: int = 128, dropout_rate: float = 0.1, in_dim: int = 2
+    ):
         super().__init__()
-        self.cfg = cfg
+        self.num_hidden = num_hidden
+        # The input layer is not trainable: it only lifts the 2-D input to num_hidden.
+        self.input_layer = _keras_dense(in_dim, num_hidden).requires_grad_(False)
+        self.dense_layers = nn.ModuleList([self.make_dense_layer() for _ in range(num_layers)])
+        self.dropout = nn.Dropout(dropout_rate)
+        self.classifier = self.make_output_layer(num_classes)
 
-    def setup(self, stage=None):
-        np.random.seed(self.cfg.seed)
-        torch.manual_seed(self.cfg.seed)
+    def make_dense_layer(self) -> nn.Module:
+        return _keras_dense(self.num_hidden, self.num_hidden)
 
-        X, y = make_moons(n_samples=2 * self.cfg.train_size_per_class, noise=cfg.noise)
-        X[y == 0] += [-0.1, 0.2]
-        X[y == 1] += [0.1, -0.2]
-        self.train_ds = NumpyDataset(X, y)
+    def make_output_layer(self, num_classes: int) -> nn.Module:
+        return _keras_dense(self.num_hidden, num_classes)
 
-        x = np.linspace(*self.cfg.x_range, self.cfg.n_grid)
-        yv = np.linspace(*self.cfg.y_range, self.cfg.n_grid)
-        xv, yv = np.meshgrid(x, yv)
-        self.test_grid = np.stack([xv.flatten(), yv.flatten()], axis=-1).astype(
-            np.float32
-        )
+    def features(self, x: torch.Tensor) -> torch.Tensor:
+        hidden = self.input_layer(x)
+        for layer in self.dense_layers:
+            hidden = hidden + self.dropout(F.relu(layer(hidden)))
+        return hidden
 
-        # simple ood cloud for overlay (optional, not used by loaders)
-        self.ood = np.random.multivariate_normal(
-            mean=(2.5, -1.75), cov=np.diag((0.01, 0.01)), size=cfg.ood_size
-        ).astype(np.float32)
-
-        self.train_points = X.astype(np.float32)
-        self.train_labels = self.train_ds.y
-
-    def train_dataloader(self):
-        return DataLoader(
-            self.train_ds,
-            batch_size=self.cfg.batch_size,
-            shuffle=True,
-            num_workers=self.cfg.num_workers,
-            drop_last=False,
-            pin_memory=True,
-        )
+    def forward(self, x: torch.Tensor) -> ModelOutput:
+        return ModelOutput(logits=self.classifier(self.features(x)))
 
 
-# ------------- Model ------------- #
-class TinyBackbone(nn.Module):
-    """A super-light “feature lift”: x -> R^H via a fixed linear stem + two residual MLP layers.
+class DeepResNetSNGP(DeepResNet):
+    """`DeepResNet` with spectral-normalized hidden layers and an RFF-GP output layer."""
 
-    This keeps the example minimal while giving the SNGP head a richer representation.
-    """
+    def __init__(self, spec_norm_bound: float = SPEC_NORM_BOUND, **kwargs):
+        self.spec_norm_bound = spec_norm_bound
+        super().__init__(**kwargs)
 
-    def __init__(self, in_dim: int, hidden: int):
-        super().__init__()
-        self.input_W = nn.Parameter(torch.randn(in_dim, hidden), requires_grad=False)
-        self.input_b = nn.Parameter(torch.randn(hidden), requires_grad=False)
-        self.fc1 = nn.Linear(hidden, hidden)
-        self.fc2 = nn.Linear(hidden, hidden)
-        self.act = nn.ReLU(inplace=True)
+    def make_dense_layer(self) -> nn.Module:
+        return bounded_spectral_norm(super().make_dense_layer(), bound=self.spec_norm_bound)
 
-    def forward(self, x):
-        x = x @ self.input_W + self.input_b
-        z = self.act(self.fc1(x))
-        x = x + z
-        z = self.act(self.fc2(x))
-        x = x + z
-        return x
+    def make_output_layer(self, num_classes: int) -> nn.Module:
+        return RandomFeatureGaussianProcess(in_dim=self.num_hidden, num_classes=num_classes, **GP_CONFIG)
+
+    def reset_precision(self) -> None:
+        self.classifier.reset_precision()
+
+    def forward(self, x: torch.Tensor) -> ModelOutput:
+        # Train mode: raw logits, precision accumulated. Eval mode: mean-field logits.
+        logits, raw_logits, variance = self.classifier(self.features(x))
+        return ModelOutput(logits=logits, raw_logits=raw_logits, variance=variance)
 
 
-class LitSNGP(L.LightningModule):
-    def __init__(self, cfg: MoonsConfig):
-        super().__init__()
-        self.save_hyperparameters()
-        self.cfg = cfg
+# ------------- Train / predict ------------- #
+def fit(model: nn.Module, x: np.ndarray, y: np.ndarray, epochs: int = EPOCHS, batch_size: int = BATCH_SIZE) -> None:
+    optimizer = torch.optim.Adam([p for p in model.parameters() if p.requires_grad], lr=LEARNING_RATE)
+    x_t, y_t = torch.from_numpy(x), torch.from_numpy(y).long()
+    is_sngp = isinstance(model, DeepResNetSNGP)
 
-        self.backbone = TinyBackbone(cfg.in_dim, cfg.up_projection_dim)
-
-        # - normalize_input=True => RFGP will default ℓ=1.0 (good for normalized features)
-        # - scale_random_features=True => apply √(2/m) scaling once (inside GP layer)
-        self.sngp = SNGP(
-            in_features=cfg.up_projection_dim,
-            num_classes=cfg.num_classes,
-            reduction_dim=cfg.up_projection_dim,  # SNGP internally will reduce again; keeping dims aligned
-            classif_dropout=0.1,
-            normalize_input=cfg.normalize_input,
-            scale_random_features=cfg.scale_random_features,
-            covariance_momentum=cfg.covariance_momentum,
-            covariance_ridge_penalty=cfg.covariance_ridge,
-            # forward to underlying RFGP
-            kernel_type=cfg.kernel_type,
-            kernel_scale=cfg.kernel_scale,
-            random_features=cfg.random_features,
-            trainable_kernel_scale=cfg.trainable_kernel_scale,
-        )
-        #
-        # if calibration_cfg is None:
-        #     calibration_cfg = CalibrationLossConfig() # default: all weights 0.0 (no calibration)
-
-        self.cal_cfg = calibration_cfg
-
-        self.criterion = nn.CrossEntropyLoss(reduction="mean")
-
-    def forward(self, x):
-        x = self.backbone(x)
-        # SNGP returns a dict with 'logits', 'cov', and mean-field applied in eval mode
-        return self.sngp(x)
-
-    def configure_optimizers(self):
-        return torch.optim.Adam(
-            self.parameters(), lr=self.cfg.lr, weight_decay=self.cfg.weight_decay
-        )
-
-    def on_train_epoch_start(self):
-        # Recommended when using moving-average precision accumulation:
-        # start each epoch fresh (mirrors TF usage commonly seen in SNGP examples)
-        try:
-            self.sngp.gp_classifier.reset_precision()
-        except Exception:
-            # in case your SNGP wrapper names differ:
-            pass
-
-    def training_step(self, batch, _):
-        x, y = batch
-        out = self(x)
-        logits = out["logits"]
-        ce = self.criterion(logits, y)
-
-        # Apply calibration losses if enabled
-        cal_penalty = logits.new_tensor(0.0)
-        if self.training and self.cal_cfg is not None:
-            cal_penalty, _cal_terms = calibration_losses(logits, y, self.cal_cfg)
-
-        # Total combined loss
-        loss = ce + cal_penalty
-
-        self.log("train/loss", loss, prog_bar=True, on_epoch=True, on_step=False)
-        self.log("train/ce", ce, prog_bar=False, on_epoch=True, on_step=False)
-        if cal_penalty.item() > 0.0:
-            self.log(
-                "train/cal_penalty", cal_penalty, prog_bar=False, on_epoch=True, on_step=False
-            )
-
-        return loss
-
-    # ---- helpers for evaluation/plotting ----
-    @torch.no_grad()
-    def predict_grid(self, XY: np.ndarray, batch_size: int = 256):
-        self.eval()
-        device = self.device
-        probs, unc, cov_diags = [], [], []
-        N = XY.shape[0]
-
-        for i in range(0, N, batch_size):
-            xb = torch.from_numpy(XY[i : i + batch_size]).to(device)
-            out = self(xb)
-            logits = out["logits"]
-            cov = out["cov"]  # predictive covariance [B, B]
-
-            # Class probability (softmax)
-            p = F.softmax(logits, dim=-1)[..., 0].detach().cpu().numpy()
-            probs.append(p)
-
-            # --- Uncertainty choice ---
-            if self.cfg.use_gp_uncertainty:
-                # GP epistemic uncertainty from predictive covariance
-                cov_diag = torch.diagonal(cov).detach().cpu().numpy()
-                u = cov_diag
-            else:
-                # Heuristic: aleatoric-like uncertainty from p(1-p)
-                u = p * (1.0 - p)
-
-            unc.append(u)
-
-            # store for sanity checks
-            cov_diag = torch.diagonal(cov).detach().cpu().numpy()
-            cov_diags.append(cov_diag)
-
-        probs = np.concatenate(probs, axis=0)
-        unc = np.concatenate(unc, axis=0)
-        cov_diags = np.concatenate(cov_diags, axis=0)
-
-        mean_diag = cov_diags.mean()
-        print(f"[Sanity Check] Mean diag(cov) across test grid: {mean_diag:.4f}")
-
-        if self.cfg.use_gp_uncertainty:
-            print("[Info] Using GP predictive variance as uncertainty surface.")
-            # Normalize GP variance for better visualization scale
-            unc = unc / (unc.max() + 1e-12)
-        else:
-            print("[Info] Using heuristic p(1-p) uncertainty surface.")
-
-        return probs, unc
+    model.train()
+    for epoch in range(epochs):
+        # The tutorial's `ResetCovarianceCallback`: the precision matrix is accumulated
+        # over one epoch, so reset it at the start of each one. The last epoch's counts.
+        if is_sngp:
+            model.reset_precision()
+        perm = torch.randperm(len(x_t))
+        total_loss, correct = 0.0, 0
+        for i in range(0, len(x_t), batch_size):
+            idx = perm[i : i + batch_size]
+            logits = model(x_t[idx]).logits
+            loss = F.cross_entropy(logits, y_t[idx])
+            if is_sngp:
+                loss = loss + GP_L2_REGULARIZATION * model.classifier.classifier.weight.pow(2).sum()
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+            total_loss += loss.item() * len(idx)
+            correct += (logits.argmax(-1) == y_t[idx]).sum().item()
+        if (epoch + 1) % 10 == 0 or epoch == 0:
+            logger.info(f"epoch {epoch + 1:3d}/{epochs}  loss {total_loss / len(x_t):.4f}  acc {correct / len(x_t):.4f}")
 
 
-# train + eval
-def main(cfg: MoonsConfig = None, calibration_cfg: Optional[CalibrationLossConfig]=None):
-    if cfg is None:
-        cfg = MoonsConfig()
-
-    L.seed_everything(cfg.seed, workers=True)
-
-    dm = MoonsDataModule(cfg)
-    dm.setup()
-
-    model = LitSNGP(cfg, calibration_cfg=calibration_cfg)
-    trainer = L.Trainer(
-        max_epochs=cfg.max_epochs,
-        log_every_n_steps=10,
-        enable_checkpointing=False,
-        enable_model_summary=False,
-        gradient_clip_val=None,
-        accelerator="auto",
-        devices="auto",
-    )
-    trainer.fit(model, train_dataloaders=dm.train_dataloader())
-
-    # ---- Evaluate on grid and plot surfaces ----
-    probs, unc = model.predict_grid(dm.test_grid, batch_size=512)
-
-    # Quick single-batch sanity check
-    with torch.no_grad():
-        xb = torch.from_numpy(dm.test_grid[:256]).to(model.device)
-        out = model(xb)
-        mean_diag = torch.diagonal(out["cov"]).mean().item()
-        print(f"[Sanity Check] Mean diag(cov) for 1 eval batch: {mean_diag:.4f}")
-
-    # title text
-    title_text = f"(D={cfg.random_features}, ℓ={'auto' if cfg.kernel_scale is None else cfg.kernel_scale})"
-    plot_surfaces(cfg, dm, probs=probs, unc=unc, title_suffix=title_text)
-    title_text = f"(D={cfg.random_features}, ℓ={'auto' if kscale_str is None else cfg.kernel_scale})"
-    plot_surfaces(cfg, dm, probs=probs, unc=unc, title_suffix=f"{kscale_str} {title_text}", rescale="none")
+@torch.no_grad()
+def predict_class0_probs(model: nn.Module, x: np.ndarray) -> np.ndarray:
+    """p(class 0) on `x`; SNGP's logits are already mean-field adjusted in eval mode."""
+    model.eval()
+    logits = model(torch.from_numpy(x)).logits
+    return F.softmax(logits, dim=-1)[:, 0].numpy()
 
 
 # ------------- Plotting ------------- #
-def plot_surfaces(
-    cfg: MoonsConfig,
-    dm: MoonsDataModule,
-    probs: np.ndarray,
-    unc: np.ndarray,
-    title_suffix="",
-    **kwargs,
-):
-    rescale = kwargs.get("rescale", "auto")
+def plot_uncertainty_surface(test_uncertainty, ax, train_examples, train_labels, ood_examples, cmap="viridis"):
+    # Normalize uncertainty for better visualization.
+    test_uncertainty = test_uncertainty / np.max(test_uncertainty)
 
-    surface_cmap = kwargs.get("surface_cmap", "viridis")
+    ax.set_ylim(DEFAULT_Y_RANGE)
+    ax.set_xlim(DEFAULT_X_RANGE)
+    ax.grid(False)
 
-    def _show_field(ax, field, title, show_data=True, rescale="max"):
-        if rescale.lower() == "max":
-            field = field / (field.max() + 1e-12)
-            vmin = kwargs.get("vmin", 0.0)
-            vmax = kwargs.get("vmax", 1.0)
-            title_suffix=" (max rescaled)"
-        elif rescale.lower() in {"log", "logarithmic"}:
-            title_suffix=" (log scale)"
-            field = np.log1p(field - field.min() + 1e-12)
-            vmin = kwargs.get("vmin", 0.0)
-            vmax = kwargs.get("vmax", field.max())
-        elif rescale.lower() in {"none"}:
-            title_suffix=" (no rescaling)"
-            vmin = kwargs.get("vmin", field.min())
-            vmax = kwargs.get("vmax", field.max())
-        elif rescale.lower() == "auto":
-            # linear rescale [-1, 1]
-            title_suffix=" (auto rescaled)"
-            field_min = field.min()
-            field_max = field.max()
-            field = 2.0 * (field - field_min) / (field_max - field_min + 1e-12) - 1.0
-            vmin = -1.0
-            vmax = 1.0
-        else:
-            raise ValueError(f"Unknown rescale option: {rescale}")
-
-        #
-        DEFAULT_CMAP = colors.ListedColormap(["#377eb8", "#ff7f00"])
-        DEFAULT_NORM = colors.Normalize(vmin=vmin, vmax=vmax)
-
-        title = title + title_suffix
-        ax.set_xlim(cfg.x_range)
-        ax.set_ylim(cfg.y_range)
-        ax.set_title(title)
-
-        pcm = ax.imshow(
-            field.reshape(cfg.n_grid, cfg.n_grid),
-            cmap=surface_cmap,
-            origin="lower",
-            extent=cfg.x_range + cfg.y_range,
-            vmin=DEFAULT_NORM.vmin,
-            vmax=DEFAULT_NORM.vmax,
-            interpolation="bicubic",
-            aspect="auto",
-        )
-        if show_data:
-            ax.scatter(
-                dm.train_points[:, 0],
-                dm.train_points[:, 1],
-                c=dm.train_labels,
-                cmap=DEFAULT_CMAP,
-                alpha=0.5,
-                s=10,
-                linewidths=0,
-            )
-        return pcm
-
-    fig, axs = plt.subplots(1, 2, figsize=(13, 5.2))
-    pcm0 = _show_field(
-        axs[0], probs, f"Class Probability {title_suffix}", show_data=True, rescale=rescale
+    pcm = ax.imshow(
+        np.reshape(test_uncertainty, [DEFAULT_N_GRID, DEFAULT_N_GRID]),
+        cmap=cmap,
+        origin="lower",
+        extent=DEFAULT_X_RANGE + DEFAULT_Y_RANGE,
+        vmin=DEFAULT_NORM.vmin,
+        vmax=DEFAULT_NORM.vmax,
+        interpolation="bicubic",
+        aspect="auto",
     )
-    plt.colorbar(pcm0, ax=axs[0])
+    ax.scatter(train_examples[:, 0], train_examples[:, 1], c=train_labels, cmap=DEFAULT_CMAP, alpha=0.5)
+    ax.scatter(ood_examples[:, 0], ood_examples[:, 1], c="red", alpha=0.1)
+    return pcm
 
-    pcm1 = _show_field(
-        axs[1], unc, f"Predictive Uncertainty {title_suffix}", show_data=False, rescale=rescale
-    )
-    plt.colorbar(pcm1, ax=axs[1])
 
-    plt.tight_layout()
-    plt.show()
+def plot_predictions(pred_probs, model_name, train_examples, train_labels, ood_examples):
+    """Class probability and normalized predictive uncertainty p(1 - p) side by side."""
+    uncertainty = pred_probs * (1.0 - pred_probs)
+    data = (train_examples, train_labels, ood_examples)
+
+    fig, axs = plt.subplots(1, 2, figsize=(14, 5))
+    pcm_0 = plot_uncertainty_surface(pred_probs, axs[0], *data)
+    pcm_1 = plot_uncertainty_surface(uncertainty, axs[1], *data)
+    fig.colorbar(pcm_0, ax=axs[0])
+    fig.colorbar(pcm_1, ax=axs[1])
+    axs[0].set_title(f"Class Probability, {model_name}")
+    axs[1].set_title(f"(Normalized) Predictive Uncertainty, {model_name}")
+    fig.tight_layout()
+    return fig
+
+
+# ------------- Main ------------- #
+def run(seed: int, out_dir: Optional[Path], show: bool, epochs: int) -> None:
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+
+    train_examples, train_labels = make_training_data(sample_size=500)
+    test_examples = make_testing_data()
+    ood_examples = make_ood_data(sample_size=500)
+
+    models = {
+        "Deterministic Model": ("resnet", DeepResNet(**RESNET_CONFIG)),
+        "SNGP": ("sngp", DeepResNetSNGP(spec_norm_bound=SPEC_NORM_BOUND, **RESNET_CONFIG)),
+    }
+    for model_name, (tag, model) in models.items():
+        logger.info(f"seed {seed}: training {model_name}")
+        fit(model, train_examples, train_labels, epochs=epochs)
+        probs = predict_class0_probs(model, test_examples)
+        fig = plot_predictions(probs, model_name, train_examples, train_labels, ood_examples)
+        if out_dir is not None:
+            path = out_dir / f"{tag}_seed{seed}.png"
+            fig.savefig(path, dpi=200, bbox_inches="tight")
+            logger.info(f"saved {path}")
+        if show:
+            plt.show()
+        plt.close(fig)
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--seeds", type=int, nargs="+", default=[0])
+    parser.add_argument("--epochs", type=int, default=EPOCHS)
+    parser.add_argument("--out-dir", type=Path, default=REPO_ROOT / "figures" / "sngp_moons")
+    parser.add_argument("--no-save", action="store_true", help="don't write PNGs")
+    parser.add_argument("--show", action="store_true", help="open each figure interactively")
+    args = parser.parse_args()
+
+    torch.set_num_threads(min(8, torch.get_num_threads()))
+    set_default_style()
+
+    out_dir = None if args.no_save else args.out_dir
+    if out_dir is not None:
+        out_dir.mkdir(parents=True, exist_ok=True)
+    for seed in args.seeds:
+        run(seed, out_dir, args.show, args.epochs)
 
 
 if __name__ == "__main__":
-    # create trainable kernel scale experiments
-    train_kscale = [True]
-    # create scale features experiments
-    scale_feats = [True]
-    # random features
-    rand_feats = [1024] #, 2048, 4096]
-    # create seed list:
-    seed_list = [0, 1, 1234, 380843, 42]
-
-    # run cross product of all experiments (run through seeds first)
-    for num_feats, tr_kernel_scale, scale_features, seed in itertools.product(
-        rand_feats, train_kscale, scale_feats, seed_list
-    ):
-        print(
-            f"\n\n=== Running experiment: seed={seed}, "
-            f"random_features={num_feats}, "
-            f"trainable_kernel_scale={tr_kernel_scale}, "
-            f"scale_random_features={scale_features} ==="
-        )
-        if not tr_kernel_scale:
-            print(
-                "Note: Using fixed kernel scale may lead to suboptimal performance if not tuned."
-            )
-
-        if not scale_features:
-            print(
-                "Note: Not scaling random features may lead to suboptimal performance."
-            )
-
-        cfg = MoonsConfig(
-            normalize_input=True,
-            random_features=num_feats,
-            scale_random_features=scale_features,
-            trainable_kernel_scale=tr_kernel_scale,
-            output_bias_trainable=False,
-            seed=seed,
-        )
-
-        # calibration_cfg = CalibrationLossConfig(
-        #     sb_ece_label_weight=0.01,
-        #     sb_ece_conf_weight=0.0,
-        #     soft_avuc_weight=0.05,
-        #     clue_weight=0.1,
-        #     bsce_gra_weight=0.1,
-        # )
-        calibration_cfg = None
-
-        main(cfg=cfg, calibration_cfg=calibration_cfg)
-
-    print("\nAll experiments completed.")
-    print("=" * 80)
-    ## to save the figure, uncomment:
-    # plt.savefig("sngp_moons.png", dpi=300)
+    main()
