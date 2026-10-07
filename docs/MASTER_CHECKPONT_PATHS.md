@@ -300,3 +300,8 @@ adrc_muon2stage_wsd_aux04_wong_ucdavis (`experiment=sngp_muon_2stage_wsd_wong_sg
 ```bash
 /data1/maheswararao/experiments/uncertainty-aware-ml/train/sngp_muon_2stage_classifier_wong_ucdavis/runs/2026-10-06_16-25-59_muon2stage_wsd_aux04_s12345/checkpoints/best.ckpt
 ```
+
+adrc_muon2stage_wsd_aux02_wong_ucdavis (as adrc_muon2stage_wsd_aux04_wong_ucdavis with `model.optimizer.sgd_lr=0.02`; seed 12345 only):
+```bash
+/data1/maheswararao/experiments/uncertainty-aware-ml/train/sngp_muon_2stage_classifier_wong_ucdavis/runs/2026-10-06_20-17-27_muon2stage_wsd_aux02_s12345/checkpoints/best.ckpt
+```

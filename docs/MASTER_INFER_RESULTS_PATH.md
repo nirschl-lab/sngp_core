@@ -1161,3 +1161,23 @@ uv run python scripts/metrics/wong_adrc_report.py --stamp 2026-10-05_21-33-51 20
     2026-10-06_15-30-19 2026-10-06_16-25-59 --seeds 12345 --train-institution ucdavis \
     --out-dir figures/wong_adrc --csv-name wong_adrc_ucdavis_muon2stage_wsd_aux04_s12345_runs.csv
 ```
+
+---
+
+Wong ADRC study, UC Davis-only two-stage WSD arm with the aux SGD lr at 0.02 (2026-10-06), seed
+12345 only: as adrc_wong_ucdavis_muon2stage_wsd_aux04 with the stamp / arm below. Results: "UC
+Davis-trained, Muon → SGD two-stage" in [results/WONG_ADRC_RESULTS.md](results/WONG_ADRC_RESULTS.md).
+
+adrc_wong_ucdavis_muon2stage_wsd_aux02:
+```bash
+/data1/maheswararao/experiments/uncertainty-aware-ml/infer/sngp_muon_2stage_classifier_wong_ucdavis/2026-10-06_20-17-27_muon2stage_wsd_aux02_s12345/{wong_ucdavis,wong_upitt,wong_utsouthwestern}
+```
+
+Reproduce: the adrc_wong_ucdavis_muon2stage_wsd_aux04 commands with `2026-10-06_16-25-59_muon2stage_wsd_aux04`
+→ `2026-10-06_20-17-27_muon2stage_wsd_aux02`, then the report with all two-stage stamps:
+```bash
+uv run python scripts/metrics/wong_adrc_report.py --stamp 2026-10-05_21-33-51 2026-10-06_11-52-14 \
+    2026-10-06_15-30-19 2026-10-06_16-25-59 2026-10-06_20-17-27 --seeds 12345 \
+    --train-institution ucdavis --out-dir figures/wong_adrc \
+    --csv-name wong_adrc_ucdavis_muon2stage_wsd_aux02_s12345_runs.csv
+```
