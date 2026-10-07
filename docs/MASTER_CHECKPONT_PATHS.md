@@ -232,6 +232,15 @@ adrc_muon_wong (`experiment=sngp_muon_wong_sgd`, Muon wd=0.01, σ²=1; seeds 123
 /data1/maheswararao/experiments/uncertainty-aware-ml/train/sngp_muon_sgd_classifier_wong/runs/2026-10-05_10-05-27_muon_s4/checkpoints/best.ckpt
 ```
 
+adrc_muon2stage_wong (`experiment=sngp_muon_2stage_wong_sgd`, Muon wd=0.01 → SGD + Nesterov at epoch 120, cosine, aux SGD lr 0.01, σ²=1; seeds 12345, 1, 2, 3, 4; launched 2026-10-06 with `ARMS=muon2stage`):
+```bash
+/data1/maheswararao/experiments/uncertainty-aware-ml/train/sngp_muon_2stage_classifier_wong/runs/2026-10-06_21-21-42_muon2stage_s12345/checkpoints/best.ckpt
+/data1/maheswararao/experiments/uncertainty-aware-ml/train/sngp_muon_2stage_classifier_wong/runs/2026-10-06_21-21-42_muon2stage_s1/checkpoints/best.ckpt
+/data1/maheswararao/experiments/uncertainty-aware-ml/train/sngp_muon_2stage_classifier_wong/runs/2026-10-06_21-21-42_muon2stage_s2/checkpoints/best.ckpt
+/data1/maheswararao/experiments/uncertainty-aware-ml/train/sngp_muon_2stage_classifier_wong/runs/2026-10-06_21-21-42_muon2stage_s3/checkpoints/best.ckpt
+/data1/maheswararao/experiments/uncertainty-aware-ml/train/sngp_muon_2stage_classifier_wong/runs/2026-10-06_21-21-42_muon2stage_s4/checkpoints/best.ckpt
+```
+
 ---
 
 **Wong ADRC study, UC Davis-only reruns (2026-10-05).** The same 5 arms, cells, seeds and recipe as
@@ -284,6 +293,15 @@ adrc_muon_wong_ucdavis (`experiment=sngp_muon_wong_sgd`, Muon wd=0.01, σ²=1; s
 /data1/maheswararao/experiments/uncertainty-aware-ml/train/sngp_muon_sgd_classifier_wong_ucdavis/runs/2026-10-05_21-33-51_muon_s2/checkpoints/best.ckpt
 /data1/maheswararao/experiments/uncertainty-aware-ml/train/sngp_muon_sgd_classifier_wong_ucdavis/runs/2026-10-05_21-33-51_muon_s3/checkpoints/best.ckpt
 /data1/maheswararao/experiments/uncertainty-aware-ml/train/sngp_muon_sgd_classifier_wong_ucdavis/runs/2026-10-05_21-33-51_muon_s4/checkpoints/best.ckpt
+```
+
+adrc_muon2stage_wong_ucdavis_5seed (as adrc_muon2stage_wong, trained on UC Davis only; seeds 12345, 1, 2, 3, 4; launched 2026-10-06 with `INSTITUTION=ucdavis ARMS=muon2stage`. Its s12345 is a retrain, separate from the seed-12345-only adrc_muon2stage_wong_ucdavis run):
+```bash
+/data1/maheswararao/experiments/uncertainty-aware-ml/train/sngp_muon_2stage_classifier_wong_ucdavis/runs/2026-10-06_21-21-44_muon2stage_s12345/checkpoints/best.ckpt
+/data1/maheswararao/experiments/uncertainty-aware-ml/train/sngp_muon_2stage_classifier_wong_ucdavis/runs/2026-10-06_21-21-44_muon2stage_s1/checkpoints/best.ckpt
+/data1/maheswararao/experiments/uncertainty-aware-ml/train/sngp_muon_2stage_classifier_wong_ucdavis/runs/2026-10-06_21-21-44_muon2stage_s2/checkpoints/best.ckpt
+/data1/maheswararao/experiments/uncertainty-aware-ml/train/sngp_muon_2stage_classifier_wong_ucdavis/runs/2026-10-06_21-21-44_muon2stage_s3/checkpoints/best.ckpt
+/data1/maheswararao/experiments/uncertainty-aware-ml/train/sngp_muon_2stage_classifier_wong_ucdavis/runs/2026-10-06_21-21-44_muon2stage_s4/checkpoints/best.ckpt
 ```
 
 adrc_muon2stage_wong_ucdavis (`experiment=sngp_muon_2stage_wong_sgd`, Muon wd=0.01 → SGD + Nesterov at epoch 120, σ²=1; seed 12345 only):

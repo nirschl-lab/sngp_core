@@ -1181,3 +1181,36 @@ uv run python scripts/metrics/wong_adrc_report.py --stamp 2026-10-05_21-33-51 20
     --train-institution ucdavis --out-dir figures/wong_adrc \
     --csv-name wong_adrc_ucdavis_muon2stage_wsd_aux02_s12345_runs.csv
 ```
+
+---
+
+Wong ADRC study, Muon → SGD two-stage arm (cosine tail, aux SGD lr 0.01), 5 seeds (2026-10-06
+training, evaluated 2026-10-07): `best.ckpt` (π/8, no calibration) of each seed, full-Wong runs on
+the Wong test split + 6 OOD sets and both artifact axes (seed 12345 only), as adrc_wong_final /
+adrc_wong_final_artifact; UC Davis runs on the Wong test split filtered to each institution, as
+adrc_wong_ucdavis_final. Results: the `… cosine (aux 0.01)` rows of the 5-seed sections in
+[results/WONG_ADRC_RESULTS.md](results/WONG_ADRC_RESULTS.md); checkpoints
+`adrc_muon2stage_wong` / `adrc_muon2stage_wong_ucdavis_5seed` in
+[MASTER_CHECKPONT_PATHS.md](MASTER_CHECKPONT_PATHS.md).
+
+adrc_wong_final_muon2stage:
+```bash
+/data1/maheswararao/experiments/uncertainty-aware-ml/infer/sngp_muon_2stage_classifier_wong/2026-10-06_21-21-42_muon2stage_s{12345,1,2,3,4}/{wong,acevedo,jung,kather2016,kather2018,nirschl2018,tang}
+/data1/maheswararao/experiments/uncertainty-aware-ml/infer/sngp_muon_2stage_classifier_wong/2026-10-06_21-21-42_muon2stage_s12345/wong_artifact/{real_baseline,config/count_{1..5},procedural/severity_{1..5}}
+```
+
+adrc_wong_ucdavis_muon2stage_5seed:
+```bash
+/data1/maheswararao/experiments/uncertainty-aware-ml/infer/sngp_muon_2stage_classifier_wong_ucdavis/2026-10-06_21-21-44_muon2stage_s{12345,1,2,3,4}/{wong_ucdavis,wong_upitt,wong_utsouthwestern}
+```
+
+Reproduce: the adrc_wong_final, adrc_wong_final_artifact and adrc_wong_ucdavis_final loops with
+`N=2026-10-06_21-21-42` (full Wong; the artifact loop over `${N}_*_s12345` only) and
+`N=2026-10-06_21-21-44` (UC Davis). Launching the 15 UC Davis jobs all at once failed silently
+(concurrent HF institution filters), so run them in one sequential lane per GPU. Then the reports:
+```bash
+uv run python scripts/metrics/wong_adrc_report.py --stamp 2026-10-05_10-05-27 2026-10-06_21-21-42 \
+    --out-dir figures/wong_adrc
+uv run python scripts/metrics/wong_adrc_report.py --stamp 2026-10-05_21-33-51 2026-10-06_21-21-44 \
+    --train-institution ucdavis --out-dir figures/wong_adrc
+```
