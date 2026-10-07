@@ -58,12 +58,12 @@ ARMS: Dict[str, Tuple[str, str]] = {
     "sngp": ("sngp_sgd_classifier", "SNGP, c = 1"),
     "bnsn": ("sngp_bnsn_sgd_classifier", "SNGP + BN-SN, c = 8"),
     "specreg": ("sngp_specreg_sgd_classifier", "SNGP + SpecReg, λ = 0.003"),
-    "muon": ("sngp_muon_sgd_classifier", "GP head + Muon, wd = 0.01"),
-    "muon2stage": ("sngp_muon_2stage_classifier", "GP head + Muon → SGD at epoch 120"),
-    "muon2stage_cont": ("sngp_muon_2stage_classifier", "GP head + Muon → SGD at epoch 120, per-group cosine"),
-    "muon2stage_wsd": ("sngp_muon_2stage_classifier", "GP head + Muon → SGD at epoch 120, WSD inv-prop decay"),
-    "muon2stage_wsd_aux02": ("sngp_muon_2stage_classifier", "GP head + Muon → SGD at epoch 120, WSD, aux lr 0.02"),
-    "muon2stage_wsd_aux04": ("sngp_muon_2stage_classifier", "GP head + Muon → SGD at epoch 120, WSD, aux lr 0.04"),
+    "muon": ("sngp_muon_sgd_classifier", "GP head + Muon, wd = 0.01 (aux 0.04)"),
+    "muon2stage": ("sngp_muon_2stage_classifier", "GP head + Muon → SGD at epoch 120, cosine (aux 0.01)"),
+    "muon2stage_cont": ("sngp_muon_2stage_classifier", "GP head + Muon → SGD at epoch 120, per-group cosine (aux 0.01)"),
+    "muon2stage_wsd": ("sngp_muon_2stage_classifier", "GP head + Muon → SGD at epoch 120, WSD (aux 0.01)"),
+    "muon2stage_wsd_aux02": ("sngp_muon_2stage_classifier", "GP head + Muon → SGD at epoch 120, WSD (aux 0.02)"),
+    "muon2stage_wsd_aux04": ("sngp_muon_2stage_classifier", "GP head + Muon → SGD at epoch 120, WSD (aux 0.04)"),
 }
 SEEDS = [12345, 1, 2, 3, 4]
 INDIST = "wong"
