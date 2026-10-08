@@ -347,3 +347,12 @@ adrc_muon_aux01_wong_ucdavis (as adrc_muon_aux01_wong, trained on UC Davis only;
 ```bash
 /data1/maheswararao/experiments/uncertainty-aware-ml/train/sngp_muon_sgd_classifier_wong_ucdavis/runs/2026-10-07_13-05-26_muon_aux01_s12345/checkpoints/best.ckpt
 ```
+
+adrc_muon_aux01_wong_ucdavis_5seed (as adrc_muon_aux01_wong, trained on UC Davis only; seeds 12345, 1, 2, 3, 4; best.ckpt = epochs 84, 83, 87, 101, 94, so `last.ckpt` in the same dirs is reported too):
+```bash
+/data1/maheswararao/experiments/uncertainty-aware-ml/train/sngp_muon_sgd_classifier_wong_ucdavis/runs/2026-10-07_21-30-55_muon_aux01_s12345/checkpoints/best.ckpt
+/data1/maheswararao/experiments/uncertainty-aware-ml/train/sngp_muon_sgd_classifier_wong_ucdavis/runs/2026-10-07_21-30-55_muon_aux01_s1/checkpoints/best.ckpt
+/data1/maheswararao/experiments/uncertainty-aware-ml/train/sngp_muon_sgd_classifier_wong_ucdavis/runs/2026-10-07_21-30-55_muon_aux01_s2/checkpoints/best.ckpt
+/data1/maheswararao/experiments/uncertainty-aware-ml/train/sngp_muon_sgd_classifier_wong_ucdavis/runs/2026-10-07_21-30-55_muon_aux01_s3/checkpoints/best.ckpt
+/data1/maheswararao/experiments/uncertainty-aware-ml/train/sngp_muon_sgd_classifier_wong_ucdavis/runs/2026-10-07_21-30-55_muon_aux01_s4/checkpoints/best.ckpt
+```

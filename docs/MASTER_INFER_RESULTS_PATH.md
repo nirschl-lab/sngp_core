@@ -1321,3 +1321,44 @@ uv run python scripts/metrics/wong_adrc_report.py --stamp 2026-10-05_21-33-51 20
 uv run python scripts/metrics/wong_adrc_report.py --stamp last-2026-10-06_21-21-44 last-2026-10-07_13-05-26 \
     --seeds 12345 --train-institution ucdavis --out-dir figures/wong_adrc --csv-name wong_adrc_ucdavis_muon_aux01_s12345_last_runs.csv
 ```
+
+---
+
+Wong ADRC study, GP head + Muon (aux 0.01) arm on UC Davis only, 5 seeds (2026-10-07 training,
+evaluated 2026-10-08): `best.ckpt` (epochs 84, 83, 87, 101, 94) and `last.ckpt` (π/8, no calibration)
+of each seed on the Wong test split filtered to each institution, as adrc_wong_ucdavis_final. Results:
+the `(aux 0.01)` Muon rows of "UC Davis-trained — institution shift" in
+[results/WONG_ADRC_RESULTS.md](results/WONG_ADRC_RESULTS.md); checkpoints
+`adrc_muon_aux01_wong_ucdavis_5seed` in [MASTER_CHECKPONT_PATHS.md](MASTER_CHECKPONT_PATHS.md).
+
+adrc_wong_ucdavis_muon_aux01_5seed (`last-` prefix = last.ckpt):
+```bash
+/data1/maheswararao/experiments/uncertainty-aware-ml/infer/sngp_muon_sgd_classifier_wong_ucdavis/{,last-}2026-10-07_21-30-55_muon_aux01_s{12345,1,2,3,4}/{wong_ucdavis,wong_upitt,wong_utsouthwestern}
+```
+
+Reproduce (30 jobs, 4 lanes = 1 per GPU, institutions sequential within a lane, about 23 min; each job
+spends ~2 min of its ~2.5 min in the CPU-bound HF institution filter):
+```bash
+T=/data1/maheswararao/experiments/uncertainty-aware-ml/train
+S=2026-10-07_21-30-55
+export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1
+JOBS=(); for s in 12345 1 2 3 4; do for k in best last; do JOBS+=("$s:$k"); done; done
+lane() {
+  local g=$1; shift
+  for j in "$@"; do
+    local U=${S}_muon_aux01_s${j%%:*} k=${j##*:}; local pre=$U; [[ $k == last ]] && pre=last-$U
+    for I in ucdavis upitt utsouthwestern; do
+      CUDA_VISIBLE_DEVICES=$g uv run src/inference/infer.py \
+          ckpt_path=$T/sngp_muon_sgd_classifier_wong_ucdavis/runs/$U/checkpoints/$k.ckpt fold=test data=wong \
+          data.datamodule.institution=$I data.datamodule.num_workers=12 \
+          infer.save.run_name=sngp_muon_sgd_classifier_wong_ucdavis/$pre/wong_$I
+    done
+  done
+}
+lane 0 "${JOBS[0]}" "${JOBS[4]}" "${JOBS[8]}" & lane 1 "${JOBS[1]}" "${JOBS[5]}" "${JOBS[9]}" &
+lane 2 "${JOBS[2]}" "${JOBS[6]}" & lane 3 "${JOBS[3]}" "${JOBS[7]}" & wait
+uv run python scripts/metrics/wong_adrc_report.py --stamp 2026-10-05_21-33-51 2026-10-06_21-21-44 $S \
+    --train-institution ucdavis --out-dir figures/wong_adrc
+uv run python scripts/metrics/wong_adrc_report.py --stamp last-$S --train-institution ucdavis \
+    --out-dir figures/wong_adrc --csv-name wong_adrc_ucdavis_muon_aux01_last_runs.csv
+```

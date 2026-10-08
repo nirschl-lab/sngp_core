@@ -95,13 +95,16 @@ commands: [../MASTER_INFER_RESULTS_PATH.md](../MASTER_INFER_RESULTS_PATH.md) (`a
 Trained on Wong `institution=ucdavis` only and scored on the Wong test split of each institution:
 UC Davis is in-distribution, UPitt and UTSouthwestern are the same 4 classes under institution
 shift. Launcher `INSTITUTION=ucdavis scripts/tmux/adrc_wong_final.sh`; W&B groups
-`adrc_final_ucdavis_2026-10-05_21-33-51` (first 5 arms, 2026-10-05) and
-`adrc_final_ucdavis_2026-10-06_21-21-44` (two-stage, `ARMS=muon2stage`). Checkpoints:
+`adrc_final_ucdavis_2026-10-05_21-33-51` (first 5 arms, 2026-10-05),
+`adrc_final_ucdavis_2026-10-06_21-21-44` (two-stage, `ARMS=muon2stage`) and
+`adrc_final_ucdavis_2026-10-07_21-30-55` (Muon aux 0.01, `ARMS=muon_aux01`). Checkpoints:
 [../MASTER_CHECKPONT_PATHS.md](../MASTER_CHECKPONT_PATHS.md) (`adrc_*_wong_ucdavis`,
-`adrc_muon2stage_wong_ucdavis_5seed`). Inference dirs and reproduce commands:
-[../MASTER_INFER_RESULTS_PATH.md](../MASTER_INFER_RESULTS_PATH.md) (`adrc_wong_ucdavis_final`,
-`adrc_wong_ucdavis_muon2stage_5seed`). Per-run numbers: `figures/wong_adrc/wong_adrc_ucdavis_runs.csv`.
-GP head + Muon (aux 0.01) has only seed 12345 on UC Davis (see the archive).
+`adrc_muon2stage_wong_ucdavis_5seed`, `adrc_muon_aux01_wong_ucdavis_5seed`). Inference dirs and
+reproduce commands: [../MASTER_INFER_RESULTS_PATH.md](../MASTER_INFER_RESULTS_PATH.md)
+(`adrc_wong_ucdavis_final`, `adrc_wong_ucdavis_muon2stage_5seed`,
+`adrc_wong_ucdavis_muon_aux01_5seed`). Per-run numbers: `figures/wong_adrc/wong_adrc_ucdavis_runs.csv`
+(`…_muon_aux01_last_runs.csv` for the `last.ckpt` row). GP head + Muon (aux 0.01) selects
+`best.ckpt` mid-schedule on UC Davis, so its `last.ckpt` (epoch 149) has its own row.
 
 | Arm | best.ckpt epoch (s12345, s1–s4) | W&B (s12345, s1–s4) |
 |---|---|---|
@@ -110,6 +113,7 @@ GP head + Muon (aux 0.01) has only seed 12345 on UC Davis (see the archive).
 | SNGP + BN-SN, c = 8 | 132, 139, 138, 137, 136 | `clc3b6yc` `v7w4dfrq` `svb5gsw5` `spey0eb9` `2ub13nea` |
 | SNGP + SpecReg, λ = 0.003 | 121, 132, 136, 121, 139 | `n5t5f4jd` `cwwhlvsv` `nf32u6wr` `30cb8ihh` `rm55t8zc` |
 | GP head + Muon, wd = 0.01 (aux 0.04) | 115, 132, 89, 145, 128 | `rgc7xeft` `axdomdjc` `xuqjdn6m` `7cgmje1n` `pu2p54w5` |
+| GP head + Muon, wd = 0.01 (aux 0.01) | 84, 83, 87, 101, 94 | `6noke0eu` `y6ogjct8` `vdx7t47q` `h4f2pe2t` `tzy5haip` |
 | GP head + Muon → SGD at epoch 120, cosine (aux 0.01) | 129, 132, 149, 126, 137 | `nlpejivj` `74sp39jp` `5bn7raa7` `gf7onnx4` `xvln8nhw` |
 
 ### In-distribution — UC Davis test (n = 5,135)
@@ -121,6 +125,8 @@ GP head + Muon (aux 0.01) has only seed 12345 on UC Davis (see the archive).
 | SNGP + BN-SN, c = 8 | 0.9922 ± 0.0001 | 0.9920 ± 0.0001 | 0.22 ± 0.04 | 0.20 ± 0.08 | 0.48 ± 0.04 | 2.81 ± 0.10 | 1.26 ± 0.04 |
 | SNGP + SpecReg, λ = 0.003 | 0.9917 ± 0.0008 | 0.9914 ± 0.0010 | 0.36 ± 0.09 | 0.29 ± 0.12 | 0.57 ± 0.08 | 2.73 ± 0.23 | 1.25 ± 0.11 |
 | GP head + Muon, wd = 0.01 (aux 0.04) | **0.9938 ± 0.0021** | **0.9936 ± 0.0021** | **0.20 ± 0.10** | 0.25 ± 0.08 | **0.46 ± 0.10** | **2.18 ± 0.76** | **1.01 ± 0.38** |
+| GP head + Muon, wd = 0.01 (aux 0.01) | 0.9912 ± 0.0008 | 0.9911 ± 0.0008 | 2.03 ± 0.30 | 1.95 ± 0.32 | 2.02 ± 0.28 | 4.37 ± 0.26 | 1.54 ± 0.15 |
+| GP head + Muon, wd = 0.01 (aux 0.01), last.ckpt | 0.9936 ± 0.0008 | 0.9934 ± 0.0008 | 5.04 ± 0.32 | 5.01 ± 0.34 | 5.00 ± 0.33 | 6.72 ± 0.46 | 1.47 ± 0.13 |
 | GP head + Muon → SGD at epoch 120, cosine (aux 0.01) | 0.9908 ± 0.0014 | 0.9906 ± 0.0013 | 0.92 ± 0.20 | 0.77 ± 0.24 | 1.02 ± 0.16 | 3.51 ± 0.15 | 1.49 ± 0.10 |
 
 ### Institution shift — UPitt test (n = 5,576)
@@ -132,7 +138,9 @@ GP head + Muon (aux 0.01) has only seed 12345 on UC Davis (see the archive).
 | SNGP + BN-SN, c = 8 | 0.6716 ± 0.0209 | 0.6581 ± 0.0198 | 22.23 ± 2.29 | 21.98 ± 2.35 | 22.26 ± 2.47 | 121.12 ± 9.07 | 53.52 ± 3.29 |
 | SNGP + SpecReg, λ = 0.003 | 0.6810 ± 0.0043 | **0.6651 ± 0.0029** | 20.73 ± 0.90 | 20.71 ± 0.87 | 21.00 ± 0.98 | 115.13 ± 3.02 | 51.11 ± 1.26 |
 | GP head + Muon, wd = 0.01 (aux 0.04) | 0.6569 ± 0.0208 | 0.6333 ± 0.0174 | 25.69 ± 1.88 | 25.56 ± 2.03 | 25.85 ± 1.94 | 148.92 ± 12.83 | 57.81 ± 3.73 |
-| GP head + Muon → SGD at epoch 120, cosine (aux 0.01) | **0.6860 ± 0.0109** | 0.6631 ± 0.0124 | **18.06 ± 0.75** | **17.88 ± 0.91** | **17.96 ± 0.92** | **104.46 ± 3.76** | **49.00 ± 1.49** |
+| GP head + Muon, wd = 0.01 (aux 0.01) | 0.6694 ± 0.0079 | 0.6516 ± 0.0086 | 15.59 ± 1.18 | 15.56 ± 1.18 | 15.57 ± 1.18 | 97.41 ± 4.65 | 49.10 ± 1.85 |
+| GP head + Muon, wd = 0.01 (aux 0.01), last.ckpt | 0.6655 ± 0.0091 | 0.6461 ± 0.0088 | **11.78 ± 0.82** | **11.56 ± 0.79** | **11.50 ± 0.85** | **91.41 ± 1.65** | **48.62 ± 0.91** |
+| GP head + Muon → SGD at epoch 120, cosine (aux 0.01) | **0.6860 ± 0.0109** | 0.6631 ± 0.0124 | 18.06 ± 0.75 | 17.88 ± 0.91 | 17.96 ± 0.92 | 104.46 ± 3.76 | 49.00 ± 1.49 |
 
 ### Institution shift — UTSouthwestern test (n = 3,299)
 
@@ -143,17 +151,21 @@ GP head + Muon (aux 0.01) has only seed 12345 on UC Davis (see the archive).
 | SNGP + BN-SN, c = 8 | 0.7171 ± 0.0217 | 0.6762 ± 0.0326 | 20.94 ± 2.29 | 20.75 ± 2.48 | 21.23 ± 2.59 | 108.42 ± 7.51 | 47.21 ± 3.25 |
 | SNGP + SpecReg, λ = 0.003 | 0.7336 ± 0.0165 | 0.6925 ± 0.0242 | 19.02 ± 1.59 | 18.82 ± 1.75 | 19.23 ± 1.64 | 102.40 ± 5.61 | 44.04 ± 2.62 |
 | GP head + Muon, wd = 0.01 (aux 0.04) | 0.7368 ± 0.0182 | 0.6835 ± 0.0218 | 19.88 ± 2.81 | 19.74 ± 2.69 | 19.99 ± 2.75 | 117.19 ± 16.05 | 45.60 ± 4.80 |
-| GP head + Muon → SGD at epoch 120, cosine (aux 0.01) | **0.7707 ± 0.0180** | **0.7295 ± 0.0235** | **13.92 ± 2.25** | **13.22 ± 1.88** | **13.29 ± 1.86** | **76.33 ± 6.09** | **36.70 ± 2.59** |
+| GP head + Muon, wd = 0.01 (aux 0.01) | 0.7579 ± 0.0222 | **0.7335 ± 0.0302** | 12.07 ± 1.94 | 11.65 ± 2.03 | 11.57 ± 2.14 | 73.84 ± 7.63 | 37.32 ± 3.59 |
+| GP head + Muon, wd = 0.01 (aux 0.01), last.ckpt | 0.7480 ± 0.0154 | 0.6987 ± 0.0279 | **8.86 ± 1.37** | **8.92 ± 1.49** | **8.74 ± 1.58** | **69.76 ± 3.66** | 37.55 ± 2.12 |
+| GP head + Muon → SGD at epoch 120, cosine (aux 0.01) | **0.7707 ± 0.0180** | 0.7295 ± 0.0235 | 13.92 ± 2.25 | 13.22 ± 1.88 | 13.29 ± 1.86 | 76.33 ± 6.09 | **36.70 ± 2.59** |
 
 ### Shift detection — entropy AUROC ↑, UC Davis test vs each other institution's test split
 
 | Model | UPitt | UTSouthwestern | Mean |
 |---|---:|---:|---:|
 | Baseline (linear head) | 0.780 ± 0.006 | 0.684 ± 0.026 | 0.732 ± 0.014 |
-| SNGP, c = 1 | **0.832 ± 0.021** | 0.746 ± 0.026 | 0.789 ± 0.022 |
+| SNGP, c = 1 | 0.832 ± 0.021 | 0.746 ± 0.026 | 0.789 ± 0.022 |
 | SNGP + BN-SN, c = 8 | 0.829 ± 0.010 | **0.767 ± 0.010** | **0.798 ± 0.009** |
 | SNGP + SpecReg, λ = 0.003 | 0.827 ± 0.019 | 0.755 ± 0.023 | 0.791 ± 0.019 |
 | GP head + Muon, wd = 0.01 (aux 0.04) | 0.824 ± 0.019 | 0.747 ± 0.037 | 0.785 ± 0.025 |
+| GP head + Muon, wd = 0.01 (aux 0.01) | 0.836 ± 0.009 | 0.751 ± 0.013 | 0.793 ± 0.009 |
+| GP head + Muon, wd = 0.01 (aux 0.01), last.ckpt | **0.838 ± 0.008** | 0.755 ± 0.013 | 0.796 ± 0.009 |
 | GP head + Muon → SGD at epoch 120, cosine (aux 0.01) | 0.816 ± 0.024 | 0.740 ± 0.027 | 0.778 ± 0.023 |
 
 ### Shift detection — GP-variance AUROC ↑, UC Davis test vs each other institution's test split
@@ -164,4 +176,6 @@ GP head + Muon (aux 0.01) has only seed 12345 on UC Davis (see the archive).
 | SNGP + BN-SN, c = 8 | 0.497 ± 0.044 | 0.465 ± 0.058 | 0.481 ± 0.050 |
 | SNGP + SpecReg, λ = 0.003 | 0.512 ± 0.033 | 0.525 ± 0.026 | 0.518 ± 0.029 |
 | GP head + Muon, wd = 0.01 (aux 0.04) | 0.508 ± 0.033 | 0.564 ± 0.027 | 0.536 ± 0.030 |
+| GP head + Muon, wd = 0.01 (aux 0.01) | 0.580 ± 0.021 | 0.604 ± 0.034 | 0.592 ± 0.026 |
+| GP head + Muon, wd = 0.01 (aux 0.01), last.ckpt | 0.516 ± 0.036 | 0.558 ± 0.027 | 0.537 ± 0.027 |
 | GP head + Muon → SGD at epoch 120, cosine (aux 0.01) | **0.606 ± 0.017** | **0.611 ± 0.032** | **0.609 ± 0.015** |
