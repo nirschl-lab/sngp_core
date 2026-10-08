@@ -19,7 +19,8 @@ With --train-institution <id> the runs are the single-institution reruns
 (`<infer>/<model.name>_wong_<id>/<run>/wong_<inst>/` for each Wong institution, written with
 `data=wong data.datamodule.institution=<inst>`): the test split of the training institution is
 in-distribution, the other two institutions are scored both as labelled shifted test sets
-(accuracy / F1 / ECE / NLL / Brier) and as the OOD side of the AUROC, AUPR and FPR95 (shifted
+(accuracy / F1 / ECE / NLL / Brier, plus the classifier's macro one-vs-rest FPR at the argmax and at
+95% per-class TPR, see `_classification_fpr`) and as the OOD side of the AUROC, AUPR and FPR95 (shifted
 institution = positive class, as in src/metrics/artifact_quantification.py; FPR95 = share of the
 in-distribution test split flagged at the threshold that catches 95% of the shifted one).
 
@@ -77,11 +78,14 @@ SEEDS = [12345, 1, 2, 3, 4]
 INDIST = "wong"
 OOD = ["acevedo", "jung", "kather2016", "kather2018", "nirschl2018", "tang"]
 ID_METRICS = ["acc", "f1", "ece", "nll", "brier"]  # read from metrics.json
-CSV_METRICS = ["aece", "smece"]  # recomputed from predictions.csv
+CSV_METRICS = ["aece", "smece", "cls_fpr", "cls_fpr95"]  # recomputed from predictions.csv
 # (column, scale, digits, header) of every labelled-test-set table.
 ID_TABLE = [("acc", 1, 4, "Accuracy ↑"), ("f1", 1, 4, "F1 ↑"), ("ece", 100, 2, "ECE (×10⁻²) ↓"),
             ("aece", 100, 2, "aECE (×10⁻²) ↓"), ("smece", 100, 2, "smECE (×10⁻²) ↓"),
             ("nll", 100, 2, "NLL (×10⁻²) ↓"), ("brier", 100, 2, "Brier (×10⁻²) ↓")]
+# Extra columns of the --train-institution tables: classification false-positive rates (see
+# `_classification_fpr`).
+CLS_FPR_TABLE = [("cls_fpr", 100, 2, "FPR (×10⁻²) ↓"), ("cls_fpr95", 100, 2, "FPR@95TPR (×10⁻²) ↓")]
 # Artifact axes (scored when <run>/wong_artifact exists): level 0 is the shared real_baseline.
 ARTIFACT_AXES = [("config", "count"), ("procedural", "severity")]
 ARTIFACT_LEVELS = [0, 1, 2, 3, 4, 5]
@@ -114,13 +118,30 @@ def _subsampled(metric: str, id_scores: pd.Series, ood_scores: pd.Series) -> flo
     ]))
 
 
+def _classification_fpr(probs: np.ndarray, targets: np.ndarray) -> Dict[str, float]:
+    """Macro one-vs-rest false-positive rates of the classifier itself, against the ground-truth labels.
+
+    `cls_fpr`: per class c, the share of non-c images predicted as c (argmax); averaged over classes.
+    `cls_fpr95`: per class c, the share of non-c images whose predicted probability of c clears the
+    threshold that keeps 95% of the c images; averaged over classes.
+    """
+    preds = probs.argmax(1)
+    classes = range(probs.shape[1])
+    return {"cls_fpr": float(np.mean([(preds[targets != c] == c).mean() for c in classes])),
+            "cls_fpr95": float(np.mean([_fpr_at_tpr95(targets == c, probs[:, c]) for c in classes]))}
+
+
 def _calibration(predictions_csv: Path) -> Dict[str, float]:
-    """aECE (10 equal-mass bins, as the 10-bin ECE) and smooth ECE (reflected kernel) of one CSV."""
+    """aECE (10 equal-mass bins, as the 10-bin ECE), smooth ECE (reflected kernel) and the
+    classification FPRs of one CSV."""
     frame = load_predictions(predictions_csv)
-    probs = torch.tensor(probs_array(frame), dtype=torch.float32)
-    targets = torch.tensor(frame.df["target"].astype(int).to_numpy(), dtype=torch.long)
-    return {"aece": adaptive_ece(probs, targets, num_classes=probs.shape[1]),
-            "smece": smooth_ece(probs, targets, kernel_type="reflected", refine_steps=20)}
+    probs = probs_array(frame)
+    targets = frame.df["target"].astype(int).to_numpy()
+    probs_t = torch.tensor(probs, dtype=torch.float32)
+    targets_t = torch.tensor(targets, dtype=torch.long)
+    return {"aece": adaptive_ece(probs_t, targets_t, num_classes=probs.shape[1]),
+            "smece": smooth_ece(probs_t, targets_t, kernel_type="reflected", refine_steps=20),
+            **_classification_fpr(probs, targets)}
 
 
 def _variance(predictions_csv: Path) -> pd.Series:
@@ -225,13 +246,14 @@ def main() -> None:
     runs.to_csv(args.out_dir / csv_name, index=False)
 
     groups = {arm: runs[runs.arm == arm] for arm in ARMS if (runs.arm == arm).any()}
+    table = ID_TABLE + (CLS_FPR_TABLE if inst else [])
     for leaf in [indist] + shifted:
         sfx = "" if leaf == indist else f"_{leaf}"
         print(f"\n{labels.get(leaf, leaf)} test")
         print(_table(
-            [[ARMS[a][1]] + [_fmt(g[f"{m}{sfx}"], scale, digits) for m, scale, digits, _ in ID_TABLE]
+            [[ARMS[a][1]] + [_fmt(g[f"{m}{sfx}"], scale, digits) for m, scale, digits, _ in table]
              for a, g in groups.items()],
-            ["Model"] + [h for *_, h in ID_TABLE],
+            ["Model"] + [h for *_, h in table],
         ))
     cols = ood + ["mean"]
     header = ["Model"] + [labels.get(c, c.capitalize()) if c != "mean" else "Mean" for c in cols]

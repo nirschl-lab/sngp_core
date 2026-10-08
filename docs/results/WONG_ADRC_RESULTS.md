@@ -13,8 +13,8 @@ calibration. Each arm uses the cell kept from its `adrc_wong_*` grid sweep
 ([../MASTER_SWEEPS.md](../MASTER_SWEEPS.md)); cells were not re-tuned on UC Davis.
 
 Single-seed runs (two-stage switch at epoch 135, two-stage WSD tails, UC Davis Muon (aux 0.01)
-best/last.ckpt), the seed-12345 artifact-robustness axes and the full-Wong AUPR / FPR95 tables are
-in [archive/WONG_ADRC_RESULTS.md](archive/WONG_ADRC_RESULTS.md).
+best/last.ckpt), the seed-12345 artifact-robustness axes and the AUPR / FPR95 tables are in
+[archive/WONG_ADRC_RESULTS.md](archive/WONG_ADRC_RESULTS.md).
 
 | Arm | Experiment | Cell / recipe |
 |---|---|---|
@@ -29,10 +29,12 @@ in [archive/WONG_ADRC_RESULTS.md](archive/WONG_ADRC_RESULTS.md).
 ECE is 10 equal-width bins (from inference); aECE is 10 equal-mass bins and smECE is the smooth
 ECE of Błasiok & Nakkiran with the reflected kernel, both recomputed from `predictions.csv`
 (`src/metrics/calibration_variants.py`). At ~99% accuracy smECE sits at its bandwidth floor, so
-ID differences in it are small. Each seed's AUROC, AUPR and FPR95 is the mean over the 10 frozen
-1,000-row subsamples of `src/metrics/calculate_ood_metrics.py`, with the OOD / shifted set as the
-positive class; FPR95 is the share of in-distribution test images flagged at the threshold that
-catches 95% of the shifted ones. GP-variance AUROC is scored on the GP
+ID differences in it are small. FPR (UC Davis tables) is the classifier's macro one-vs-rest
+false-positive rate against the ground-truth labels: per class c, the share of non-c images
+predicted as c, averaged over the 4 classes. FPR@95TPR is the same with each class's predicted
+probability thresholded to keep 95% of that class's images instead of the argmax. Each seed's AUROC
+is the mean over the 10 frozen 1,000-row subsamples of `src/metrics/calculate_ood_metrics.py`.
+GP-variance AUROC is scored on the GP
 predictive variance (the `uncertainty` column), which does not depend on the mean-field factor;
 below 0.5 means the variance is inverted (lower on OOD / shifted data).
 
@@ -120,42 +122,42 @@ reproduce commands: [../MASTER_INFER_RESULTS_PATH.md](../MASTER_INFER_RESULTS_PA
 
 ### In-distribution — UC Davis test (n = 5,135)
 
-| Model | Accuracy ↑ | F1 ↑ | ECE (×10⁻²) ↓ | aECE (×10⁻²) ↓ | smECE (×10⁻²) ↓ | NLL (×10⁻²) ↓ | Brier (×10⁻²) ↓ |
-|---|---:|---:|---:|---:|---:|---:|---:|
-| Baseline (linear head) | 0.9925 ± 0.0022 | 0.9923 ± 0.0023 | 0.22 ± 0.06 | **0.19 ± 0.07** | 0.55 ± 0.14 | 2.56 ± 0.54 | 1.19 ± 0.27 |
-| SNGP, c = 1 | 0.9919 ± 0.0014 | 0.9917 ± 0.0015 | 0.33 ± 0.07 | 0.21 ± 0.07 | 0.58 ± 0.11 | 2.66 ± 0.29 | 1.22 ± 0.17 |
-| SNGP + BN-SN, c = 8 | 0.9922 ± 0.0001 | 0.9920 ± 0.0001 | 0.22 ± 0.04 | 0.20 ± 0.08 | 0.48 ± 0.04 | 2.81 ± 0.10 | 1.26 ± 0.04 |
-| SNGP + SpecReg, λ = 0.003 | 0.9917 ± 0.0008 | 0.9914 ± 0.0010 | 0.36 ± 0.09 | 0.29 ± 0.12 | 0.57 ± 0.08 | 2.73 ± 0.23 | 1.25 ± 0.11 |
-| GP head + Muon, wd = 0.01 (aux 0.04) | **0.9938 ± 0.0021** | **0.9936 ± 0.0021** | **0.20 ± 0.10** | 0.25 ± 0.08 | **0.46 ± 0.10** | **2.18 ± 0.76** | **1.01 ± 0.38** |
-| GP head + Muon, wd = 0.01 (aux 0.01) | 0.9912 ± 0.0008 | 0.9911 ± 0.0008 | 2.03 ± 0.30 | 1.95 ± 0.32 | 2.02 ± 0.28 | 4.37 ± 0.26 | 1.54 ± 0.15 |
-| GP head + Muon, wd = 0.01 (aux 0.01), last.ckpt | 0.9936 ± 0.0008 | 0.9934 ± 0.0008 | 5.04 ± 0.32 | 5.01 ± 0.34 | 5.00 ± 0.33 | 6.72 ± 0.46 | 1.47 ± 0.13 |
-| GP head + Muon → SGD at epoch 120, cosine (aux 0.01) | 0.9908 ± 0.0014 | 0.9906 ± 0.0013 | 0.92 ± 0.20 | 0.77 ± 0.24 | 1.02 ± 0.16 | 3.51 ± 0.15 | 1.49 ± 0.10 |
+| Model | Accuracy ↑ | F1 ↑ | ECE (×10⁻²) ↓ | aECE (×10⁻²) ↓ | smECE (×10⁻²) ↓ | NLL (×10⁻²) ↓ | Brier (×10⁻²) ↓ | FPR (×10⁻²) ↓ | FPR@95TPR (×10⁻²) ↓ |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| Baseline (linear head) | 0.9925 ± 0.0022 | 0.9923 ± 0.0023 | 0.22 ± 0.06 | **0.19 ± 0.07** | 0.55 ± 0.14 | 2.56 ± 0.54 | 1.19 ± 0.27 | 0.28 ± 0.08 | 0.07 ± 0.05 |
+| SNGP, c = 1 | 0.9919 ± 0.0014 | 0.9917 ± 0.0015 | 0.33 ± 0.07 | 0.21 ± 0.07 | 0.58 ± 0.11 | 2.66 ± 0.29 | 1.22 ± 0.17 | 0.30 ± 0.05 | 0.05 ± 0.02 |
+| SNGP + BN-SN, c = 8 | 0.9922 ± 0.0001 | 0.9920 ± 0.0001 | 0.22 ± 0.04 | 0.20 ± 0.08 | 0.48 ± 0.04 | 2.81 ± 0.10 | 1.26 ± 0.04 | 0.30 ± 0.01 | 0.06 ± 0.01 |
+| SNGP + SpecReg, λ = 0.003 | 0.9917 ± 0.0008 | 0.9914 ± 0.0010 | 0.36 ± 0.09 | 0.29 ± 0.12 | 0.57 ± 0.08 | 2.73 ± 0.23 | 1.25 ± 0.11 | 0.32 ± 0.03 | 0.05 ± 0.02 |
+| GP head + Muon, wd = 0.01 (aux 0.04) | **0.9938 ± 0.0021** | **0.9936 ± 0.0021** | **0.20 ± 0.10** | 0.25 ± 0.08 | **0.46 ± 0.10** | **2.18 ± 0.76** | **1.01 ± 0.38** | **0.24 ± 0.08** | 0.04 ± 0.03 |
+| GP head + Muon, wd = 0.01 (aux 0.01) | 0.9912 ± 0.0008 | 0.9911 ± 0.0008 | 2.03 ± 0.30 | 1.95 ± 0.32 | 2.02 ± 0.28 | 4.37 ± 0.26 | 1.54 ± 0.15 | 0.34 ± 0.03 | 0.06 ± 0.02 |
+| GP head + Muon, wd = 0.01 (aux 0.01), last.ckpt | 0.9936 ± 0.0008 | 0.9934 ± 0.0008 | 5.04 ± 0.32 | 5.01 ± 0.34 | 5.00 ± 0.33 | 6.72 ± 0.46 | 1.47 ± 0.13 | **0.24 ± 0.03** | **0.03 ± 0.01** |
+| GP head + Muon → SGD at epoch 120, cosine (aux 0.01) | 0.9908 ± 0.0014 | 0.9906 ± 0.0013 | 0.92 ± 0.20 | 0.77 ± 0.24 | 1.02 ± 0.16 | 3.51 ± 0.15 | 1.49 ± 0.10 | 0.35 ± 0.06 | 0.07 ± 0.02 |
 
 ### Institution shift — UPitt test (n = 5,576)
 
-| Model | Accuracy ↑ | F1 ↑ | ECE (×10⁻²) ↓ | aECE (×10⁻²) ↓ | smECE (×10⁻²) ↓ | NLL (×10⁻²) ↓ | Brier (×10⁻²) ↓ |
-|---|---:|---:|---:|---:|---:|---:|---:|
-| Baseline (linear head) | 0.6592 ± 0.0162 | 0.6469 ± 0.0166 | 25.11 ± 0.83 | 24.85 ± 0.98 | 26.17 ± 1.09 | 151.57 ± 6.93 | 57.81 ± 2.64 |
-| SNGP, c = 1 | 0.6696 ± 0.0090 | 0.6528 ± 0.0092 | 22.43 ± 1.47 | 22.36 ± 1.40 | 22.60 ± 1.50 | 125.05 ± 5.16 | 53.67 ± 1.51 |
-| SNGP + BN-SN, c = 8 | 0.6716 ± 0.0209 | 0.6581 ± 0.0198 | 22.23 ± 2.29 | 21.98 ± 2.35 | 22.26 ± 2.47 | 121.12 ± 9.07 | 53.52 ± 3.29 |
-| SNGP + SpecReg, λ = 0.003 | 0.6810 ± 0.0043 | **0.6651 ± 0.0029** | 20.73 ± 0.90 | 20.71 ± 0.87 | 21.00 ± 0.98 | 115.13 ± 3.02 | 51.11 ± 1.26 |
-| GP head + Muon, wd = 0.01 (aux 0.04) | 0.6569 ± 0.0208 | 0.6333 ± 0.0174 | 25.69 ± 1.88 | 25.56 ± 2.03 | 25.85 ± 1.94 | 148.92 ± 12.83 | 57.81 ± 3.73 |
-| GP head + Muon, wd = 0.01 (aux 0.01) | 0.6694 ± 0.0079 | 0.6516 ± 0.0086 | 15.59 ± 1.18 | 15.56 ± 1.18 | 15.57 ± 1.18 | 97.41 ± 4.65 | 49.10 ± 1.85 |
-| GP head + Muon, wd = 0.01 (aux 0.01), last.ckpt | 0.6655 ± 0.0091 | 0.6461 ± 0.0088 | **11.78 ± 0.82** | **11.56 ± 0.79** | **11.50 ± 0.85** | **91.41 ± 1.65** | **48.62 ± 0.91** |
-| GP head + Muon → SGD at epoch 120, cosine (aux 0.01) | **0.6860 ± 0.0109** | 0.6631 ± 0.0124 | 18.06 ± 0.75 | 17.88 ± 0.91 | 17.96 ± 0.92 | 104.46 ± 3.76 | 49.00 ± 1.49 |
+| Model | Accuracy ↑ | F1 ↑ | ECE (×10⁻²) ↓ | aECE (×10⁻²) ↓ | smECE (×10⁻²) ↓ | NLL (×10⁻²) ↓ | Brier (×10⁻²) ↓ | FPR (×10⁻²) ↓ | FPR@95TPR (×10⁻²) ↓ |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| Baseline (linear head) | 0.6592 ± 0.0162 | 0.6469 ± 0.0166 | 25.11 ± 0.83 | 24.85 ± 0.98 | 26.17 ± 1.09 | 151.57 ± 6.93 | 57.81 ± 2.64 | 10.78 ± 0.51 | 47.92 ± 3.96 |
+| SNGP, c = 1 | 0.6696 ± 0.0090 | 0.6528 ± 0.0092 | 22.43 ± 1.47 | 22.36 ± 1.40 | 22.60 ± 1.50 | 125.05 ± 5.16 | 53.67 ± 1.51 | 10.52 ± 0.27 | 41.41 ± 2.85 |
+| SNGP + BN-SN, c = 8 | 0.6716 ± 0.0209 | 0.6581 ± 0.0198 | 22.23 ± 2.29 | 21.98 ± 2.35 | 22.26 ± 2.47 | 121.12 ± 9.07 | 53.52 ± 3.29 | 10.40 ± 0.63 | 41.05 ± 3.06 |
+| SNGP + SpecReg, λ = 0.003 | 0.6810 ± 0.0043 | **0.6651 ± 0.0029** | 20.73 ± 0.90 | 20.71 ± 0.87 | 21.00 ± 0.98 | 115.13 ± 3.02 | 51.11 ± 1.26 | 10.19 ± 0.11 | 40.19 ± 2.77 |
+| GP head + Muon, wd = 0.01 (aux 0.04) | 0.6569 ± 0.0208 | 0.6333 ± 0.0174 | 25.69 ± 1.88 | 25.56 ± 2.03 | 25.85 ± 1.94 | 148.92 ± 12.83 | 57.81 ± 3.73 | 10.90 ± 0.59 | 46.47 ± 5.85 |
+| GP head + Muon, wd = 0.01 (aux 0.01) | 0.6694 ± 0.0079 | 0.6516 ± 0.0086 | 15.59 ± 1.18 | 15.56 ± 1.18 | 15.57 ± 1.18 | 97.41 ± 4.65 | 49.10 ± 1.85 | 10.52 ± 0.25 | 39.63 ± 3.00 |
+| GP head + Muon, wd = 0.01 (aux 0.01), last.ckpt | 0.6655 ± 0.0091 | 0.6461 ± 0.0088 | **11.78 ± 0.82** | **11.56 ± 0.79** | **11.50 ± 0.85** | **91.41 ± 1.65** | **48.62 ± 0.91** | 10.60 ± 0.27 | 39.11 ± 2.00 |
+| GP head + Muon → SGD at epoch 120, cosine (aux 0.01) | **0.6860 ± 0.0109** | 0.6631 ± 0.0124 | 18.06 ± 0.75 | 17.88 ± 0.91 | 17.96 ± 0.92 | 104.46 ± 3.76 | 49.00 ± 1.49 | **10.02 ± 0.37** | **39.01 ± 2.82** |
 
 ### Institution shift — UTSouthwestern test (n = 3,299)
 
-| Model | Accuracy ↑ | F1 ↑ | ECE (×10⁻²) ↓ | aECE (×10⁻²) ↓ | smECE (×10⁻²) ↓ | NLL (×10⁻²) ↓ | Brier (×10⁻²) ↓ |
-|---|---:|---:|---:|---:|---:|---:|---:|
-| Baseline (linear head) | 0.7252 ± 0.0185 | 0.6827 ± 0.0239 | 21.68 ± 1.81 | 21.60 ± 1.74 | 23.87 ± 1.86 | 122.50 ± 11.91 | 47.20 ± 3.54 |
-| SNGP, c = 1 | 0.7318 ± 0.0208 | 0.6800 ± 0.0210 | 19.82 ± 2.21 | 19.45 ± 2.04 | 20.01 ± 2.16 | 103.59 ± 12.84 | 44.32 ± 4.41 |
-| SNGP + BN-SN, c = 8 | 0.7171 ± 0.0217 | 0.6762 ± 0.0326 | 20.94 ± 2.29 | 20.75 ± 2.48 | 21.23 ± 2.59 | 108.42 ± 7.51 | 47.21 ± 3.25 |
-| SNGP + SpecReg, λ = 0.003 | 0.7336 ± 0.0165 | 0.6925 ± 0.0242 | 19.02 ± 1.59 | 18.82 ± 1.75 | 19.23 ± 1.64 | 102.40 ± 5.61 | 44.04 ± 2.62 |
-| GP head + Muon, wd = 0.01 (aux 0.04) | 0.7368 ± 0.0182 | 0.6835 ± 0.0218 | 19.88 ± 2.81 | 19.74 ± 2.69 | 19.99 ± 2.75 | 117.19 ± 16.05 | 45.60 ± 4.80 |
-| GP head + Muon, wd = 0.01 (aux 0.01) | 0.7579 ± 0.0222 | **0.7335 ± 0.0302** | 12.07 ± 1.94 | 11.65 ± 2.03 | 11.57 ± 2.14 | 73.84 ± 7.63 | 37.32 ± 3.59 |
-| GP head + Muon, wd = 0.01 (aux 0.01), last.ckpt | 0.7480 ± 0.0154 | 0.6987 ± 0.0279 | **8.86 ± 1.37** | **8.92 ± 1.49** | **8.74 ± 1.58** | **69.76 ± 3.66** | 37.55 ± 2.12 |
-| GP head + Muon → SGD at epoch 120, cosine (aux 0.01) | **0.7707 ± 0.0180** | 0.7295 ± 0.0235 | 13.92 ± 2.25 | 13.22 ± 1.88 | 13.29 ± 1.86 | 76.33 ± 6.09 | **36.70 ± 2.59** |
+| Model | Accuracy ↑ | F1 ↑ | ECE (×10⁻²) ↓ | aECE (×10⁻²) ↓ | smECE (×10⁻²) ↓ | NLL (×10⁻²) ↓ | Brier (×10⁻²) ↓ | FPR (×10⁻²) ↓ | FPR@95TPR (×10⁻²) ↓ |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| Baseline (linear head) | 0.7252 ± 0.0185 | 0.6827 ± 0.0239 | 21.68 ± 1.81 | 21.60 ± 1.74 | 23.87 ± 1.86 | 122.50 ± 11.91 | 47.20 ± 3.54 | 11.81 ± 0.86 | 42.80 ± 3.55 |
+| SNGP, c = 1 | 0.7318 ± 0.0208 | 0.6800 ± 0.0210 | 19.82 ± 2.21 | 19.45 ± 2.04 | 20.01 ± 2.16 | 103.59 ± 12.84 | 44.32 ± 4.41 | 11.46 ± 0.94 | 50.38 ± 6.97 |
+| SNGP + BN-SN, c = 8 | 0.7171 ± 0.0217 | 0.6762 ± 0.0326 | 20.94 ± 2.29 | 20.75 ± 2.48 | 21.23 ± 2.59 | 108.42 ± 7.51 | 47.21 ± 3.25 | 12.20 ± 1.07 | 46.08 ± 6.22 |
+| SNGP + SpecReg, λ = 0.003 | 0.7336 ± 0.0165 | 0.6925 ± 0.0242 | 19.02 ± 1.59 | 18.82 ± 1.75 | 19.23 ± 1.64 | 102.40 ± 5.61 | 44.04 ± 2.62 | 11.39 ± 0.76 | 49.83 ± 2.88 |
+| GP head + Muon, wd = 0.01 (aux 0.04) | 0.7368 ± 0.0182 | 0.6835 ± 0.0218 | 19.88 ± 2.81 | 19.74 ± 2.69 | 19.99 ± 2.75 | 117.19 ± 16.05 | 45.60 ± 4.80 | 11.34 ± 0.92 | 55.98 ± 7.40 |
+| GP head + Muon, wd = 0.01 (aux 0.01) | 0.7579 ± 0.0222 | **0.7335 ± 0.0302** | 12.07 ± 1.94 | 11.65 ± 2.03 | 11.57 ± 2.14 | 73.84 ± 7.63 | 37.32 ± 3.59 | 10.39 ± 1.07 | **41.07 ± 5.40** |
+| GP head + Muon, wd = 0.01 (aux 0.01), last.ckpt | 0.7480 ± 0.0154 | 0.6987 ± 0.0279 | **8.86 ± 1.37** | **8.92 ± 1.49** | **8.74 ± 1.58** | **69.76 ± 3.66** | 37.55 ± 2.12 | 10.89 ± 0.64 | 45.83 ± 4.71 |
+| GP head + Muon → SGD at epoch 120, cosine (aux 0.01) | **0.7707 ± 0.0180** | 0.7295 ± 0.0235 | 13.92 ± 2.25 | 13.22 ± 1.88 | 13.29 ± 1.86 | 76.33 ± 6.09 | **36.70 ± 2.59** | **9.79 ± 0.82** | 43.25 ± 2.58 |
 
 ### Shift detection — entropy AUROC ↑, UC Davis test vs each other institution's test split
 
@@ -170,32 +172,6 @@ reproduce commands: [../MASTER_INFER_RESULTS_PATH.md](../MASTER_INFER_RESULTS_PA
 | GP head + Muon, wd = 0.01 (aux 0.01), last.ckpt | **0.838 ± 0.008** | 0.755 ± 0.013 | 0.796 ± 0.009 |
 | GP head + Muon → SGD at epoch 120, cosine (aux 0.01) | 0.816 ± 0.024 | 0.740 ± 0.027 | 0.778 ± 0.023 |
 
-### Shift detection — entropy AUPR ↑, UC Davis test vs each other institution's test split
-
-| Model | UPitt | UTSouthwestern | Mean |
-|---|---:|---:|---:|
-| Baseline (linear head) | 0.821 ± 0.013 | 0.736 ± 0.026 | 0.778 ± 0.018 |
-| SNGP, c = 1 | 0.850 ± 0.019 | 0.774 ± 0.021 | 0.812 ± 0.019 |
-| SNGP + BN-SN, c = 8 | 0.853 ± 0.007 | 0.790 ± 0.009 | 0.822 ± 0.007 |
-| SNGP + SpecReg, λ = 0.003 | 0.848 ± 0.016 | 0.780 ± 0.018 | 0.814 ± 0.016 |
-| GP head + Muon, wd = 0.01 (aux 0.04) | 0.854 ± 0.013 | **0.791 ± 0.021** | 0.823 ± 0.013 |
-| GP head + Muon, wd = 0.01 (aux 0.01) | 0.858 ± 0.009 | 0.783 ± 0.008 | 0.820 ± 0.007 |
-| GP head + Muon, wd = 0.01 (aux 0.01), last.ckpt | **0.861 ± 0.006** | 0.787 ± 0.009 | **0.824 ± 0.004** |
-| GP head + Muon → SGD at epoch 120, cosine (aux 0.01) | 0.842 ± 0.018 | 0.776 ± 0.019 | 0.809 ± 0.016 |
-
-### Shift detection — entropy FPR95 ↓, UC Davis test vs each other institution's test split
-
-| Model | UPitt | UTSouthwestern | Mean |
-|---|---:|---:|---:|
-| Baseline (linear head) | 0.896 ± 0.020 | 0.921 ± 0.017 | 0.908 ± 0.016 |
-| SNGP, c = 1 | **0.718 ± 0.061** | 0.839 ± 0.054 | 0.779 ± 0.056 |
-| SNGP + BN-SN, c = 8 | 0.743 ± 0.037 | **0.787 ± 0.019** | **0.765 ± 0.024** |
-| SNGP + SpecReg, λ = 0.003 | 0.724 ± 0.037 | 0.813 ± 0.035 | 0.768 ± 0.029 |
-| GP head + Muon, wd = 0.01 (aux 0.04) | 0.794 ± 0.076 | 0.880 ± 0.091 | 0.837 ± 0.079 |
-| GP head + Muon, wd = 0.01 (aux 0.01) | 0.730 ± 0.015 | 0.856 ± 0.031 | 0.793 ± 0.017 |
-| GP head + Muon, wd = 0.01 (aux 0.01), last.ckpt | 0.756 ± 0.036 | 0.863 ± 0.014 | 0.809 ± 0.024 |
-| GP head + Muon → SGD at epoch 120, cosine (aux 0.01) | 0.767 ± 0.052 | 0.864 ± 0.048 | 0.816 ± 0.047 |
-
 ### Shift detection — GP-variance AUROC ↑, UC Davis test vs each other institution's test split
 
 | Model | UPitt | UTSouthwestern | Mean |
@@ -207,27 +183,3 @@ reproduce commands: [../MASTER_INFER_RESULTS_PATH.md](../MASTER_INFER_RESULTS_PA
 | GP head + Muon, wd = 0.01 (aux 0.01) | 0.580 ± 0.021 | 0.604 ± 0.034 | 0.592 ± 0.026 |
 | GP head + Muon, wd = 0.01 (aux 0.01), last.ckpt | 0.516 ± 0.036 | 0.558 ± 0.027 | 0.537 ± 0.027 |
 | GP head + Muon → SGD at epoch 120, cosine (aux 0.01) | **0.606 ± 0.017** | **0.611 ± 0.032** | **0.609 ± 0.015** |
-
-### Shift detection — GP-variance AUPR ↑, UC Davis test vs each other institution's test split
-
-| Model | UPitt | UTSouthwestern | Mean |
-|---|---:|---:|---:|
-| SNGP, c = 1 | 0.522 ± 0.026 | 0.483 ± 0.027 | 0.502 ± 0.027 |
-| SNGP + BN-SN, c = 8 | 0.519 ± 0.038 | 0.477 ± 0.040 | 0.498 ± 0.038 |
-| SNGP + SpecReg, λ = 0.003 | 0.518 ± 0.019 | 0.514 ± 0.020 | 0.516 ± 0.018 |
-| GP head + Muon, wd = 0.01 (aux 0.04) | 0.512 ± 0.025 | 0.545 ± 0.025 | 0.529 ± 0.025 |
-| GP head + Muon, wd = 0.01 (aux 0.01) | 0.602 ± 0.021 | 0.600 ± 0.037 | 0.601 ± 0.027 |
-| GP head + Muon, wd = 0.01 (aux 0.01), last.ckpt | 0.541 ± 0.028 | 0.555 ± 0.030 | 0.548 ± 0.022 |
-| GP head + Muon → SGD at epoch 120, cosine (aux 0.01) | **0.621 ± 0.025** | **0.607 ± 0.039** | **0.614 ± 0.020** |
-
-### Shift detection — GP-variance FPR95 ↓, UC Davis test vs each other institution's test split
-
-| Model | UPitt | UTSouthwestern | Mean |
-|---|---:|---:|---:|
-| SNGP, c = 1 | 0.946 ± 0.013 | 0.946 ± 0.015 | 0.946 ± 0.014 |
-| SNGP + BN-SN, c = 8 | 0.965 ± 0.016 | 0.966 ± 0.015 | 0.965 ± 0.015 |
-| SNGP + SpecReg, λ = 0.003 | 0.941 ± 0.031 | 0.925 ± 0.030 | 0.933 ± 0.028 |
-| GP head + Muon, wd = 0.01 (aux 0.04) | 0.933 ± 0.027 | 0.948 ± 0.031 | 0.940 ± 0.028 |
-| GP head + Muon, wd = 0.01 (aux 0.01) | 0.910 ± 0.025 | 0.892 ± 0.027 | 0.901 ± 0.024 |
-| GP head + Muon, wd = 0.01 (aux 0.01), last.ckpt | 0.951 ± 0.014 | 0.946 ± 0.008 | 0.949 ± 0.009 |
-| GP head + Muon → SGD at epoch 120, cosine (aux 0.01) | **0.868 ± 0.017** | **0.864 ± 0.017** | **0.866 ± 0.013** |
