@@ -1027,7 +1027,7 @@ uv run python scripts/metrics/wong_adrc_report.py --stamp $N --out-dir figures/w
 Both artifact axes on Wong test, **seed 12345 only** (2026-10-05). `data=artifact_image_classifier`
 is Acevedo-shaped, so the Wong dataset, class count and class map are overridden and the leaf is
 `wong_artifact`. Results: "Artifact robustness" section of
-[results/WONG_ADRC_RESULTS.md](results/WONG_ADRC_RESULTS.md). The `count_1` (and some `count_2`)
+[results/archive/WONG_ADRC_RESULTS.md](results/archive/WONG_ADRC_RESULTS.md). The `count_1` (and some `count_2`)
 dirs that also exist for seeds 1-4 come from a stopped all-seeds run and are not reported.
 
 adrc_wong_final_artifact:
@@ -1084,7 +1084,7 @@ uv run python scripts/metrics/wong_adrc_report.py --stamp $N --train-institution
 Wong ADRC study, UC Davis-only Muon → SGD two-stage arm (2026-10-06), seed 12345 only: `best.ckpt`
 (π/8, no calibration) on the Wong test split filtered to each institution, as
 adrc_wong_ucdavis_final. Results: "UC Davis-trained, Muon → SGD two-stage" in
-[results/WONG_ADRC_RESULTS.md](results/WONG_ADRC_RESULTS.md).
+[results/archive/WONG_ADRC_RESULTS.md](results/archive/WONG_ADRC_RESULTS.md).
 
 adrc_wong_ucdavis_muon2stage:
 ```bash
@@ -1110,7 +1110,7 @@ uv run python scripts/metrics/wong_adrc_report.py --stamp 2026-10-05_21-33-51 20
 Wong ADRC study, UC Davis-only Muon → SGD two-stage arm with a WSD inverse-proportional decay
 (2026-10-06), seed 12345 only: `best.ckpt` (π/8, no calibration) on the Wong test split filtered
 to each institution, as adrc_wong_ucdavis_muon2stage. Results: "UC Davis-trained, Muon → SGD two-stage" in
-[results/WONG_ADRC_RESULTS.md](results/WONG_ADRC_RESULTS.md).
+[results/archive/WONG_ADRC_RESULTS.md](results/archive/WONG_ADRC_RESULTS.md).
 
 adrc_wong_ucdavis_muon2stage_wsd:
 ```bash
@@ -1138,7 +1138,7 @@ uv run python scripts/metrics/wong_adrc_report.py --stamp 2026-10-05_21-33-51 20
 
 Wong ADRC study, UC Davis-only two-stage WSD arm with the aux SGD lr at 0.04 (2026-10-06), seed
 12345 only: as adrc_wong_ucdavis_muon2stage_wsd. Results: "UC Davis-trained, Muon → SGD two-stage" in
-[results/WONG_ADRC_RESULTS.md](results/WONG_ADRC_RESULTS.md).
+[results/archive/WONG_ADRC_RESULTS.md](results/archive/WONG_ADRC_RESULTS.md).
 
 adrc_wong_ucdavis_muon2stage_wsd_aux04:
 ```bash
@@ -1166,7 +1166,7 @@ uv run python scripts/metrics/wong_adrc_report.py --stamp 2026-10-05_21-33-51 20
 
 Wong ADRC study, UC Davis-only two-stage WSD arm with the aux SGD lr at 0.02 (2026-10-06), seed
 12345 only: as adrc_wong_ucdavis_muon2stage_wsd_aux04 with the stamp / arm below. Results: "UC
-Davis-trained, Muon → SGD two-stage" in [results/WONG_ADRC_RESULTS.md](results/WONG_ADRC_RESULTS.md).
+Davis-trained, Muon → SGD two-stage" in [results/archive/WONG_ADRC_RESULTS.md](results/archive/WONG_ADRC_RESULTS.md).
 
 adrc_wong_ucdavis_muon2stage_wsd_aux02:
 ```bash
@@ -1189,7 +1189,8 @@ training, evaluated 2026-10-07): `best.ckpt` (π/8, no calibration) of each seed
 the Wong test split + 6 OOD sets and both artifact axes (seed 12345 only), as adrc_wong_final /
 adrc_wong_final_artifact; UC Davis runs on the Wong test split filtered to each institution, as
 adrc_wong_ucdavis_final. Results: the `… cosine (aux 0.01)` rows of the 5-seed sections in
-[results/WONG_ADRC_RESULTS.md](results/WONG_ADRC_RESULTS.md); checkpoints
+[results/WONG_ADRC_RESULTS.md](results/WONG_ADRC_RESULTS.md) (artifact axes in
+[results/archive/WONG_ADRC_RESULTS.md](results/archive/WONG_ADRC_RESULTS.md)); checkpoints
 `adrc_muon2stage_wong` / `adrc_muon2stage_wong_ucdavis_5seed` in
 [MASTER_CHECKPONT_PATHS.md](MASTER_CHECKPONT_PATHS.md).
 
@@ -1220,7 +1221,7 @@ uv run python scripts/metrics/wong_adrc_report.py --stamp 2026-10-05_21-33-51 20
 Wong ADRC study, UC Davis-only two-stage arm with the switch + cosine tail at epoch 135 instead of
 120 (2026-10-07), seed 12345 only: `best.ckpt` (π/8, no calibration) on the Wong test split
 filtered to each institution, as adrc_wong_ucdavis_muon2stage. Results: "UC Davis-trained, Muon →
-SGD two-stage" in [results/WONG_ADRC_RESULTS.md](results/WONG_ADRC_RESULTS.md); checkpoint
+SGD two-stage" in [results/archive/WONG_ADRC_RESULTS.md](results/archive/WONG_ADRC_RESULTS.md); checkpoint
 `adrc_muon2stage_sw135_wong_ucdavis` in [MASTER_CHECKPONT_PATHS.md](MASTER_CHECKPONT_PATHS.md).
 
 adrc_wong_ucdavis_muon2stage_sw135:
@@ -1249,7 +1250,7 @@ uv run python scripts/metrics/wong_adrc_report.py --stamp 2026-10-05_21-33-51 20
 Wong ADRC study, full-Wong two-stage arm with the switch + cosine tail at epoch 135 (2026-10-07),
 seed 12345 only: `best.ckpt` (epoch 149, π/8, no calibration) on the Wong test split + 6 OOD sets
 and both artifact axes, as adrc_wong_final / adrc_wong_final_artifact. Results: the `… epoch 135`
-rows of the full-Wong tables in [results/WONG_ADRC_RESULTS.md](results/WONG_ADRC_RESULTS.md);
+rows of the full-Wong tables in [results/archive/WONG_ADRC_RESULTS.md](results/archive/WONG_ADRC_RESULTS.md);
 checkpoint `adrc_muon2stage_sw135_wong` in [MASTER_CHECKPONT_PATHS.md](MASTER_CHECKPONT_PATHS.md).
 
 adrc_wong_final_muon2stage_sw135:
@@ -1281,7 +1282,9 @@ convs, SGD + Nesterov lr 0.01 on stem / BN / GP output layer, π/8, no calibrati
 `best.ckpt`, Wong test split + 6 OOD sets as adrc_wong_final, both artifact axes for seed 12345 as
 adrc_wong_final_artifact. UC Davis: seed 12345 only, `best.ckpt` and `last.ckpt` on the Wong test split
 filtered to each institution, as adrc_wong_ucdavis_final. Results: the `(aux 0.01)` Muon rows in
-[results/WONG_ADRC_RESULTS.md](results/WONG_ADRC_RESULTS.md); checkpoints `adrc_muon_aux01_wong` /
+[results/WONG_ADRC_RESULTS.md](results/WONG_ADRC_RESULTS.md) (5-seed full Wong) and
+[results/archive/WONG_ADRC_RESULTS.md](results/archive/WONG_ADRC_RESULTS.md) (UC Davis seed 12345,
+artifact axes); checkpoints `adrc_muon_aux01_wong` /
 `adrc_muon_aux01_wong_ucdavis` in [MASTER_CHECKPONT_PATHS.md](MASTER_CHECKPONT_PATHS.md).
 
 adrc_wong_final_muon_aux01:
