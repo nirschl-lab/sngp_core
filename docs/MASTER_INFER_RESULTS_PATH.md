@@ -1276,39 +1276,43 @@ uv run python scripts/metrics/wong_adrc_report.py --stamp 2026-10-05_10-05-27 20
 
 ---
 
-Wong ADRC study, single-stage Muon with the aux SGD lr at 0.01 (arm `muon_aux01`, 2026-10-07), seed
-12345 only: `best.ckpt` and `last.ckpt` (π/8, no calibration). Full Wong on the Wong test split + 6
-OOD sets, as adrc_wong_final (no artifact axes); UC Davis on the Wong test split filtered to each
-institution, as adrc_wong_ucdavis_final. Results: the `(aux 0.01)` Muon rows in
+Wong ADRC study, GP head + Muon (aux 0.01) arm (`muon_aux01`, 2026-10-07): Muon wd 0.01 on the hidden
+convs, SGD + Nesterov lr 0.01 on stem / BN / GP output layer, π/8, no calibration. Full Wong: 5 seeds,
+`best.ckpt`, Wong test split + 6 OOD sets as adrc_wong_final, both artifact axes for seed 12345 as
+adrc_wong_final_artifact. UC Davis: seed 12345 only, `best.ckpt` and `last.ckpt` on the Wong test split
+filtered to each institution, as adrc_wong_ucdavis_final. Results: the `(aux 0.01)` Muon rows in
 [results/WONG_ADRC_RESULTS.md](results/WONG_ADRC_RESULTS.md); checkpoints `adrc_muon_aux01_wong` /
 `adrc_muon_aux01_wong_ucdavis` in [MASTER_CHECKPONT_PATHS.md](MASTER_CHECKPONT_PATHS.md).
 
-adrc_wong_final_muon_aux01 / adrc_wong_ucdavis_muon_aux01 (`last-` prefix = last.ckpt):
+adrc_wong_final_muon_aux01:
 ```bash
-/data1/maheswararao/experiments/uncertainty-aware-ml/infer/sngp_muon_sgd_classifier_wong/{,last-}2026-10-07_13-05-23_muon_aux01_s12345/{wong,acevedo,jung,kather2016,kather2018,nirschl2018,tang}
+/data1/maheswararao/experiments/uncertainty-aware-ml/infer/sngp_muon_sgd_classifier_wong/2026-10-07_15-26-25_muon_aux01_s{12345,1,2,3,4}/{wong,acevedo,jung,kather2016,kather2018,nirschl2018,tang}
+/data1/maheswararao/experiments/uncertainty-aware-ml/infer/sngp_muon_sgd_classifier_wong/2026-10-07_15-26-25_muon_aux01_s12345/wong_artifact/{real_baseline,config/count_{1..5},procedural/severity_{1..5}}
+```
+
+adrc_wong_ucdavis_muon_aux01 (`last-` prefix = last.ckpt):
+```bash
 /data1/maheswararao/experiments/uncertainty-aware-ml/infer/sngp_muon_sgd_classifier_wong_ucdavis/{,last-}2026-10-07_13-05-26_muon_aux01_s12345/{wong_ucdavis,wong_upitt,wong_utsouthwestern}
 ```
 
-Reproduce (4 lanes, one per GPU, about 10 min):
+Reproduce, full Wong: the adrc_wong_final and adrc_wong_final_artifact loops with `N=2026-10-07_15-26-25`
+(the artifact loop over `${N}_*_s12345` only, `data.datamodule.num_workers=4` there while training
+shared the box, ~2 h). UC Davis (2 lanes, one per GPU, institutions sequential within a lane: concurrent
+institution filters fail silently):
 ```bash
 T=/data1/maheswararao/experiments/uncertainty-aware-ml/train
-export LEVELS="" OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1
-W=2026-10-07_13-05-23_muon_aux01_s12345; U=2026-10-07_13-05-26_muon_aux01_s12345
-CW=$T/sngp_muon_sgd_classifier_wong/runs/$W/checkpoints; CU=$T/sngp_muon_sgd_classifier_wong_ucdavis/runs/$U/checkpoints
-scripts/inference/run_eval_suite_parallel.sh $CW/best.ckpt sngp_muon_sgd_classifier_wong/$W 0 -- data.datamodule.num_workers=12 &
-scripts/inference/run_eval_suite_parallel.sh $CW/last.ckpt sngp_muon_sgd_classifier_wong/last-$W 1 -- data.datamodule.num_workers=12 &
+export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1
+U=2026-10-07_13-05-26_muon_aux01_s12345; CU=$T/sngp_muon_sgd_classifier_wong_ucdavis/runs/$U/checkpoints
 for k in best last; do
-  pre=$U; g=2; [[ $k == last ]] && pre=last-$U && g=3
-  ( for I in ucdavis upitt utsouthwestern; do   # one sequential lane: concurrent institution filters fail silently
+  pre=$U; g=0; [[ $k == last ]] && pre=last-$U && g=1
+  ( for I in ucdavis upitt utsouthwestern; do
       CUDA_VISIBLE_DEVICES=$g uv run src/inference/infer.py ckpt_path=$CU/$k.ckpt fold=test data=wong \
           data.datamodule.institution=$I data.datamodule.num_workers=12 \
           infer.save.run_name=sngp_muon_sgd_classifier_wong_ucdavis/$pre/wong_$I
     done ) &
 done; wait
-uv run python scripts/metrics/wong_adrc_report.py --stamp 2026-10-05_10-05-27 2026-10-06_21-21-42 2026-10-07_13-05-23 \
-    --seeds 12345 --out-dir figures/wong_adrc --csv-name wong_adrc_muon_aux01_s12345_runs.csv
-uv run python scripts/metrics/wong_adrc_report.py --stamp last-2026-10-07_13-05-23 --seeds 12345 \
-    --out-dir figures/wong_adrc --csv-name wong_adrc_muon_aux01_s12345_last_runs.csv
+uv run python scripts/metrics/wong_adrc_report.py --stamp 2026-10-05_10-05-27 2026-10-06_21-21-42 2026-10-07_15-26-25 \
+    --out-dir figures/wong_adrc
 uv run python scripts/metrics/wong_adrc_report.py --stamp 2026-10-05_21-33-51 2026-10-06_21-21-44 2026-10-07_13-05-26 \
     --seeds 12345 --train-institution ucdavis --out-dir figures/wong_adrc --csv-name wong_adrc_ucdavis_muon_aux01_s12345_runs.csv
 uv run python scripts/metrics/wong_adrc_report.py --stamp last-2026-10-06_21-21-44 last-2026-10-07_13-05-26 \

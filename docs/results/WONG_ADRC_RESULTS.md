@@ -20,11 +20,10 @@ epoch 135, seed 12345 only (2026-10-07, `ARMS=muon2stage_sw135`, W&B group
 `adrc_final_2026-10-07_11-13-57`); checkpoint `adrc_muon2stage_sw135_wong`, inference
 `adrc_wong_final_muon2stage_sw135`, per-run numbers
 `figures/wong_adrc/wong_adrc_muon2stage_sw135_s12345_runs.csv`.
-The `(aux 0.01)` Muon row is the plain Muon arm with only the aux SGD lr (stem / BN / GP output
-layer) at the two-stage arms' 0.01 and no switch, seed 12345 only (2026-10-07, `ARMS=muon_aux01`,
-W&B group `adrc_final_2026-10-07_13-05-23`); checkpoint `adrc_muon_aux01_wong`, inference
-`adrc_wong_final_muon_aux01`, per-run numbers `figures/wong_adrc/wong_adrc_muon_aux01_s12345{,_last}_runs.csv`
-(best.ckpt, last.ckpt). Its artifact axes were not run.
+The `(aux 0.01)` Muon row: Muon (lr 0.02, wd 0.01) on the hidden convs and SGD + Nesterov at lr
+0.01 (L2 6e-4) on the stem, BN and GP output layer, one cosine schedule, no SN (2026-10-07,
+`ARMS=muon_aux01`, W&B group `adrc_final_2026-10-07_15-26-25`); checkpoints `adrc_muon_aux01_wong`,
+inference `adrc_wong_final_muon_aux01`.
 
 | Arm | Experiment | Cell | best.ckpt epoch (s12345, s1–s4) | W&B (s12345, s1–s4) |
 |---|---|---|---|---|
@@ -35,7 +34,7 @@ W&B group `adrc_final_2026-10-07_13-05-23`); checkpoint `adrc_muon_aux01_wong`, 
 | GP head + Muon | `sngp_muon_wong_sgd` | Muon wd = 0.01, no SN | 146, 141, 143, 146, 148 | `hdmg964v` `qxkd3rwn` `5kixgy2n` `ma6f545j` `9x9a7xp7` |
 | GP head + Muon → SGD at epoch 120, cosine (aux 0.01) | `sngp_muon_2stage_wong_sgd` | Muon wd = 0.01 → SGD at epoch 120, no SN | 149, 142, 145, 146, 148 | `fcrtjgun` `7mnbytky` `25j3jpfs` `e22h8269` `njhdpvv7` |
 | GP head + Muon → SGD at epoch 135, cosine (aux 0.01) | `sngp_muon_2stage_wong_sgd` | as above, switch at epoch 135 | 149 (s12345 only) | `5hw5q9me` |
-| GP head + Muon (aux 0.01) | `sngp_muon_wong_sgd` | Muon wd = 0.01, aux SGD lr 0.01, no SN | 126 (s12345 only) | `m3edt5m7` |
+| GP head + Muon (aux 0.01) | `sngp_muon_wong_sgd` | Muon wd = 0.01, aux SGD lr 0.01, no SN | 149, 146, 143, 143, 148 | `r6kexhww` `agker8b9` `to1p5l16` `s9mtcegc` `h113eze9` |
 
 Every cell is mean ± sample std over the 5 training seeds. ECE is 10 equal-width bins (from
 inference); aECE is 10 equal-mass bins and smECE is the smooth ECE of Błasiok & Nakkiran with the
@@ -50,11 +49,10 @@ At ~99% accuracy smECE sits at its bandwidth floor, so ID differences in it are 
 | SNGP, c = 1 | 0.9922 ± 0.0004 | 0.9921 ± 0.0004 | 0.18 ± 0.04 | 0.13 ± 0.10 | 0.38 ± 0.04 | 2.73 ± 0.21 | 1.27 ± 0.11 |
 | SNGP + BN-SN, c = 8 | 0.9923 ± 0.0007 | 0.9923 ± 0.0007 | 0.19 ± 0.03 | **0.12 ± 0.04** | 0.41 ± 0.06 | 2.70 ± 0.17 | 1.22 ± 0.07 |
 | SNGP + SpecReg, λ = 0.003 | 0.9923 ± 0.0006 | 0.9923 ± 0.0006 | **0.14 ± 0.02** | 0.14 ± 0.04 | 0.36 ± 0.03 | 2.68 ± 0.15 | 1.22 ± 0.08 |
-| GP head + Muon, wd = 0.01 (aux 0.04) | **0.9949 ± 0.0002** | **0.9949 ± 0.0002** | 0.22 ± 0.03 | 0.21 ± 0.03 | **0.34 ± 0.01** | **1.88 ± 0.08** | **0.83 ± 0.03** |
+| GP head + Muon, wd = 0.01 (aux 0.04) | 0.9949 ± 0.0002 | 0.9949 ± 0.0002 | 0.22 ± 0.03 | 0.21 ± 0.03 | 0.34 ± 0.01 | 1.88 ± 0.08 | 0.83 ± 0.03 |
+| GP head + Muon, wd = 0.01 (aux 0.01) | **0.9950 ± 0.0003** | **0.9950 ± 0.0003** | 0.15 ± 0.07 | 0.18 ± 0.01 | **0.33 ± 0.04** | **1.72 ± 0.15** | **0.77 ± 0.05** |
 | GP head + Muon → SGD at epoch 120, cosine (aux 0.01) | 0.9909 ± 0.0008 | 0.9909 ± 0.0008 | 0.30 ± 0.10 | 0.21 ± 0.07 | 0.52 ± 0.08 | 3.00 ± 0.11 | 1.43 ± 0.06 |
 | GP head + Muon → SGD at epoch 135, cosine (aux 0.01), seed 12345 only | 0.9910 | 0.9910 | 0.23 | 0.23 | 0.40 | 3.33 | 1.55 |
-| GP head + Muon, wd = 0.01 (aux 0.01), seed 12345 only | 0.9949 | 0.9949 | 0.17 | 0.10 | 0.31 | 1.93 | 0.86 |
-| GP head + Muon, wd = 0.01 (aux 0.01), seed 12345 only, last.ckpt | 0.9946 | 0.9946 | 0.16 | 0.15 | 0.32 | 1.79 | 0.79 |
 
 ### Entropy AUROC ↑ — Wong test vs each OOD test set
 
@@ -67,11 +65,10 @@ Each seed's AUROC is the mean over the 10 frozen 1,000-row subsamples of
 | SNGP, c = 1 | 0.945 ± 0.022 | 0.860 ± 0.035 | 0.891 ± 0.025 | 0.784 ± 0.019 | 0.822 ± 0.126 | 0.397 ± 0.036 | 0.783 ± 0.030 |
 | SNGP + BN-SN, c = 8 | 0.850 ± 0.104 | 0.846 ± 0.097 | 0.835 ± 0.040 | 0.715 ± 0.052 | 0.806 ± 0.104 | 0.452 ± 0.029 | 0.750 ± 0.051 |
 | SNGP + SpecReg, λ = 0.003 | 0.911 ± 0.059 | 0.781 ± 0.094 | 0.884 ± 0.014 | 0.731 ± 0.036 | 0.748 ± 0.065 | 0.390 ± 0.015 | 0.741 ± 0.035 |
-| GP head + Muon, wd = 0.01 (aux 0.04) | **0.975 ± 0.021** | **0.876 ± 0.083** | **0.956 ± 0.013** | **0.849 ± 0.031** | **0.960 ± 0.024** | **0.453 ± 0.060** | **0.845 ± 0.024** |
+| GP head + Muon, wd = 0.01 (aux 0.04) | 0.975 ± 0.021 | 0.876 ± 0.083 | 0.956 ± 0.013 | 0.849 ± 0.031 | 0.960 ± 0.024 | **0.453 ± 0.060** | 0.845 ± 0.024 |
+| GP head + Muon, wd = 0.01 (aux 0.01) | **0.980 ± 0.018** | **0.946 ± 0.016** | **0.978 ± 0.004** | **0.910 ± 0.021** | **0.982 ± 0.005** | 0.411 ± 0.021 | **0.868 ± 0.007** |
 | GP head + Muon → SGD at epoch 120, cosine (aux 0.01) | 0.891 ± 0.111 | 0.762 ± 0.096 | 0.855 ± 0.049 | 0.692 ± 0.060 | 0.868 ± 0.083 | 0.396 ± 0.026 | 0.744 ± 0.047 |
 | GP head + Muon → SGD at epoch 135, cosine (aux 0.01), seed 12345 only | 0.818 | 0.772 | 0.906 | 0.758 | 0.914 | 0.414 | 0.764 |
-| GP head + Muon, wd = 0.01 (aux 0.01), seed 12345 only | 0.979 | 0.870 | 0.966 | 0.894 | 0.977 | 0.445 | 0.855 |
-| GP head + Muon, wd = 0.01 (aux 0.01), seed 12345 only, last.ckpt | 0.992 | 0.934 | 0.976 | 0.904 | 0.980 | 0.426 | 0.869 |
 
 ### GP-variance AUROC ↑ — Wong test vs each OOD test set
 
@@ -84,10 +81,9 @@ depend on the mean-field factor. Below 0.5 means the variance is inverted (lower
 | SNGP + BN-SN, c = 8 | **0.937 ± 0.031** | 0.822 ± 0.064 | 0.912 ± 0.016 | **0.870 ± 0.041** | 0.887 ± 0.102 | 0.356 ± 0.030 | **0.798 ± 0.030** |
 | SNGP + SpecReg, λ = 0.003 | 0.767 ± 0.075 | 0.751 ± 0.112 | 0.906 ± 0.020 | 0.823 ± 0.034 | 0.860 ± 0.054 | 0.420 ± 0.039 | 0.754 ± 0.036 |
 | GP head + Muon, wd = 0.01 (aux 0.04) | 0.719 ± 0.109 | 0.404 ± 0.153 | 0.710 ± 0.037 | 0.575 ± 0.032 | 0.493 ± 0.119 | 0.405 ± 0.110 | 0.551 ± 0.034 |
-| GP head + Muon → SGD at epoch 120, cosine (aux 0.01) | 0.894 ± 0.098 | **0.828 ± 0.120** | 0.854 ± 0.024 | 0.772 ± 0.041 | **0.904 ± 0.030** | **0.448 ± 0.070** | 0.783 ± 0.045 |
+| GP head + Muon, wd = 0.01 (aux 0.01) | **0.937 ± 0.044** | 0.793 ± 0.071 | 0.842 ± 0.025 | 0.827 ± 0.030 | **0.956 ± 0.012** | 0.370 ± 0.052 | 0.788 ± 0.023 |
+| GP head + Muon → SGD at epoch 120, cosine (aux 0.01) | 0.894 ± 0.098 | **0.828 ± 0.120** | 0.854 ± 0.024 | 0.772 ± 0.041 | 0.904 ± 0.030 | **0.448 ± 0.070** | 0.783 ± 0.045 |
 | GP head + Muon → SGD at epoch 135, cosine (aux 0.01), seed 12345 only | 0.855 | 0.558 | 0.823 | 0.742 | 0.892 | 0.410 | 0.713 |
-| GP head + Muon, wd = 0.01 (aux 0.01), seed 12345 only | 0.900 | 0.750 | 0.827 | 0.817 | 0.937 | 0.388 | 0.770 |
-| GP head + Muon, wd = 0.01 (aux 0.01), seed 12345 only, last.ckpt | 0.941 | 0.765 | 0.770 | 0.825 | 0.922 | 0.309 | 0.755 |
 
 ## Artifact robustness — seed 12345 only
 
@@ -104,7 +100,8 @@ Wong test, number of real artifact cutouts pasted per image (`artifact_balanced`
 | SNGP, c = 1 | 0.9920 | 0.8264 | 0.6976 | 0.5894 | 0.5137 | 0.4419 |
 | SNGP + BN-SN, c = 8 | 0.9914 | 0.8268 | 0.7103 | 0.5977 | **0.5271** | 0.4582 |
 | SNGP + SpecReg, λ = 0.003 | 0.9917 | 0.8252 | 0.7023 | 0.5987 | 0.5217 | 0.4587 |
-| GP head + Muon, wd = 0.01 (aux 0.04) | **0.9946** | 0.8335 | 0.7090 | 0.5986 | 0.5205 | 0.4583 |
+| GP head + Muon, wd = 0.01 (aux 0.04) | 0.9946 | 0.8335 | 0.7090 | 0.5986 | 0.5205 | 0.4583 |
+| GP head + Muon, wd = 0.01 (aux 0.01) | **0.9948** | 0.8230 | 0.6911 | 0.5742 | 0.5034 | 0.4403 |
 | GP head + Muon → SGD at epoch 120, cosine (aux 0.01) | 0.9901 | 0.8073 | 0.6878 | 0.5732 | 0.4972 | 0.4366 |
 | GP head + Muon → SGD at epoch 135, cosine (aux 0.01) | 0.9910 | 0.8241 | 0.7001 | 0.5844 | 0.5154 | 0.4530 |
 
@@ -114,9 +111,10 @@ Wong test, number of real artifact cutouts pasted per image (`artifact_balanced`
 |---|---:|---:|---:|---:|---:|---:|
 | Baseline (linear head) | 3.02 | 87.41 | 152.88 | 219.61 | 266.81 | 301.74 |
 | SNGP, c = 1 | 2.94 | 83.96 | 148.49 | 210.91 | 254.78 | 296.73 |
-| SNGP + BN-SN, c = 8 | 2.90 | **80.03** | **139.31** | **200.92** | **242.16** | 284.72 |
+| SNGP + BN-SN, c = 8 | 2.90 | 80.03 | 139.31 | 200.92 | 242.16 | 284.72 |
 | SNGP + SpecReg, λ = 0.003 | 2.84 | 87.79 | 152.50 | 212.73 | 255.74 | 294.31 |
-| GP head + Muon, wd = 0.01 (aux 0.04) | **1.83** | 82.29 | 146.24 | 203.66 | 243.06 | **276.02** |
+| GP head + Muon, wd = 0.01 (aux 0.04) | **1.83** | 82.29 | 146.24 | 203.66 | 243.06 | 276.02 |
+| GP head + Muon, wd = 0.01 (aux 0.01) | 1.91 | **78.18** | **138.42** | **193.62** | **229.58** | **260.58** |
 | GP head + Muon → SGD at epoch 120, cosine (aux 0.01) | 3.11 | 86.27 | 149.09 | 210.38 | 249.50 | 285.38 |
 | GP head + Muon → SGD at epoch 135, cosine (aux 0.01) | 3.33 | 82.33 | 144.48 | 204.41 | 245.33 | 279.44 |
 
@@ -127,8 +125,9 @@ Wong test, number of real artifact cutouts pasted per image (`artifact_balanced`
 | Baseline (linear head) | 0.15 | 12.42 | 22.02 | 31.27 | 38.52 | 43.03 |
 | SNGP, c = 1 | 0.20 | 12.85 | 22.98 | 32.16 | 38.32 | 45.01 |
 | SNGP + BN-SN, c = 8 | 0.20 | 12.73 | **21.60** | 31.39 | **37.23** | 43.76 |
-| SNGP + SpecReg, λ = 0.003 | **0.13** | 12.68 | 22.63 | **31.01** | 37.82 | 43.11 |
+| SNGP + SpecReg, λ = 0.003 | 0.13 | 12.68 | 22.63 | **31.01** | 37.82 | 43.11 |
 | GP head + Muon, wd = 0.01 (aux 0.04) | 0.22 | 12.52 | 22.50 | 31.74 | 37.78 | **42.67** |
+| GP head + Muon, wd = 0.01 (aux 0.01) | **0.10** | 12.90 | 22.89 | 32.23 | 37.71 | 43.70 |
 | GP head + Muon → SGD at epoch 120, cosine (aux 0.01) | 0.25 | 13.85 | 23.21 | 33.03 | 39.01 | 44.75 |
 | GP head + Muon → SGD at epoch 135, cosine (aux 0.01) | 0.23 | **12.33** | 22.16 | 31.93 | 37.44 | 42.93 |
 
@@ -142,7 +141,8 @@ Wong test, graded acquisition degradations (`procedural_ood`, `histo_c` ladder, 
 | SNGP, c = 1 | 0.9920 | 0.9870 | 0.9829 | 0.9647 | 0.9118 | 0.8450 |
 | SNGP + BN-SN, c = 8 | 0.9914 | 0.9887 | 0.9848 | 0.9692 | 0.9176 | 0.8545 |
 | SNGP + SpecReg, λ = 0.003 | 0.9917 | 0.9874 | 0.9808 | 0.9634 | 0.9178 | 0.8487 |
-| GP head + Muon, wd = 0.01 (aux 0.04) | **0.9946** | **0.9928** | **0.9916** | **0.9792** | **0.9494** | 0.8789 |
+| GP head + Muon, wd = 0.01 (aux 0.04) | 0.9946 | 0.9928 | **0.9916** | **0.9792** | **0.9494** | 0.8789 |
+| GP head + Muon, wd = 0.01 (aux 0.01) | **0.9948** | **0.9932** | 0.9907 | 0.9758 | 0.9375 | 0.8743 |
 | GP head + Muon → SGD at epoch 120, cosine (aux 0.01) | 0.9901 | 0.9877 | 0.9837 | 0.9696 | 0.9268 | 0.8548 |
 | GP head + Muon → SGD at epoch 135, cosine (aux 0.01) | 0.9910 | 0.9886 | 0.9845 | 0.9742 | 0.9430 | **0.8847** |
 
@@ -154,7 +154,8 @@ Wong test, graded acquisition degradations (`procedural_ood`, `histo_c` ladder, 
 | SNGP, c = 1 | 2.94 | 4.33 | 6.13 | 12.08 | 34.56 | 71.83 |
 | SNGP + BN-SN, c = 8 | 2.90 | 3.90 | 5.17 | 9.99 | 28.93 | 64.03 |
 | SNGP + SpecReg, λ = 0.003 | 2.84 | 3.97 | 6.47 | 12.27 | 31.92 | 66.17 |
-| GP head + Muon, wd = 0.01 (aux 0.04) | **1.83** | **2.63** | **3.20** | **6.99** | 20.43 | 50.33 |
+| GP head + Muon, wd = 0.01 (aux 0.04) | **1.83** | 2.63 | 3.20 | **6.99** | 20.43 | 50.33 |
+| GP head + Muon, wd = 0.01 (aux 0.01) | 1.91 | **2.40** | **3.15** | 7.67 | 20.99 | 47.35 |
 | GP head + Muon → SGD at epoch 120, cosine (aux 0.01) | 3.11 | 3.95 | 5.27 | 9.28 | 24.79 | 56.06 |
 | GP head + Muon → SGD at epoch 135, cosine (aux 0.01) | 3.33 | 4.12 | 5.04 | 8.03 | **18.91** | **41.05** |
 
@@ -165,8 +166,9 @@ Wong test, graded acquisition degradations (`procedural_ood`, `histo_c` ladder, 
 | Baseline (linear head) | 0.15 | 0.22 | 0.40 | 0.92 | 3.51 | 8.30 |
 | SNGP, c = 1 | 0.20 | 0.36 | 0.60 | 1.50 | 5.59 | 11.29 |
 | SNGP + BN-SN, c = 8 | 0.20 | **0.13** | 0.44 | 0.94 | 4.50 | 9.81 |
-| SNGP + SpecReg, λ = 0.003 | **0.13** | 0.28 | 0.65 | 1.28 | 4.51 | 10.26 |
+| SNGP + SpecReg, λ = 0.003 | 0.13 | 0.28 | 0.65 | 1.28 | 4.51 | 10.26 |
 | GP head + Muon, wd = 0.01 (aux 0.04) | 0.22 | 0.29 | 0.34 | 1.06 | 3.14 | 8.24 |
+| GP head + Muon, wd = 0.01 (aux 0.01) | **0.10** | 0.16 | 0.13 | 0.70 | 3.02 | 7.43 |
 | GP head + Muon → SGD at epoch 120, cosine (aux 0.01) | 0.25 | 0.23 | **0.12** | **0.56** | 3.38 | 8.95 |
 | GP head + Muon → SGD at epoch 135, cosine (aux 0.01) | 0.23 | 0.30 | 0.21 | 0.59 | **2.22** | **6.56** |
 
