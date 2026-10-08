@@ -20,7 +20,7 @@ matrix (Newton-Schulz), so every step has spectral norm ~lr regardless of the gr
 magnitude. It bounds the *update*, not the weight: only decoupled weight decay caps the
 weight's spectral norm, softly, at roughly `1 / weight_decay` in steady state.
 """
-from typing import Iterable, Tuple
+from typing import Callable, Iterable, Tuple
 
 import torch
 from loguru import logger
@@ -68,6 +68,10 @@ class _MuonHybrid(Optimizer):
     Each group has its own `lr` / `weight_decay`, so an LR scheduler scales both from their
     own initial LR, and `param_groups[0]['lr']` (what `LitModuleBase` logs as `lr`) is the
     Muon LR. Subclasses build the aux group and implement `_aux_step`.
+
+    `is_muon` picks the Muon group. The default is the conv-backbone rule; a model whose
+    hidden weights are 2D `Linear` matrices (e.g. the MLP in `scripts/sngp_make_moons.py`)
+    passes its own predicate. Muon's step flattens any kernel to `[out, -1]`, so 2D works.
     """
 
     _aux_name = "aux"
@@ -81,14 +85,16 @@ class _MuonHybrid(Optimizer):
         weight_decay: float,
         nesterov: bool,
         ns_steps: int,
+        is_muon: Callable[[torch.Tensor], bool] = is_muon_param,
     ) -> None:
         params = [p for p in params if p.requires_grad]
-        muon_params = [p for p in params if is_muon_param(p)]
-        aux_params = [p for p in params if not is_muon_param(p)]
+        muon_params = [p for p in params if is_muon(p)]
+        aux_params = [p for p in params if not is_muon(p)]
         if not muon_params:
             raise ValueError(
                 f"{type(self).__name__} found no hidden conv kernels (4D, in_channels > 3) -- "
-                "this optimizer targets conv backbones; use a plain optimizer for this model."
+                "this optimizer targets conv backbones; use a plain optimizer for this model, "
+                "or pass `is_muon` to select its hidden weights."
             )
         groups = [
             dict(params=muon_params, use_muon=True, lr=lr, momentum=momentum,
@@ -149,6 +155,7 @@ class MuonWithAuxAdamW(_MuonHybrid):
     :param adamw_betas: AdamW betas.
     :param adamw_eps: AdamW epsilon.
     :param adamw_weight_decay: AdamW decoupled weight decay.
+    :param is_muon: Predicate selecting the Muon parameters (default `is_muon_param`).
     """
 
     _aux_name = "AdamW"
@@ -165,10 +172,11 @@ class MuonWithAuxAdamW(_MuonHybrid):
         adamw_betas: Tuple[float, float] = (0.9, 0.999),
         adamw_eps: float = 1e-8,
         adamw_weight_decay: float = 0.0,
+        is_muon: Callable[[torch.Tensor], bool] = is_muon_param,
     ) -> None:
         aux_group = dict(lr=adamw_lr, betas=tuple(adamw_betas), eps=adamw_eps,
                          weight_decay=adamw_weight_decay)
-        super().__init__(params, aux_group, lr, momentum, weight_decay, nesterov, ns_steps)
+        super().__init__(params, aux_group, lr, momentum, weight_decay, nesterov, ns_steps, is_muon)
 
     def _aux_step(self, group: dict) -> None:
         beta1, beta2 = group["betas"]
@@ -207,6 +215,7 @@ class MuonWithAuxSGD(_MuonHybrid):
     :param sgd_momentum: SGD momentum.
     :param sgd_nesterov: Nesterov momentum for SGD.
     :param sgd_weight_decay: SGD L2 penalty, added to the gradient.
+    :param is_muon: Predicate selecting the Muon parameters (default `is_muon_param`).
     """
 
     _aux_name = "SGD"
@@ -223,10 +232,11 @@ class MuonWithAuxSGD(_MuonHybrid):
         sgd_momentum: float = 0.9,
         sgd_nesterov: bool = True,
         sgd_weight_decay: float = 0.0,
+        is_muon: Callable[[torch.Tensor], bool] = is_muon_param,
     ) -> None:
         aux_group = dict(lr=sgd_lr, momentum=sgd_momentum, nesterov=sgd_nesterov,
                          weight_decay=sgd_weight_decay)
-        super().__init__(params, aux_group, lr, momentum, weight_decay, nesterov, ns_steps)
+        super().__init__(params, aux_group, lr, momentum, weight_decay, nesterov, ns_steps, is_muon)
 
     def switch_muon_group_to_sgd(
         self, momentum: float = 0.9, nesterov: bool = True, weight_decay: float = 6e-4

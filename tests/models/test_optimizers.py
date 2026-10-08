@@ -49,6 +49,24 @@ def test_rejects_models_without_conv_kernels(cls):
         cls(torch.nn.Linear(4, 4).parameters())
 
 
+@pytest.mark.parametrize("cls", [MuonWithAuxAdamW, MuonWithAuxSGD])
+def test_custom_is_muon_selects_linear_weights(cls):
+    """An MLP passes its own predicate: its hidden 2D weights go to Muon, and Muon's step
+    keeps them spectrally bounded just as it does a flattened conv kernel."""
+    torch.manual_seed(0)
+    mlp = torch.nn.Sequential(torch.nn.Linear(16, 16), torch.nn.ReLU(), torch.nn.Linear(16, 3))
+    hidden = mlp[0].weight
+    optimizer = cls(mlp.parameters(), lr=0.02, is_muon=lambda p: p is hidden)
+    muon, aux = _group_ids(optimizer)
+    assert muon == {id(hidden)}
+    assert aux == {id(mlp[0].bias), id(mlp[2].weight), id(mlp[2].bias)}
+
+    before = hidden.detach().clone()
+    (mlp(torch.randn(8, 16)) * 1e3).square().mean().backward()
+    optimizer.step()
+    assert torch.linalg.matrix_norm(hidden.detach() - before, ord=2) < 1.3 * 0.02
+
+
 @pytest.mark.parametrize("shape", [(64, 576), (512, 128), (32, 32)])
 def test_newton_schulz_is_near_orthogonal(shape):
     torch.manual_seed(0)
