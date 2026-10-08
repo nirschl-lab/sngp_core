@@ -8,8 +8,14 @@ each model's class-probability and predictive-uncertainty surfaces, with an OOD 
 overlaid. The SNGP head is this project's `RandomFeatureGaussianProcess`, configured to
 match the tutorial's `nlp_layers.RandomFeatureGaussianProcess` defaults.
 
+Two arms go beyond the tutorial: `sngp_muon`, the project's Muon arm in miniature -- the
+same GP head with no spectral norm, Muon on the hidden dense layers and SGD on everything
+else (`MuonWithAuxSGD`, the `muon_aux01` recipe at a constant LR) -- and `sngp_muon_adam`,
+the same with the tutorial's Adam on everything else (`MuonWithAuxAdamW`).
+
     uv run scripts/sngp_make_moons.py                  # writes figures/sngp_moons/*.png
     uv run scripts/sngp_make_moons.py --seeds 0 1 42 --show
+    uv run scripts/sngp_make_moons.py --models sngp sngp_muon
 """
 
 import argparse
@@ -30,6 +36,7 @@ from torch import nn
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
 
+from src.models.components.optimizers import MuonWithAuxAdamW, MuonWithAuxSGD  # noqa: E402
 from src.models.components.spectral_norm import bounded_spectral_norm  # noqa: E402
 from src.models.outputs import ModelOutput  # noqa: E402
 from src.models.sngp.sngp_classifier import RandomFeatureGaussianProcess  # noqa: E402
@@ -64,6 +71,32 @@ GP_CONFIG = dict(
     mean_field_factor=math.pi / 8,  # the tutorial's `lambda_param`
 )
 GP_L2_REGULARIZATION = 1e-6
+# `muon_aux01` (scripts/tmux/adrc_wong_final.sh) without the cosine schedule, which the
+# tutorial does not use: Muon on the hidden layers, SGD + Nesterov on biases and the GP
+# output layer. The aux L2 is left to GP_L2_REGULARIZATION, as in the other SNGP arm.
+MUON_CONFIG = dict(
+    lr=0.02,
+    momentum=0.95,
+    weight_decay=0.01,
+    nesterov=True,
+    sgd_lr=0.01,
+    sgd_momentum=0.9,
+    sgd_nesterov=True,
+    sgd_weight_decay=0.0,
+)
+# Adam aux (`MuonWithAuxAdamW`) at the tutorial's Adam lr, so this arm differs from `sngp`
+# only in the hidden layers' optimizer and the dropped spectral norm. The Muon lr is 10x
+# below the SGD arm's: at 0.02 every step moves the hidden layers by a spectral norm of 0.02
+# while Adam at 1e-4 barely moves the GP output layer, and training stalls at chance (seed 0)
+# or ~89% (seed 1). At 0.002 the hidden norms stay ~1.9 and both seeds reach 100%.
+MUON_ADAM_CONFIG = dict(
+    lr=0.002,
+    momentum=0.95,
+    weight_decay=0.01,
+    nesterov=True,
+    adamw_lr=LEARNING_RATE,
+    adamw_weight_decay=0.0,
+)
 
 
 # ------------- Data ------------- #
@@ -129,14 +162,20 @@ class DeepResNet(nn.Module):
 
 
 class DeepResNetSNGP(DeepResNet):
-    """`DeepResNet` with spectral-normalized hidden layers and an RFF-GP output layer."""
+    """`DeepResNet` with spectral-normalized hidden layers and an RFF-GP output layer.
 
-    def __init__(self, spec_norm_bound: float = SPEC_NORM_BOUND, **kwargs):
+    `spec_norm_bound=None` drops the spectral norm (the Muon arm).
+    """
+
+    def __init__(self, spec_norm_bound: Optional[float] = SPEC_NORM_BOUND, **kwargs):
         self.spec_norm_bound = spec_norm_bound
         super().__init__(**kwargs)
 
     def make_dense_layer(self) -> nn.Module:
-        return bounded_spectral_norm(super().make_dense_layer(), bound=self.spec_norm_bound)
+        layer = super().make_dense_layer()
+        if self.spec_norm_bound is None:
+            return layer
+        return bounded_spectral_norm(layer, bound=self.spec_norm_bound)
 
     def make_output_layer(self, num_classes: int) -> nn.Module:
         return RandomFeatureGaussianProcess(in_dim=self.num_hidden, num_classes=num_classes, **GP_CONFIG)
@@ -151,8 +190,31 @@ class DeepResNetSNGP(DeepResNet):
 
 
 # ------------- Train / predict ------------- #
-def fit(model: nn.Module, x: np.ndarray, y: np.ndarray, epochs: int = EPOCHS, batch_size: int = BATCH_SIZE) -> None:
-    optimizer = torch.optim.Adam([p for p in model.parameters() if p.requires_grad], lr=LEARNING_RATE)
+def make_optimizer(model: DeepResNet, optimizer: str) -> torch.optim.Optimizer:
+    hidden = {id(layer.weight) for layer in model.dense_layers}
+    if optimizer == "muon_sgd":
+        return MuonWithAuxSGD(model.parameters(), is_muon=lambda p: id(p) in hidden, **MUON_CONFIG)
+    if optimizer == "muon_adam":
+        return MuonWithAuxAdamW(model.parameters(), is_muon=lambda p: id(p) in hidden, **MUON_ADAM_CONFIG)
+    return torch.optim.Adam([p for p in model.parameters() if p.requires_grad], lr=LEARNING_RATE)
+
+
+@torch.no_grad()
+def hidden_spectral_norms(model: DeepResNet) -> list[float]:
+    """Largest singular value of each hidden layer's effective weight (post-SN, if any)."""
+    model.eval()
+    model(torch.zeros(1, 2))  # refresh SN's cached `.weight` without a power iteration
+    return [torch.linalg.matrix_norm(layer.weight, ord=2).item() for layer in model.dense_layers]
+
+
+def fit(
+    model: nn.Module,
+    optimizer: torch.optim.Optimizer,
+    x: np.ndarray,
+    y: np.ndarray,
+    epochs: int = EPOCHS,
+    batch_size: int = BATCH_SIZE,
+) -> None:
     x_t, y_t = torch.from_numpy(x), torch.from_numpy(y).long()
     is_sngp = isinstance(model, DeepResNetSNGP)
 
@@ -228,7 +290,20 @@ def plot_predictions(pred_probs, model_name, train_examples, train_labels, ood_e
 
 
 # ------------- Main ------------- #
-def run(seed: int, out_dir: Optional[Path], show: bool, epochs: int) -> None:
+# tag -> (plot title, model factory, optimizer)
+MODELS = {
+    "resnet": ("Deterministic Model", lambda: DeepResNet(**RESNET_CONFIG), "adam"),
+    "sngp": ("SNGP", lambda: DeepResNetSNGP(spec_norm_bound=SPEC_NORM_BOUND, **RESNET_CONFIG), "adam"),
+    "sngp_muon": (
+        "SNGP + Muon/SGD (no SN)", lambda: DeepResNetSNGP(spec_norm_bound=None, **RESNET_CONFIG), "muon_sgd"
+    ),
+    "sngp_muon_adam": (
+        "SNGP + Muon/Adam (no SN)", lambda: DeepResNetSNGP(spec_norm_bound=None, **RESNET_CONFIG), "muon_adam"
+    ),
+}
+
+
+def run(seed: int, tags: list[str], out_dir: Optional[Path], show: bool, epochs: int) -> None:
     np.random.seed(seed)
     torch.manual_seed(seed)
 
@@ -236,13 +311,13 @@ def run(seed: int, out_dir: Optional[Path], show: bool, epochs: int) -> None:
     test_examples = make_testing_data()
     ood_examples = make_ood_data(sample_size=500)
 
-    models = {
-        "Deterministic Model": ("resnet", DeepResNet(**RESNET_CONFIG)),
-        "SNGP": ("sngp", DeepResNetSNGP(spec_norm_bound=SPEC_NORM_BOUND, **RESNET_CONFIG)),
-    }
-    for model_name, (tag, model) in models.items():
+    for tag in tags:
+        model_name, build, optimizer = MODELS[tag]
+        model = build()
         logger.info(f"seed {seed}: training {model_name}")
-        fit(model, train_examples, train_labels, epochs=epochs)
+        fit(model, make_optimizer(model, optimizer), train_examples, train_labels, epochs=epochs)
+        sigmas = ", ".join(f"{s:.2f}" for s in hidden_spectral_norms(model))
+        logger.info(f"{model_name}: hidden-layer spectral norms [{sigmas}]")
         probs = predict_class0_probs(model, test_examples)
         fig = plot_predictions(probs, model_name, train_examples, train_labels, ood_examples)
         if out_dir is not None:
@@ -257,6 +332,7 @@ def run(seed: int, out_dir: Optional[Path], show: bool, epochs: int) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--seeds", type=int, nargs="+", default=[0])
+    parser.add_argument("--models", nargs="+", choices=list(MODELS), default=list(MODELS))
     parser.add_argument("--epochs", type=int, default=EPOCHS)
     parser.add_argument("--out-dir", type=Path, default=REPO_ROOT / "figures" / "sngp_moons")
     parser.add_argument("--no-save", action="store_true", help="don't write PNGs")
@@ -270,7 +346,7 @@ def main() -> None:
     if out_dir is not None:
         out_dir.mkdir(parents=True, exist_ok=True)
     for seed in args.seeds:
-        run(seed, out_dir, args.show, args.epochs)
+        run(seed, args.models, out_dir, args.show, args.epochs)
 
 
 if __name__ == "__main__":
