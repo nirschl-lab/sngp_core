@@ -16,6 +16,7 @@ the same with the tutorial's Adam on everything else (`MuonWithAuxAdamW`).
     uv run scripts/sngp_make_moons.py                  # writes figures/sngp_moons/*.png
     uv run scripts/sngp_make_moons.py --seeds 0 1 42 --show
     uv run scripts/sngp_make_moons.py --models sngp sngp_muon
+    uv run scripts/sngp_make_moons.py --models resnet sngp --optimizer muon_sgd
 """
 
 import argparse
@@ -190,8 +191,12 @@ class DeepResNetSNGP(DeepResNet):
 
 
 # ------------- Train / predict ------------- #
+OPTIMIZERS = {"adam": "Adam", "muon_sgd": "Muon/SGD", "muon_adam": "Muon/Adam"}
+
+
 def make_optimizer(model: DeepResNet, optimizer: str) -> torch.optim.Optimizer:
-    hidden = {id(layer.weight) for layer in model.dense_layers}
+    # A spectral-normed layer's trainable parameter is `weight_orig`; `.weight` is derived.
+    hidden = {id(getattr(layer, "weight_orig", layer.weight)) for layer in model.dense_layers}
     if optimizer == "muon_sgd":
         return MuonWithAuxSGD(model.parameters(), is_muon=lambda p: id(p) in hidden, **MUON_CONFIG)
     if optimizer == "muon_adam":
@@ -290,20 +295,23 @@ def plot_predictions(pred_probs, model_name, train_examples, train_labels, ood_e
 
 
 # ------------- Main ------------- #
-# tag -> (plot title, model factory, optimizer)
+# tag -> (model title, model factory, default optimizer). `--optimizer` overrides the last.
 MODELS = {
     "resnet": ("Deterministic Model", lambda: DeepResNet(**RESNET_CONFIG), "adam"),
     "sngp": ("SNGP", lambda: DeepResNetSNGP(spec_norm_bound=SPEC_NORM_BOUND, **RESNET_CONFIG), "adam"),
-    "sngp_muon": (
-        "SNGP + Muon/SGD (no SN)", lambda: DeepResNetSNGP(spec_norm_bound=None, **RESNET_CONFIG), "muon_sgd"
-    ),
-    "sngp_muon_adam": (
-        "SNGP + Muon/Adam (no SN)", lambda: DeepResNetSNGP(spec_norm_bound=None, **RESNET_CONFIG), "muon_adam"
-    ),
+    "sngp_muon": ("SNGP (no SN)", lambda: DeepResNetSNGP(spec_norm_bound=None, **RESNET_CONFIG), "muon_sgd"),
+    "sngp_muon_adam": ("SNGP (no SN)", lambda: DeepResNetSNGP(spec_norm_bound=None, **RESNET_CONFIG), "muon_adam"),
 }
 
 
-def run(seed: int, tags: list[str], out_dir: Optional[Path], show: bool, epochs: int) -> None:
+def run(
+    seed: int,
+    tags: list[str],
+    out_dir: Optional[Path],
+    show: bool,
+    epochs: int,
+    optimizer_override: Optional[str] = None,
+) -> None:
     np.random.seed(seed)
     torch.manual_seed(seed)
 
@@ -312,7 +320,9 @@ def run(seed: int, tags: list[str], out_dir: Optional[Path], show: bool, epochs:
     ood_examples = make_ood_data(sample_size=500)
 
     for tag in tags:
-        model_name, build, optimizer = MODELS[tag]
+        model_title, build, optimizer = MODELS[tag]
+        optimizer = optimizer_override or optimizer
+        model_name = f"{model_title}, {OPTIMIZERS[optimizer]}"
         model = build()
         logger.info(f"seed {seed}: training {model_name}")
         fit(model, make_optimizer(model, optimizer), train_examples, train_labels, epochs=epochs)
@@ -321,7 +331,8 @@ def run(seed: int, tags: list[str], out_dir: Optional[Path], show: bool, epochs:
         probs = predict_class0_probs(model, test_examples)
         fig = plot_predictions(probs, model_name, train_examples, train_labels, ood_examples)
         if out_dir is not None:
-            path = out_dir / f"{tag}_seed{seed}.png"
+            suffix = f"_{optimizer}" if optimizer_override else ""
+            path = out_dir / f"{tag}{suffix}_seed{seed}.png"
             fig.savefig(path, dpi=200, bbox_inches="tight")
             logger.info(f"saved {path}")
         if show:
@@ -333,6 +344,12 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--seeds", type=int, nargs="+", default=[0])
     parser.add_argument("--models", nargs="+", choices=list(MODELS), default=list(MODELS))
+    parser.add_argument(
+        "--optimizer",
+        choices=list(OPTIMIZERS),
+        default=None,
+        help="train every selected model with this optimizer (default: each model's own)",
+    )
     parser.add_argument("--epochs", type=int, default=EPOCHS)
     parser.add_argument("--out-dir", type=Path, default=REPO_ROOT / "figures" / "sngp_moons")
     parser.add_argument("--no-save", action="store_true", help="don't write PNGs")
@@ -346,7 +363,7 @@ def main() -> None:
     if out_dir is not None:
         out_dir.mkdir(parents=True, exist_ok=True)
     for seed in args.seeds:
-        run(seed, args.models, out_dir, args.show, args.epochs)
+        run(seed, args.models, out_dir, args.show, args.epochs, args.optimizer)
 
 
 if __name__ == "__main__":
